@@ -1,0 +1,19 @@
+{
+  "name": "@kapmeta/printing-service",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Settings-driven bill/KOT rendering into a structured PrintDocument (lines/sections), no PDF/ESC-POS byte generation.",
+  "main": "src/PrintingService.ts",
+  "types": "src/types.ts",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "vitest": "^1.6.0",
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "@kapmeta/settings-service": "0.1.0"
+  }
+}

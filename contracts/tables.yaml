@@ -1,0 +1,278 @@
+openapi: 3.0.3
+info:
+  title: Kapmeta Tables API
+  description: Table/Floor View screen backing API — table CRUD, live status, and moving KOT items between tables.
+  version: "1.0.0"
+servers:
+  - url: https://api.kapmeta.com/v1
+security:
+  - BearerAuth: []
+paths:
+  /tables:
+    get:
+      operationId: listTables
+      summary: List tables with live status for the floor view
+      tags: [Tables]
+      x-required-role: cashier
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [available, occupied, reserved, billed]
+        - name: floor_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of tables.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Table'
+        '401':
+          $ref: 'common.yaml#/components/responses/Unauthorized'
+    post:
+      operationId: createTable
+      summary: Create a new table
+      tags: [Tables]
+      x-required-role: manager
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TableCreateRequest'
+      responses:
+        '201':
+          description: Table created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Table'
+        '400':
+          $ref: 'common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: 'common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: 'common.yaml#/components/responses/Forbidden'
+  /tables/{id}:
+    patch:
+      operationId: updateTable
+      summary: Update a table (name, capacity, floor, status)
+      tags: [Tables]
+      x-required-role: manager
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TableUpdateRequest'
+      responses:
+        '200':
+          description: Table updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Table'
+        '400':
+          $ref: 'common.yaml#/components/responses/BadRequest'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: 'common.yaml#/components/responses/Conflict'
+  /tables/{id}/move-kot:
+    post:
+      operationId: moveKot
+      summary: Move KOT/items from one table's active order to another table
+      description: >
+        Implements the table-move workflow from artifact-01 (Table/Floor View): moves
+        some or all fired KOT items (and, if `move_entire_order` is true, the entire
+        order) from the source table to a destination table. Destination table must be
+        `available` unless `merge` is true, in which case items are merged into the
+        destination table's existing running order.
+      tags: [Tables]
+      x-required-role: cashier
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - name: id
+          in: path
+          required: true
+          description: Source table id.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [destination_table_id]
+              properties:
+                destination_table_id:
+                  type: string
+                  format: uuid
+                move_entire_order:
+                  type: boolean
+                  default: true
+                item_ids:
+                  type: array
+                  description: Required when move_entire_order is false; the specific order item ids to move.
+                  items:
+                    type: string
+                    format: uuid
+                merge:
+                  type: boolean
+                  default: false
+                  description: If true, merge moved items into destination table's existing running order instead of requiring it to be empty.
+      responses:
+        '200':
+          description: Move completed; returns both affected tables.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  source_table:
+                    $ref: '#/components/schemas/Table'
+                  destination_table:
+                    $ref: '#/components/schemas/Table'
+        '400':
+          $ref: 'common.yaml#/components/responses/BadRequest'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+        '409':
+          description: Destination table occupied and merge=false.
+          content:
+            application/json:
+              schema:
+                $ref: 'common.yaml#/components/schemas/ErrorResponse'
+  /tables/{id}/session:
+    get:
+      operationId: getTableSession
+      summary: Get the current active session (order) for a table
+      tags: [Tables]
+      x-required-role: cashier
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Current table session, or empty session object if the table is available.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TableSession'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+components:
+  schemas:
+    Table:
+      type: object
+      required: [id, outlet_id, name, status, capacity]
+      properties:
+        id:
+          type: string
+          format: uuid
+        outlet_id:
+          type: string
+          format: uuid
+        floor_id:
+          type: string
+          format: uuid
+          nullable: true
+        name:
+          type: string
+          example: "T-12"
+        capacity:
+          type: integer
+          example: 4
+        status:
+          type: string
+          enum: [available, occupied, reserved, billed]
+        active_order_id:
+          type: string
+          format: uuid
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    TableCreateRequest:
+      type: object
+      required: [name, capacity]
+      properties:
+        name:
+          type: string
+        capacity:
+          type: integer
+          minimum: 1
+        floor_id:
+          type: string
+          format: uuid
+          nullable: true
+    TableUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        capacity:
+          type: integer
+          minimum: 1
+        floor_id:
+          type: string
+          format: uuid
+          nullable: true
+        status:
+          type: string
+          enum: [available, occupied, reserved, billed]
+    TableSession:
+      type: object
+      properties:
+        table_id:
+          type: string
+          format: uuid
+        order_id:
+          type: string
+          format: uuid
+          nullable: true
+        order_status:
+          allOf:
+            - $ref: 'common.yaml#/components/schemas/OrderStatus'
+          nullable: true
+        kot_sent:
+          type: boolean
+        opened_at:
+          type: string
+          format: date-time
+          nullable: true
+        grand_total_amount:
+          allOf:
+            - $ref: 'common.yaml#/components/schemas/Money'
+          nullable: true

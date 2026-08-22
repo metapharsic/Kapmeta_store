@@ -1,0 +1,448 @@
+openapi: 3.0.3
+info:
+  title: Kapmeta Menu API
+  description: >
+    Menu admin CRUD (categories, items), the POS/customer-facing menu tree for Order
+    Entry, per-channel enable/disable, and OOS (out-of-stock) availability management
+    per artifact-04.
+  version: "1.0.0"
+servers:
+  - url: https://api.kapmeta.com/v1
+security:
+  - BearerAuth: []
+paths:
+  /menu-categories:
+    get:
+      operationId: listMenuCategories
+      summary: List menu categories (admin)
+      tags: [Menu Admin]
+      x-required-role: manager
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+      responses:
+        '200':
+          description: List of categories.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MenuCategory'
+    post:
+      operationId: createMenuCategory
+      summary: Create a menu category
+      tags: [Menu Admin]
+      x-required-role: manager
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MenuCategoryUpsertRequest'
+      responses:
+        '201':
+          description: Category created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MenuCategory'
+        '400':
+          $ref: 'common.yaml#/components/responses/BadRequest'
+  /menu-categories/{id}:
+    patch:
+      operationId: updateMenuCategory
+      summary: Update a menu category
+      tags: [Menu Admin]
+      x-required-role: manager
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MenuCategoryUpsertRequest'
+      responses:
+        '200':
+          description: Category updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MenuCategory'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+    delete:
+      operationId: deleteMenuCategory
+      summary: Delete a menu category
+      tags: [Menu Admin]
+      x-required-role: manager
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Deleted.
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+        '409':
+          description: Category still has menu items assigned.
+          content:
+            application/json:
+              schema:
+                $ref: 'common.yaml#/components/schemas/ErrorResponse'
+  /menu-items:
+    get:
+      operationId: listMenuItems
+      summary: List menu items (admin)
+      tags: [Menu Admin]
+      x-required-role: manager
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/PageParam'
+        - $ref: 'common.yaml#/components/parameters/PageSizeParam'
+        - name: category_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paged list of menu items.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MenuItem'
+                  meta:
+                    $ref: 'common.yaml#/components/schemas/PaginationMeta'
+    post:
+      operationId: createMenuItem
+      summary: Create a menu item
+      tags: [Menu Admin]
+      x-required-role: manager
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MenuItemUpsertRequest'
+      responses:
+        '201':
+          description: Menu item created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MenuItem'
+        '400':
+          $ref: 'common.yaml#/components/responses/BadRequest'
+  /menu-items/{id}:
+    patch:
+      operationId: updateMenuItem
+      summary: Update a menu item
+      tags: [Menu Admin]
+      x-required-role: manager
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MenuItemUpsertRequest'
+      responses:
+        '200':
+          description: Menu item updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MenuItem'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+    delete:
+      operationId: deleteMenuItem
+      summary: Delete a menu item
+      tags: [Menu Admin]
+      x-required-role: manager
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Deleted.
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+  /menu:
+    get:
+      operationId: getMenuTree
+      summary: Get the POS/customer-facing menu tree (categories with nested items)
+      description: Backs the Order Entry screen's item picker. Only returns items enabled for the requested channel and not currently OOS for that channel.
+      tags: [Menu]
+      x-required-role: cashier
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - name: channel
+          in: query
+          description: Channel to filter availability for, e.g. dine_in, swiggy, zomato. Defaults to dine_in.
+          schema:
+            type: string
+            default: dine_in
+      responses:
+        '200':
+          description: Menu tree.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  categories:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MenuCategoryWithItems'
+  /menu/items/{id}/channel-status:
+    patch:
+      operationId: updateMenuItemChannelStatus
+      summary: Turn a menu item on/off for one or more channels
+      tags: [Menu]
+      x-required-role: manager
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channel_status]
+              properties:
+                channel_status:
+                  type: array
+                  items:
+                    type: object
+                    required: [channel, enabled]
+                    properties:
+                      channel:
+                        type: string
+                        example: zomato
+                      enabled:
+                        type: boolean
+      responses:
+        '200':
+          description: Updated channel status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MenuItem'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+  /menu/items/{id}/availability:
+    post:
+      operationId: setMenuItemAvailability
+      summary: Mark a menu item out-of-stock (OOS) or restore availability
+      description: >
+        Implements the OOS workflow from artifact-04 (OOS + Menu Availability). When
+        marking OOS, `alt_item_id` may name a substitute item to surface to staff/online
+        customers in place of the unavailable item, and `propagate_to_other_channels`
+        controls whether the OOS mark applies outlet-wide across all sales channels
+        (dine-in, Swiggy, Zomato, direct online) or only to the given `channel`.
+      tags: [Menu]
+      x-required-role: cashier
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [out_of_stock]
+              properties:
+                out_of_stock:
+                  type: boolean
+                channel:
+                  type: string
+                  description: Channel this availability change applies to. Ignored (treated as all channels) if propagate_to_other_channels is true.
+                  example: dine_in
+                alt_item_id:
+                  type: string
+                  format: uuid
+                  nullable: true
+                  description: Suggested substitute menu item, shown while this item is OOS.
+                propagate_to_other_channels:
+                  type: boolean
+                  default: false
+                until:
+                  type: string
+                  format: date-time
+                  nullable: true
+                  description: Optional auto-restore time; null means indefinite until manually restored.
+      responses:
+        '200':
+          description: Availability updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MenuItem'
+        '400':
+          $ref: 'common.yaml#/components/responses/BadRequest'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+components:
+  schemas:
+    MenuCategory:
+      type: object
+      required: [id, outlet_id, name, sort_order]
+      properties:
+        id:
+          type: string
+          format: uuid
+        outlet_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        sort_order:
+          type: integer
+        active:
+          type: boolean
+    MenuCategoryUpsertRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        sort_order:
+          type: integer
+        active:
+          type: boolean
+          default: true
+    ChannelStatusEntry:
+      type: object
+      properties:
+        channel:
+          type: string
+        enabled:
+          type: boolean
+    AvailabilityState:
+      type: object
+      properties:
+        channel:
+          type: string
+        out_of_stock:
+          type: boolean
+        alt_item_id:
+          type: string
+          format: uuid
+          nullable: true
+        until:
+          type: string
+          format: date-time
+          nullable: true
+    MenuItem:
+      type: object
+      required: [id, outlet_id, category_id, name, price_amount]
+      properties:
+        id:
+          type: string
+          format: uuid
+        outlet_id:
+          type: string
+          format: uuid
+        category_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        price_amount:
+          $ref: 'common.yaml#/components/schemas/Money'
+        is_veg:
+          type: boolean
+        active:
+          type: boolean
+        channel_status:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChannelStatusEntry'
+        availability:
+          type: array
+          items:
+            $ref: '#/components/schemas/AvailabilityState'
+    MenuItemUpsertRequest:
+      type: object
+      required: [category_id, name, price_amount]
+      properties:
+        category_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        price_amount:
+          $ref: 'common.yaml#/components/schemas/Money'
+        is_veg:
+          type: boolean
+          default: true
+        active:
+          type: boolean
+          default: true
+    MenuCategoryWithItems:
+      allOf:
+        - $ref: '#/components/schemas/MenuCategory'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/MenuItem'

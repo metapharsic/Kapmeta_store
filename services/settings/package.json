@@ -1,0 +1,22 @@
+{
+  "name": "@kapmeta/settings-service",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Outlet billing and print settings, payment type master, and the billing calculator (container/delivery/service charge, discount basis).",
+  "main": "src/SettingsService.ts",
+  "types": "src/types.ts",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "pg": "^8.11.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/pg": "^8.11.0",
+    "pg-mem": "^3.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.1"
+  }
+}

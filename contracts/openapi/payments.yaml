@@ -1,0 +1,236 @@
+openapi: 3.1.0
+info:
+  title: Kapmeta — Payments API
+  version: 1.0.0
+  license:
+    name: Proprietary
+  summary: Payment method/status enums, order-payment linkage, read-only payment listing. Capture, gateways and settlement are OUT OF SCOPE.
+  description: |
+    Traces to `docs/02-requirements/billing-payments.md`. Conventions in `docs/06-api/api-standards.md`;
+    shared components in `common.yaml`.
+
+    ## BLOCKED — DEC-005 (payment gateway not selected)
+
+    This spec is deliberately a SKELETON. `billing-payments.md` states plainly: "Nothing in this
+    document is implementable end-to-end until DEC-005 and DEC-011 close." What follows is ONLY the
+    gateway-agnostic surface that is already schema-backed (`payments`, `order_payments`,
+    `DB-ENUM-05` `payment_method`, `DB-ENUM-06` `payment_status`) and that `orders.yaml` already
+    cross-references (`payment_status` roll-up on `Order`, `POST /orders/{id}/refunds` as refund
+    INITIATION).
+
+    OUT OF SCOPE, and why:
+
+      - **Authorize / capture endpoints.** `billing-payments.md`'s payment state machine
+        (`INITIATED -> AUTHORIZED -> CAPTURED -> SETTLED`) names gateway calls (`gateway_txn_id`
+        persistence, auto-capture policy) that do not exist until DEC-005 selects a gateway. No
+        `POST /payments` or `POST /payments/{id}/capture` is defined here.
+      - **Gateway-specific payment shapes.** No card, UPI, wallet or aggregator-prepaid request
+        bodies. Card entry additionally cannot be built at all until DEC-011 (PCI scope) closes —
+        "Card data never touches our systems" is a hard constraint, not a field-naming question.
+      - **Void / refund completion.** `AUTHORIZED -> VOIDED` and `REFUND_PENDING -> REFUNDED` are
+        gateway-driven transitions. Refund INITIATION is exposed on `orders.yaml`
+        (`POST /orders/{order_id}/refunds`) and is not duplicated here; this spec only lets a caller
+        VIEW the resulting payment/refund state once the gateway module resolves it.
+      - **Gateway webhooks.** Inbound gateway events are `webhooks.yaml`, itself BLOCKED on DEC-005
+        and DEC-007.
+      - **Settlement.** `settlements` (T+0..T+7 bank reconciliation) is a distinct table and concept
+        from capture per `billing-payments.md` ("Capture vs Settlement") and is not modelled here.
+      - **Split/partial payment creation, cash drawer/shift endpoints, tips/service charge/rounding.**
+        All PROPOSED-only or additionally blocked on DEC-004; no fields are guessed.
+
+    IN SCOPE: viewing `payments` and their `order_payments` linkage, exactly as already captured by
+    the append-only ledger the requirements document describes. Nothing here writes a payment.
+
+servers:
+  - url: https://api.kapmeta.example.com/api/v1
+    description: Production
+  - url: https://staging-api.kapmeta.example.com/api/v1
+    description: Staging
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Payments
+    description: Order-payment linkage and read-only payment listing.
+
+paths:
+
+  /payments:
+    get:
+      tags: [Payments]
+      operationId: listPayments
+      summary: List payments (read-only)
+      description: |
+        Cursor-paginated, read-only view of `payments`. There is no corresponding POST here —
+        payments are created by the gateway-facing module, BLOCKED on DEC-005.
+
+        Permission required: `payments.read`.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - $ref: 'common.yaml#/components/parameters/LimitParam'
+        - $ref: 'common.yaml#/components/parameters/CursorParam'
+        - name: order_id
+          in: query
+          schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        - name: status
+          in: query
+          description: Repeatable. Filters on `payment_status` (`DB-ENUM-06`).
+          schema:
+            type: array
+            items: { $ref: 'common.yaml#/components/schemas/PaymentStatus' }
+          style: form
+          explode: true
+        - name: method
+          in: query
+          schema: { $ref: 'common.yaml#/components/schemas/PaymentMethod' }
+        - name: business_date
+          in: query
+          schema: { $ref: 'common.yaml#/components/schemas/BusinessDate' }
+      responses:
+        '200':
+          description: Payment page.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: 'common.yaml#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/Payment' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /payments/{payment_id}:
+    get:
+      tags: [Payments]
+      operationId: getPayment
+      summary: Get a payment
+      description: |
+        Permission required: `payments.read`. 404 covers both "does not exist" and "not visible to
+        this outlet".
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - name: payment_id
+          in: path
+          required: true
+          schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+      responses:
+        '200':
+          description: Payment.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Payment' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /orders/{order_id}/payments:
+    get:
+      tags: [Payments]
+      operationId: listOrderPayments
+      summary: List payments linked to an order
+      description: |
+        Read-only view of `order_payments`, the leg-level linkage described in `billing-payments.md`
+        ("Split & Partial Payments" — N `order_payments` legs, each referencing one `payments` row).
+        No write endpoint exists here; legs are created by the gateway-facing module (DEC-005).
+
+        Permission required: `payments.read` or `orders.read`.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - $ref: 'common.yaml#/components/parameters/LimitParam'
+        - $ref: 'common.yaml#/components/parameters/CursorParam'
+        - name: order_id
+          in: path
+          required: true
+          schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+      responses:
+        '200':
+          description: Order-payment legs.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: 'common.yaml#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/OrderPaymentLeg' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+
+    Payment:
+      allOf:
+        - $ref: 'common.yaml#/components/schemas/OutletScoped'
+        - $ref: 'common.yaml#/components/schemas/AuditFields'
+        - type: object
+          required: [id, order_id, method, status, amount]
+          properties:
+            id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+            order_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+            method: { $ref: 'common.yaml#/components/schemas/PaymentMethod' }
+            status:
+              allOf: [{ $ref: 'common.yaml#/components/schemas/PaymentStatus' }]
+              description: |
+                `DB-ENUM-06`. Reported, not driven — the gateway module (BLOCKED on DEC-005) owns
+                every transition. This API never writes `status`.
+              readOnly: true
+            amount:
+              allOf: [{ $ref: 'common.yaml#/components/schemas/Money' }]
+              description: Gross tendered amount, as captured.
+              readOnly: true
+            refunded_amount:
+              allOf: [{ $ref: 'common.yaml#/components/schemas/Money' }]
+              description: Derived sum of refunds against this payment. Never a mutable column.
+              readOnly: true
+            business_date:
+              allOf: [{ $ref: 'common.yaml#/components/schemas/BusinessDate' }]
+              readOnly: true
+            gateway_txn_id:
+              description: |
+                Opaque gateway transaction reference. Null for CASH and for any payment created before
+                DEC-005 selects a gateway. Never used to derive behaviour in this spec.
+              oneOf:
+                - type: string
+                - type: 'null'
+              readOnly: true
+
+    OrderPaymentLeg:
+      allOf:
+        - $ref: 'common.yaml#/components/schemas/AuditFields'
+        - type: object
+          required: [order_id, payment_id, amount]
+          properties:
+            order_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+            payment_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+            amount:
+              allOf: [{ $ref: 'common.yaml#/components/schemas/Money' }]
+              description: This leg's tendered amount. Rounding is applied once to the order total, not per leg (DEC-004).
+              readOnly: true

@@ -1,0 +1,1019 @@
+openapi: 3.1.0
+info:
+  title: Kapmeta — Orders API
+  version: 1.0.0
+  license:
+    name: Proprietary
+  summary: Order CRUD, status transitions, cancellation and refund initiation.
+  description: |
+    Traces to `docs/02-requirements/orders.md`. Conventions in `docs/06-api/api-standards.md`;
+    shared components in `common.yaml`.
+
+    State machine (`DB-ENUM-01` `order_status`):
+
+        DRAFT -> PLACED -> CONFIRMED -> KOT_CREATED -> IN_PREPARATION ->
+        READY -> ASSIGNED -> OUT_FOR_DELIVERY -> SERVED/HANDED_OVER -> COMPLETED
+
+                  |  (any pre-COMPLETED state)
+                  v
+              CANCELLED -> FAILED
+
+    Transition guards (all validated server-side by `fn_assert_status_transition()` /
+    `trg_order_status_guard` as well as in the application):
+
+      | From                | To                | Guard                                                            |
+      |---------------------|-------------------|------------------------------------------------------------------|
+      | DRAFT               | PLACED            | All items available, totals computed, outlet open                 |
+      | PLACED              | CONFIRMED         | Payment policy satisfied (prepaid channels require captured payment) |
+      | CONFIRMED           | KOT_CREATED       | KOT routed to at least one station                                |
+      | IN_PREPARATION      | READY             | All KOT items marked done                                         |
+      | READY               | ASSIGNED          | Delivery orders only                                              |
+      | ASSIGNED            | OUT_FOR_DELIVERY  | Rider assigned                                                    |
+      | any pre-COMPLETED   | CANCELLED         | Permission check + mandatory reason + audit entry                 |
+      | CANCELLED post-KOT  | —                 | Requires elevated role; wastage entry if inventory automated (DEC-003) |
+
+    Every transition APPENDS to `order_status_history`. Statuses are never overwritten in place, so
+    there is no PATCH on `status` — transitions go through `POST /orders/{id}/transitions`.
+
+    OPEN DECISION — DEC-004 (tax): NO tax fields are specified. `OrderTotals` deliberately carries
+    only `subtotal`, `total` and an opaque `charges` list; tax breakup arrives with DEC-004.
+    OPEN DECISION — DEC-008 (discount stacking): NO discount fields, codes or stacking rules are
+    specified. Discount application is not exposed until DEC-008 lands.
+    OPEN DECISION — DEC-005 (payment capture timing): payment gateway shapes are OUT OF SCOPE here and
+    belong to `payments.yaml`, which is BLOCKED on DEC-005. This spec exposes ONLY refund INITIATION
+    (`POST /orders/{id}/refunds`), which creates an `order_refunds`/`refunds` record; gateway
+    interaction, capture and settlement are not specified.
+    OPEN DECISION — DEC-002 (offline capture): no offline replay/reconciliation endpoint is specified.
+    OPEN DECISION — DEC-003: wastage on post-KOT cancellation is signalled but not modelled here.
+
+servers:
+  - url: https://api.kapmeta.example.com/api/v1
+    description: Production
+  - url: https://staging-api.kapmeta.example.com/api/v1
+    description: Staging
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Orders
+    description: Order creation and retrieval.
+  - name: Transitions
+    description: Order status transitions, validated against the order state machine.
+  - name: Cancellation
+    description: Order cancellation and void, with reason code and audit.
+  - name: Refunds
+    description: Refund initiation against a captured payment.
+
+paths:
+
+  /orders:
+    get:
+      tags: [Orders]
+      operationId: listOrders
+      summary: List orders
+      description: |
+        Cursor-paginated live/historic order list, backed by `v_active_orders` for open states.
+        Scoped to the session's outlet — there is no cross-outlet listing.
+
+        Permission required: `orders.read`.
+
+        Pagination is cursor-based (`limit` + `cursor` -> `next_cursor`, null at end). Offset
+        pagination is explicitly not used on order tables.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - $ref: 'common.yaml#/components/parameters/LimitParam'
+        - $ref: 'common.yaml#/components/parameters/CursorParam'
+        - name: status
+          in: query
+          description: Repeatable. Filters on current `order_status`.
+          schema:
+            type: array
+            items: { $ref: 'common.yaml#/components/schemas/OrderStatus' }
+          style: form
+          explode: true
+        - name: type
+          in: query
+          schema: { $ref: 'common.yaml#/components/schemas/OrderType' }
+        - name: business_date
+          in: query
+          description: Server-computed business date (`fn_business_date`), not `created_at::date`.
+          schema: { $ref: 'common.yaml#/components/schemas/BusinessDate' }
+        - name: channel_id
+          in: query
+          schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        - name: order_number
+          in: query
+          description: Exact match. Unique per `(outlet_id, order_number)` — `DB-UQ-01`.
+          schema: { type: string }
+      responses:
+        '200':
+          description: Order page.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: 'common.yaml#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/OrderSummary' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+    post:
+      tags: [Orders]
+      operationId: createOrder
+      summary: Create an order
+      description: |
+        Creates the order. `Idempotency-Key` is REQUIRED — this creates an order. Key + request
+        fingerprint are stored for 24 h: a repeat with the same key returns the ORIGINAL response; a
+        repeat with the same key and a different body is 409 `IDEMPOTENCY_KEY_REUSED`. This is what
+        stops a retried POS tap or a redelivered aggregator webhook from double-charging a customer.
+
+        Permission required: `orders.create`.
+
+        `outlet_id` comes from the session. Sending it in the body is 400 — it is a privilege
+        escalation vector, not a convenience field.
+
+        `status` may be `DRAFT` or `PLACED` on creation (`initial_status`, default `DRAFT`). Creating
+        straight into `PLACED` applies the DRAFT->PLACED guard: all items available on the order's
+        channel, totals computed, outlet open. Any guard failure is 422.
+
+        Required fields vary by `type`: `table_id` for `DINE_IN`; `delivery_address` for `DELIVERY`.
+        A missing type-required field is 400.
+
+        Pricing is computed server-side by the centralized pricing engine. Client-supplied totals are
+        rejected — `unit_price` on a line is a server-written SNAPSHOT (`order_items.unit_price_minor`),
+        never a client input, because a price change tomorrow must not alter yesterday's invoice.
+
+        Steps 5-6 of the processing flow (create order + generate KOT) share one DB transaction.
+
+        OPEN DECISION — DEC-008: no discount or promotion fields are accepted.
+        OPEN DECISION — DEC-004: no tax fields are returned in totals.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - $ref: 'common.yaml#/components/parameters/IdempotencyKeyHeader'
+        - $ref: 'common.yaml#/components/parameters/TerminalIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrderCreate' }
+      responses:
+        '201':
+          description: Order created.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '200':
+          description: |
+            Idempotent replay — the same `Idempotency-Key` with an identical body. The ORIGINAL
+            response body is returned and no new order is created.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '409':
+          description: |
+            409 — `Idempotency-Key` replayed with a different body (`IDEMPOTENCY_KEY_REUSED`), or a
+            duplicate aggregator order (`DB-UQ-02`, unique on `(channel_account_id, channel_order_id)`).
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+        '422':
+          description: |
+            422 — Business rule rejection: an item is unavailable on the order's channel
+            (`ORDER_ITEM_UNAVAILABLE`), the outlet is closed, or a modifier selection violates the
+            group's `min_select`/`max_select`.
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /orders/{order_id}:
+    parameters:
+      - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+      - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+      - name: order_id
+        in: path
+        required: true
+        schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+    get:
+      tags: [Orders]
+      operationId: getOrder
+      summary: Get an order
+      description: |
+        Permission required: `orders.read`.
+        404 covers both "does not exist" and "exists but not visible to this outlet" — deliberately
+        indistinguishable.
+      responses:
+        '200':
+          description: Order.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+            ETag: { $ref: 'common.yaml#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+    patch:
+      tags: [Orders]
+      operationId: updateOrder
+      summary: Amend an order (items, table, delivery details)
+      description: |
+        Amends a non-terminal order. `status` is NOT patchable here — status changes append to
+        `order_status_history` and go through `POST /orders/{order_id}/transitions`. A `status` key in
+        this body is 400.
+
+        Permission required: `orders.update`.
+
+        Optimistic concurrency: `version` is REQUIRED; a stale value is 409 `VERSION_MISMATCH`.
+
+        AMENDMENT AFTER KOT: if the order has reached `KOT_CREATED` or beyond, changing items issues a
+        DELTA KOT ticket marked `is_amendment` — never a silent replacement of the existing ticket
+        (see `kitchen.yaml`). Removing an already-prepared item is a cancellation concern, not an
+        amendment, and is 422.
+
+        Amending an order in `COMPLETED`, `CANCELLED` or `FAILED` is 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrderUpdate' }
+      responses:
+        '200':
+          description: Order amended. If the order was post-KOT, a delta KOT ticket was issued.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409':
+          description: 409 — Version mismatch, or the order is in a terminal state and cannot be amended.
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+        '422': { $ref: 'common.yaml#/components/responses/UnprocessableEntity' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /orders/{order_id}/transitions:
+    parameters:
+      - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+      - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+      - name: order_id
+        in: path
+        required: true
+        schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+    post:
+      tags: [Transitions]
+      operationId: transitionOrder
+      summary: Move an order to a new status
+      description: |
+        The ONLY way to change `status`. Every accepted transition APPENDS a row to
+        `order_status_history` recording `from_status`, `to_status`, `actor_id` and `reason_code`.
+        Statuses are never overwritten in place.
+
+        Guards, enforced server-side (and again by `trg_order_status_guard` at the DB level):
+          - DRAFT -> PLACED: all items available on the order's channel, totals computed, outlet open.
+          - PLACED -> CONFIRMED: payment policy satisfied. Prepaid channels require a CAPTURED payment.
+            (Capture itself is `payments.yaml`, BLOCKED on DEC-005 — this endpoint only checks the
+            resulting state.)
+          - CONFIRMED -> KOT_CREATED: KOT routed to at least one station.
+          - IN_PREPARATION -> READY: all KOT items marked DONE. Normally driven by `kitchen.yaml`
+            rather than called directly.
+          - READY -> ASSIGNED: DELIVERY orders only. A DINE_IN or PICKUP order is 422.
+          - ASSIGNED -> OUT_FOR_DELIVERY: a rider must be assigned.
+          - SERVED / HANDED_OVER: terminal fulfilment states per order type, preceding COMPLETED.
+
+        An edge not present in the state machine is 409 `ILLEGAL_STATUS_TRANSITION`. An edge that
+        exists but whose guard is unsatisfied is 422 — the distinction matters: 409 means "never
+        legal", 422 means "not yet".
+
+        Use `POST /orders/{order_id}/cancel` for CANCELLED; it is not reachable through this endpoint
+        because cancellation carries mandatory reason and approval semantics.
+
+        Permission required: `orders.update`. Kitchen User holds only KOT update rights and drives
+        preparation status through `kitchen.yaml`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to_status, version]
+              additionalProperties: false
+              properties:
+                to_status:
+                  allOf: [{ $ref: 'common.yaml#/components/schemas/OrderStatus' }]
+                  description: 'Target status. `CANCELLED` is rejected here — use the cancel endpoint.'
+                version:
+                  allOf: [{ $ref: 'common.yaml#/components/schemas/Version' }]
+                  description: Order version the client believes it is transitioning. Stale is 409.
+                reason_code: { $ref: 'common.yaml#/components/schemas/ReasonCode' }
+                rider_id:
+                  allOf: [{ $ref: 'common.yaml#/components/schemas/Uuid' }]
+                  description: Required for READY -> ASSIGNED.
+      responses:
+        '200':
+          description: Transition accepted; a status history row was appended.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409':
+          description: |
+            409 — The transition is not an edge in the state machine (`ILLEGAL_STATUS_TRANSITION`), or
+            `version` is stale (`VERSION_MISMATCH`).
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+        '422':
+          description: |
+            422 — The edge is legal but its guard is unsatisfied: item unavailable, outlet closed,
+            payment policy not met, no KOT routed, KOT items not all DONE, `ASSIGNED` requested on a
+            non-DELIVERY order, or no rider assigned.
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /orders/{order_id}/status-history:
+    get:
+      tags: [Transitions]
+      operationId: getOrderStatusHistory
+      summary: Get the append-only status history of an order
+      description: |
+        Returns `order_status_history` rows oldest-first. Append-only: rows are never updated or
+        deleted, so this is the authoritative record of what happened and who did it.
+        Cursor-paginated.
+        Permission required: `orders.read`.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - $ref: 'common.yaml#/components/parameters/LimitParam'
+        - $ref: 'common.yaml#/components/parameters/CursorParam'
+        - name: order_id
+          in: path
+          required: true
+          schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+      responses:
+        '200':
+          description: Status history page.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: 'common.yaml#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/OrderStatusHistoryEntry' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /orders/{order_id}/cancel:
+    post:
+      tags: [Cancellation]
+      operationId: cancelOrder
+      summary: Cancel an order
+      description: |
+        Moves any pre-COMPLETED order to `CANCELLED`. Cancelling a `COMPLETED` order is 409 — that is
+        a refund, not a cancellation.
+
+        Requires: permission, a MANDATORY `reason_code` from the configured list, and an audit row —
+        all three, in the same transaction as the status change.
+
+        Permission required: `orders.cancel`. POS Operator does NOT hold it: `orders.cancel`,
+        `payments.override` and refund permissions are explicitly excluded from that role and route
+        through elevated approval instead.
+
+        POST-KOT CANCELLATION requires elevated approval. When the order has reached `KOT_CREATED` or
+        beyond and the caller lacks `orders.cancel`, the server returns 403 with
+        `code = APPROVAL_REQUIRED` — NOT a flat denial. The terminal then obtains an approval token
+        from `POST /auth/elevated-approvals` and replays this call with `elevated_approval`. The action
+        executes under the OPERATOR's user id with `approved_by` set to the approver; recording the
+        manager as the actor destroys attribution and is a defect.
+
+        Cancellation also cancels the order's open KOT tickets (`kot_status` -> `CANCELLED`).
+
+        `Idempotency-Key` is REQUIRED: cancellation of a paid order has money consequences and must not
+        be double-applied on retry.
+
+        OPEN DECISION — DEC-003: a post-KOT cancellation should produce a wastage entry once inventory
+        is automated. No wastage field is specified here; `wastage_recorded` is returned as a
+        server-set flag that stays `false` until DEC-003 lands.
+        OPEN DECISION — DEC-005: cancelling a paid order creates a refund record via the refund
+        endpoint below; gateway behaviour is not specified.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - $ref: 'common.yaml#/components/parameters/IdempotencyKeyHeader'
+        - $ref: 'common.yaml#/components/parameters/TerminalIdHeader'
+        - name: order_id
+          in: path
+          required: true
+          schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason_code, version]
+              additionalProperties: false
+              properties:
+                reason_code:
+                  allOf: [{ $ref: 'common.yaml#/components/schemas/ReasonCode' }]
+                  description: Mandatory. From the outlet's configured reason list.
+                reason_note:
+                  type: string
+                  maxLength: 500
+                version: { $ref: 'common.yaml#/components/schemas/Version' }
+                elevated_approval:
+                  allOf: [{ $ref: 'common.yaml#/components/schemas/ElevatedApproval' }]
+                  description: |
+                    Present only when replaying after `APPROVAL_REQUIRED`. The client can never assert
+                    approval itself — this carries a server-issued single-use token.
+      responses:
+        '200':
+          description: Order cancelled; status history and audit rows written; open KOT tickets cancelled.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403':
+          description: |
+            403 — Either a flat denial (`PERMISSION_DENIED`, audited as a failed authorization) or
+            `APPROVAL_REQUIRED` when the action is eligible for manager approval.
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/ApprovalRequiredError' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409':
+          description: |
+            409 — Order is already `CANCELLED`/`FAILED`, is `COMPLETED` (use a refund), `version` is
+            stale, or the `Idempotency-Key` was replayed with a different body.
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+        '422': { $ref: 'common.yaml#/components/responses/UnprocessableEntity' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /orders/{order_id}/refunds:
+    parameters:
+      - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+      - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+      - name: order_id
+        in: path
+        required: true
+        schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+    post:
+      tags: [Refunds]
+      operationId: initiateOrderRefund
+      summary: Initiate a refund against an order
+      description: |
+        INITIATION ONLY. This creates a `refunds` + `order_refunds` record and hands off to the
+        payments module. Gateway interaction, capture semantics, settlement and refund completion
+        webhooks are `payments.yaml`, which is BLOCKED on DEC-005 and deliberately not written.
+
+        `Idempotency-Key` is REQUIRED — this moves money. A replay with the same key returns the
+        original refund; a replay with a different body is 409.
+
+        Partial refunds are allowed at LINE-ITEM granularity: supply `lines`. Omit `lines` for a full
+        refund of the order's captured amount.
+
+        The refund reconciles against the ORIGINAL payment and adjusts reports for the ORIGINAL
+        business day — `original_business_date` is server-computed from the source payment, never
+        supplied by the client, so a refund taken on Tuesday for Monday's order corrects Monday.
+
+        Permission required: `orders.refund`. POS Operator does not hold it; the call returns 403
+        `APPROVAL_REQUIRED` and the terminal must obtain an approval token from
+        `POST /auth/elevated-approvals` and replay with `elevated_approval`. Refund is explicitly one
+        of the elevated actions.
+
+        Audit: refunds are a non-negotiable audited action — actor, approver, reason code and target
+        record, one row, same transaction.
+
+        OPEN DECISION — DEC-005: refund method/routing (back to original instrument vs cash vs credit
+        note) is a payments concern and is NOT modelled here. No gateway fields, no `payment_method`
+        selection.
+        OPEN DECISION — DEC-004: refund amounts are line totals as captured; tax reversal breakup
+        awaits DEC-004.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/IdempotencyKeyHeader'
+        - $ref: 'common.yaml#/components/parameters/TerminalIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefundCreate' }
+      responses:
+        '201':
+          description: |
+            Refund record created with `status: PENDING`. Completion is asynchronous and is reported by
+            the payments module.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Refund' }
+        '200':
+          description: Idempotent replay — the original refund record is returned unchanged.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Refund' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403':
+          description: 403 — `PERMISSION_DENIED`, or `APPROVAL_REQUIRED` for the elevated-approval flow.
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/ApprovalRequiredError' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409':
+          description: 409 — `Idempotency-Key` replayed with a different body, or a refund is already in flight for these lines.
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+        '422':
+          description: |
+            422 — Refund exceeds the captured amount (`REFUND_EXCEEDS_CAPTURED`), no captured payment
+            exists on the order, or a referenced line does not belong to the order.
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+    get:
+      tags: [Refunds]
+      operationId: listOrderRefunds
+      summary: List refunds initiated against an order
+      description: |
+        Cursor-paginated. Read-only view of `order_refunds`.
+        Permission required: `orders.read`.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/LimitParam'
+        - $ref: 'common.yaml#/components/parameters/CursorParam'
+      responses:
+        '200':
+          description: Refund page.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: 'common.yaml#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/Refund' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+
+    OrderSummary:
+      allOf:
+        - $ref: 'common.yaml#/components/schemas/OutletScoped'
+        - $ref: 'common.yaml#/components/schemas/AuditFields'
+        - type: object
+          required: [id, order_number, type, status, business_date, totals, version]
+          properties:
+            id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+            order_number:
+              type: string
+              description: Human-facing number, unique per `(outlet_id, order_number)` (`DB-UQ-01`). Server-assigned.
+            type: { $ref: 'common.yaml#/components/schemas/OrderType' }
+            status: { $ref: 'common.yaml#/components/schemas/OrderStatus' }
+            channel_id:
+              oneOf:
+                - $ref: 'common.yaml#/components/schemas/Uuid'
+                - type: 'null'
+            channel_type: { $ref: 'common.yaml#/components/schemas/ChannelType' }
+            channel_order_id:
+              description: The aggregator's own order id. Unique with `channel_account_id` (`DB-UQ-02`).
+              oneOf:
+                - type: string
+                - type: 'null'
+            business_date:
+              allOf: [{ $ref: 'common.yaml#/components/schemas/BusinessDate' }]
+              readOnly: true
+            totals: { $ref: '#/components/schemas/OrderTotals' }
+            placed_at:
+              oneOf:
+                - $ref: 'common.yaml#/components/schemas/Timestamp'
+                - type: 'null'
+            completed_at:
+              oneOf:
+                - $ref: 'common.yaml#/components/schemas/Timestamp'
+                - type: 'null'
+            version: { $ref: 'common.yaml#/components/schemas/Version' }
+
+    Order:
+      allOf:
+        - $ref: '#/components/schemas/OrderSummary'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items: { $ref: '#/components/schemas/OrderItem' }
+            table_id:
+              description: Required for `DINE_IN`.
+              oneOf:
+                - $ref: 'common.yaml#/components/schemas/Uuid'
+                - type: 'null'
+            customer_id:
+              oneOf:
+                - $ref: 'common.yaml#/components/schemas/Uuid'
+                - type: 'null'
+            delivery_address:
+              description: Required for `DELIVERY`. PII — subject to DEC-010 retention rules.
+              oneOf:
+                - $ref: '#/components/schemas/DeliveryAddress'
+                - type: 'null'
+            rider_id:
+              description: Set at READY -> ASSIGNED for delivery orders.
+              oneOf:
+                - $ref: 'common.yaml#/components/schemas/Uuid'
+                - type: 'null'
+            cancellation:
+              oneOf:
+                - $ref: '#/components/schemas/Cancellation'
+                - type: 'null'
+            payment_status:
+              allOf: [{ $ref: 'common.yaml#/components/schemas/PaymentStatus' }]
+              description: |
+                Read-only roll-up of the order's payments. Capture is `payments.yaml`, BLOCKED on
+                DEC-005 — this field reports state, it does not drive it.
+              readOnly: true
+            note:
+              type: string
+              maxLength: 500
+
+    OrderCreate:
+      type: object
+      description: |
+        `outlet_id` is NOT accepted — it is resolved from the session. Totals are NOT accepted — the
+        pricing engine computes them. Discount and tax fields are NOT accepted (DEC-008, DEC-004).
+      required: [type, items]
+      additionalProperties: false
+      properties:
+        type: { $ref: 'common.yaml#/components/schemas/OrderType' }
+        initial_status:
+          allOf: [{ $ref: 'common.yaml#/components/schemas/OrderStatus' }]
+          description: 'Only `DRAFT` (default) or `PLACED` are accepted. Anything else is 400.'
+          default: DRAFT
+        channel_id:
+          allOf: [{ $ref: 'common.yaml#/components/schemas/Uuid' }]
+          description: Omit for a POS-originated order.
+        channel_order_id:
+          type: string
+          description: Aggregator order id, for channel-originated orders. Deduplicated by `DB-UQ-02`.
+        table_id:
+          allOf: [{ $ref: 'common.yaml#/components/schemas/Uuid' }]
+          description: Required when `type` is `DINE_IN`.
+        customer_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        delivery_address:
+          allOf: [{ $ref: '#/components/schemas/DeliveryAddress' }]
+          description: Required when `type` is `DELIVERY`.
+        note:
+          type: string
+          maxLength: 500
+        items:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/OrderItemWrite' }
+
+    OrderUpdate:
+      type: object
+      description: '`status` is NOT patchable — use `POST /orders/{order_id}/transitions`.'
+      required: [version]
+      additionalProperties: false
+      properties:
+        version: { $ref: 'common.yaml#/components/schemas/Version' }
+        table_id:
+          oneOf:
+            - $ref: 'common.yaml#/components/schemas/Uuid'
+            - type: 'null'
+        customer_id:
+          oneOf:
+            - $ref: 'common.yaml#/components/schemas/Uuid'
+            - type: 'null'
+        delivery_address:
+          oneOf:
+            - $ref: '#/components/schemas/DeliveryAddress'
+            - type: 'null'
+        note:
+          type: string
+          maxLength: 500
+        items:
+          type: array
+          description: |
+            Desired final line set. Post-KOT, the difference against the current set becomes a DELTA
+            KOT ticket marked as an amendment — never a silent replacement.
+          items: { $ref: '#/components/schemas/OrderItemWrite' }
+
+    OrderItem:
+      allOf:
+        - $ref: 'common.yaml#/components/schemas/AuditFields'
+        - type: object
+          required: [id, item_id, name_snapshot, qty, unit_price, line_total]
+          properties:
+            id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+            item_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+            variant_id:
+              oneOf:
+                - $ref: 'common.yaml#/components/schemas/Uuid'
+                - type: 'null'
+            name_snapshot:
+              type: string
+              description: |
+                Item name as it was at order time. SNAPSHOT. Joining to `menu_items` to display an old
+                order's name or price is a real and common bug that produces invoices disagreeing with
+                what the customer paid.
+              readOnly: true
+            qty:
+              type: integer
+              minimum: 1
+            unit_price:
+              allOf: [{ $ref: 'common.yaml#/components/schemas/Money' }]
+              description: '`unit_price_minor` SNAPSHOT, server-written. Never a client input.'
+              readOnly: true
+            line_total:
+              allOf: [{ $ref: 'common.yaml#/components/schemas/Money' }]
+              description: 'Server-computed: (`unit_price` + sum of modifier deltas) x `qty`.'
+              readOnly: true
+            modifiers:
+              type: array
+              items: { $ref: '#/components/schemas/OrderItemModifier' }
+            note:
+              type: string
+              maxLength: 240
+
+    OrderItemWrite:
+      type: object
+      description: Prices are never accepted from the client; the pricing engine snapshots them server-side.
+      required: [item_id, qty]
+      additionalProperties: false
+      properties:
+        id:
+          allOf: [{ $ref: 'common.yaml#/components/schemas/Uuid' }]
+          description: Existing line id, on amendment. Omit to add a new line.
+        item_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        variant_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        qty:
+          type: integer
+          minimum: 1
+        modifier_ids:
+          type: array
+          description: Must satisfy each group's `min_select`/`max_select`; a violation is 422.
+          items: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        note:
+          type: string
+          maxLength: 240
+
+    OrderItemModifier:
+      type: object
+      required: [modifier_id, name_snapshot, price_delta]
+      properties:
+        modifier_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        name_snapshot:
+          type: string
+          readOnly: true
+        price_delta:
+          allOf: [{ $ref: 'common.yaml#/components/schemas/Money' }]
+          description: '`price_delta_minor` SNAPSHOT. May be negative.'
+          readOnly: true
+
+    OrderTotals:
+      type: object
+      description: |
+        Server-computed by the centralized pricing engine. Never client-supplied.
+
+        OPEN DECISION — DEC-004: there is NO `tax` field and no tax breakup. It is deliberately absent
+        rather than guessed; adding it later is additive, inventing it now is a data migration.
+        OPEN DECISION — DEC-008: there is NO `discount` field and no stacking rules.
+      required: [subtotal, total]
+      properties:
+        subtotal:
+          allOf: [{ $ref: 'common.yaml#/components/schemas/Money' }]
+          description: Sum of line totals before charges.
+        charges:
+          type: array
+          description: |
+            Non-tax charges such as packaging or delivery, each a named `Money`. Tax is NOT expressible
+            here — it awaits DEC-004.
+          items:
+            type: object
+            required: [code, amount]
+            properties:
+              code: { type: string }
+              amount: { $ref: 'common.yaml#/components/schemas/Money' }
+        total:
+          allOf: [{ $ref: 'common.yaml#/components/schemas/Money' }]
+          description: 'Amount payable as currently computable: `subtotal` + charges. Pre-DEC-004, this excludes tax.'
+        refunded_total:
+          allOf: [{ $ref: 'common.yaml#/components/schemas/Money' }]
+          description: Sum of refunds initiated against this order.
+          readOnly: true
+
+    DeliveryAddress:
+      type: object
+      description: PII. Never written to audit rows (protocol rule 10). Retention per DEC-010.
+      required: [line1, city, pincode]
+      additionalProperties: false
+      properties:
+        label: { type: string, maxLength: 60 }
+        line1: { type: string, maxLength: 200 }
+        line2: { type: string, maxLength: 200 }
+        city: { type: string, maxLength: 100 }
+        pincode: { type: string, maxLength: 12 }
+        latitude: { type: number }
+        longitude: { type: number }
+        contact_phone:
+          type: string
+          description: PII.
+
+    Cancellation:
+      type: object
+      description: Populated once the order reaches `CANCELLED`.
+      required: [reason_code, cancelled_at, cancelled_by]
+      properties:
+        reason_code: { $ref: 'common.yaml#/components/schemas/ReasonCode' }
+        reason_note: { type: string }
+        cancelled_at: { $ref: 'common.yaml#/components/schemas/Timestamp' }
+        cancelled_by:
+          allOf: [{ $ref: 'common.yaml#/components/schemas/Uuid' }]
+          description: The OPERATOR who performed the action, not the approver.
+        approved_by:
+          description: Approver's user id when the action went through elevated approval; null otherwise.
+          oneOf:
+            - $ref: 'common.yaml#/components/schemas/Uuid'
+            - type: 'null'
+        was_post_kot:
+          type: boolean
+          description: True when the order had reached `KOT_CREATED` or beyond.
+        wastage_recorded:
+          type: boolean
+          description: |
+            OPEN DECISION — DEC-003: stays `false` until inventory automation lands and post-KOT
+            cancellation writes a wastage entry. Reported, not requested — the client cannot set it.
+          readOnly: true
+
+    OrderStatusHistoryEntry:
+      type: object
+      description: An append-only `order_status_history` row.
+      required: [id, order_id, to_status, actor_id, created_at]
+      properties:
+        id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        order_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        from_status:
+          description: Null for the initial row.
+          oneOf:
+            - $ref: 'common.yaml#/components/schemas/OrderStatus'
+            - type: 'null'
+        to_status: { $ref: 'common.yaml#/components/schemas/OrderStatus' }
+        actor_id:
+          allOf: [{ $ref: 'common.yaml#/components/schemas/Uuid' }]
+          description: Operator who acted. Null only for system-driven transitions.
+        approved_by:
+          oneOf:
+            - $ref: 'common.yaml#/components/schemas/Uuid'
+            - type: 'null'
+        reason_code:
+          oneOf:
+            - $ref: 'common.yaml#/components/schemas/ReasonCode'
+            - type: 'null'
+        correlation_id: { type: string }
+        created_at: { $ref: 'common.yaml#/components/schemas/Timestamp' }
+
+    RefundCreate:
+      type: object
+      description: |
+        Refund INITIATION. Method, gateway routing and capture semantics are NOT accepted here —
+        `payments.yaml` owns them and is BLOCKED on DEC-005.
+      required: [reason_code]
+      additionalProperties: false
+      properties:
+        reason_code:
+          allOf: [{ $ref: 'common.yaml#/components/schemas/ReasonCode' }]
+          description: Mandatory, from the configured list.
+        reason_note:
+          type: string
+          maxLength: 500
+        amount:
+          allOf: [{ $ref: 'common.yaml#/components/schemas/Money' }]
+          description: |
+            Full-refund shortcut. Mutually exclusive with `lines`. Omit both for a full refund of the
+            captured amount. Must not exceed the captured amount (422).
+        lines:
+          type: array
+          description: Partial refund at line-item granularity. Mutually exclusive with `amount`.
+          items:
+            type: object
+            required: [order_item_id, amount]
+            additionalProperties: false
+            properties:
+              order_item_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+              qty:
+                type: integer
+                minimum: 1
+                description: Units being refunded. Omit to refund the whole line.
+              amount: { $ref: 'common.yaml#/components/schemas/Money' }
+        elevated_approval:
+          allOf: [{ $ref: 'common.yaml#/components/schemas/ElevatedApproval' }]
+          description: Present only when replaying after a 403 `APPROVAL_REQUIRED`.
+
+    Refund:
+      allOf:
+        - $ref: 'common.yaml#/components/schemas/AuditFields'
+        - type: object
+          required: [id, order_id, amount, status, reason_code, original_business_date]
+          properties:
+            id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+            order_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+            payment_id:
+              description: |
+                The original payment being reconciled against. Null while the payments module has not
+                yet bound it — DEC-005.
+              oneOf:
+                - $ref: 'common.yaml#/components/schemas/Uuid'
+                - type: 'null'
+            amount: { $ref: 'common.yaml#/components/schemas/Money' }
+            status:
+              allOf: [{ $ref: 'common.yaml#/components/schemas/PaymentStatus' }]
+              description: |
+                `PENDING` on initiation. Progression to `REFUNDED` / `PARTIALLY_REFUNDED` / `FAILED` is
+                driven by the payments module (BLOCKED on DEC-005), not by this API.
+            reason_code: { $ref: 'common.yaml#/components/schemas/ReasonCode' }
+            reason_note: { type: string }
+            original_business_date:
+              allOf: [{ $ref: 'common.yaml#/components/schemas/BusinessDate' }]
+              description: |
+                Business date of the ORIGINAL payment. Server-computed, never client-supplied. Reports
+                for that day are adjusted, not the day the refund was taken.
+              readOnly: true
+            initiated_by:
+              allOf: [{ $ref: 'common.yaml#/components/schemas/Uuid' }]
+              description: The OPERATOR. Not the approver.
+            approved_by:
+              oneOf:
+                - $ref: 'common.yaml#/components/schemas/Uuid'
+                - type: 'null'
+            lines:
+              type: array
+              items:
+                type: object
+                properties:
+                  order_item_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+                  qty: { type: integer }
+                  amount: { $ref: 'common.yaml#/components/schemas/Money' }

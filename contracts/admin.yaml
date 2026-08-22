@@ -1,0 +1,269 @@
+openapi: 3.0.3
+info:
+  title: Kapmeta Admin API
+  description: >
+    System Config + App Shell screen's destructive/sensitive administrative operations.
+
+
+    Hardening note (Phase 12-15 hardening plan): the reference application (PetPooja)
+    exposed these actions as one-click buttons with no visible confirmation step,
+    which was flagged as a hardening finding. Every endpoint in this file therefore:
+      1. requires the caller's JWT to carry `role: admin` (enforced via
+         `x-required-role: admin`, stricter than `manager`);
+      2. requires an explicit `confirm: true` field in the request body — any other
+         value, or a missing field, is rejected with 400 before the action runs;
+      3. writes an entry to the system audit log (returned inline in the response as
+         `audit_log_entry`) recording actor, action, and timestamp, regardless of
+         outcome.
+  version: "1.0.0"
+servers:
+  - url: https://api.kapmeta.com/v1
+security:
+  - BearerAuth: []
+paths:
+  /admin/reset-bill-no:
+    post:
+      operationId: resetBillNumber
+      summary: Reset the outlet's next bill number sequence
+      description: Destructive/sensitive admin action. Requires role admin and confirm=true in the body. Writes an audit log entry (action `admin.reset_bill_no`) capturing the previous and new starting bill number.
+      tags: [Admin]
+      x-required-role: admin
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ConfirmRequest'
+                - type: object
+                  required: [next_bill_number]
+                  properties:
+                    next_bill_number:
+                      type: integer
+                      minimum: 1
+      responses:
+        '200':
+          $ref: '#/components/responses/AdminActionResult'
+        '400':
+          $ref: 'common.yaml#/components/responses/BadRequest'
+        '403':
+          $ref: 'common.yaml#/components/responses/Forbidden'
+  /admin/reset-sync-code:
+    post:
+      operationId: resetSyncCode
+      summary: Reset the outlet's device sync pairing code
+      description: Destructive/sensitive admin action. Requires role admin and confirm=true in the body. Invalidates existing paired-device sync sessions. Writes an audit log entry (action `admin.reset_sync_code`).
+      tags: [Admin]
+      x-required-role: admin
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/AdminActionResult'
+        '400':
+          $ref: 'common.yaml#/components/responses/BadRequest'
+        '403':
+          $ref: 'common.yaml#/components/responses/Forbidden'
+  /admin/database-migration:
+    post:
+      operationId: runDatabaseMigration
+      summary: Trigger a database migration run
+      description: Destructive/sensitive admin action. Requires role admin and confirm=true in the body. Runs pending schema migrations for the outlet's tenant database. Writes an audit log entry (action `admin.database_migration`) with the migration set applied.
+      tags: [Admin]
+      x-required-role: admin
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ConfirmRequest'
+                - type: object
+                  properties:
+                    target_version:
+                      type: string
+                      nullable: true
+                      description: Optional explicit migration version to migrate to; omit to migrate to latest.
+      responses:
+        '200':
+          $ref: '#/components/responses/AdminActionResult'
+        '400':
+          $ref: 'common.yaml#/components/responses/BadRequest'
+        '403':
+          $ref: 'common.yaml#/components/responses/Forbidden'
+  /admin/remove-orders-kot:
+    post:
+      operationId: removeOrdersAndKots
+      summary: Bulk-remove historical orders and their KOTs before a given date
+      description: Destructive/sensitive admin action. Requires role admin and confirm=true in the body. Permanently deletes order and KOT records older than `before_date`. Writes an audit log entry (action `admin.remove_orders_kot`) with the count removed and the cutoff date used.
+      tags: [Admin]
+      x-required-role: admin
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ConfirmRequest'
+                - type: object
+                  required: [before_date]
+                  properties:
+                    before_date:
+                      type: string
+                      format: date
+      responses:
+        '200':
+          $ref: '#/components/responses/AdminActionResult'
+        '400':
+          $ref: 'common.yaml#/components/responses/BadRequest'
+        '403':
+          $ref: 'common.yaml#/components/responses/Forbidden'
+  /admin/remove-backups:
+    post:
+      operationId: removeBackups
+      summary: Remove stored database backups older than a given date
+      description: Destructive/sensitive admin action. Requires role admin and confirm=true in the body. Writes an audit log entry (action `admin.remove_backups`) with the count removed.
+      tags: [Admin]
+      x-required-role: admin
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ConfirmRequest'
+                - type: object
+                  required: [before_date]
+                  properties:
+                    before_date:
+                      type: string
+                      format: date
+      responses:
+        '200':
+          $ref: '#/components/responses/AdminActionResult'
+        '400':
+          $ref: 'common.yaml#/components/responses/BadRequest'
+        '403':
+          $ref: 'common.yaml#/components/responses/Forbidden'
+  /admin/logs:
+    get:
+      operationId: getAdminLogs
+      summary: View system/audit logs
+      description: Requires role admin. Read-only; not destructive, so no confirm field is required, but access itself is logged.
+      tags: [Admin]
+      x-required-role: admin
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/PageParam'
+        - $ref: 'common.yaml#/components/parameters/PageSizeParam'
+        - name: action
+          in: query
+          schema:
+            type: string
+          description: Filter by audit log action prefix, e.g. "admin.", "order.".
+        - name: date_from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: date_to
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Paged audit log entries.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: 'common.yaml#/components/schemas/AuditLogEntry'
+                  meta:
+                    $ref: 'common.yaml#/components/schemas/PaginationMeta'
+        '403':
+          $ref: 'common.yaml#/components/responses/Forbidden'
+  /admin/machines:
+    get:
+      operationId: getSyncMachines
+      summary: List paired devices/machines and their sync topology status
+      description: Requires role admin. Read-only sync topology check (which POS terminals/KDS devices are paired, last sync time, connectivity state).
+      tags: [Admin]
+      x-required-role: admin
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+      responses:
+        '200':
+          description: List of machines.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Machine'
+        '403':
+          $ref: 'common.yaml#/components/responses/Forbidden'
+components:
+  schemas:
+    ConfirmRequest:
+      type: object
+      required: [confirm]
+      description: Base shape required on every destructive admin action; `confirm` must be exactly `true` or the request is rejected with 400.
+      properties:
+        confirm:
+          type: boolean
+          enum: [true]
+    Machine:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        outlet_id:
+          type: string
+          format: uuid
+        device_name:
+          type: string
+        device_type:
+          type: string
+          enum: [pos_terminal, kds, printer_gateway]
+        last_synced_at:
+          type: string
+          format: date-time
+          nullable: true
+        online:
+          type: boolean
+  responses:
+    AdminActionResult:
+      description: Action completed; audit log entry created.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              success:
+                type: boolean
+                example: true
+              audit_log_entry:
+                $ref: 'common.yaml#/components/schemas/AuditLogEntry'

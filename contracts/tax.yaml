@@ -1,0 +1,302 @@
+openapi: 3.0.3
+info:
+  title: Kapmeta Tax API
+  description: >
+    Tax Master screen backing API. Supports the Phase 0 tax model: taxes are defined
+    once (name, rate, type) and applied via channel-scoped rules that distinguish
+    dine_in vs online channels and backward-computed vs forward-computed tax.
+  version: "1.0.0"
+servers:
+  - url: https://api.kapmeta.com/v1
+security:
+  - BearerAuth: []
+paths:
+  /taxes:
+    get:
+      operationId: listTaxes
+      summary: List taxes
+      tags: [Tax]
+      x-required-role: manager
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+      responses:
+        '200':
+          description: List of taxes.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Tax'
+    post:
+      operationId: createTax
+      summary: Create a tax
+      tags: [Tax]
+      x-required-role: manager
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaxUpsertRequest'
+      responses:
+        '201':
+          description: Tax created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tax'
+        '400':
+          $ref: 'common.yaml#/components/responses/BadRequest'
+  /taxes/{id}:
+    get:
+      operationId: getTax
+      summary: Get a tax
+      tags: [Tax]
+      x-required-role: manager
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Tax.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tax'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+    patch:
+      operationId: updateTax
+      summary: Update a tax
+      tags: [Tax]
+      x-required-role: manager
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaxUpsertRequest'
+      responses:
+        '200':
+          description: Tax updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tax'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+    delete:
+      operationId: deleteTax
+      summary: Delete a tax
+      tags: [Tax]
+      x-required-role: manager
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Deleted.
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+        '409':
+          description: Tax still referenced by one or more tax-channel-rules.
+          content:
+            application/json:
+              schema:
+                $ref: 'common.yaml#/components/schemas/ErrorResponse'
+  /tax-channel-rules:
+    get:
+      operationId: listTaxChannelRules
+      summary: List tax-channel rules
+      tags: [Tax]
+      x-required-role: manager
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - name: channel
+          in: query
+          schema:
+            type: string
+            example: dine_in
+      responses:
+        '200':
+          description: List of tax-channel rules.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TaxChannelRule'
+    post:
+      operationId: createTaxChannelRule
+      summary: Create a tax-channel rule
+      description: Associates a tax with a channel (e.g. dine_in vs online/swiggy/zomato) and declares whether the tax is computed backward (extracted from an inclusive price) or forward (added on top).
+      tags: [Tax]
+      x-required-role: manager
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaxChannelRuleUpsertRequest'
+      responses:
+        '201':
+          description: Rule created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaxChannelRule'
+        '400':
+          $ref: 'common.yaml#/components/responses/BadRequest'
+  /tax-channel-rules/{id}:
+    patch:
+      operationId: updateTaxChannelRule
+      summary: Update a tax-channel rule
+      tags: [Tax]
+      x-required-role: manager
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaxChannelRuleUpsertRequest'
+      responses:
+        '200':
+          description: Rule updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaxChannelRule'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+    delete:
+      operationId: deleteTaxChannelRule
+      summary: Delete a tax-channel rule
+      tags: [Tax]
+      x-required-role: manager
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Deleted.
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+components:
+  schemas:
+    Tax:
+      type: object
+      required: [id, outlet_id, name, rate_percent, tax_type]
+      properties:
+        id:
+          type: string
+          format: uuid
+        outlet_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: CGST
+        rate_percent:
+          type: number
+          format: double
+          example: 2.5
+        tax_type:
+          type: string
+          enum: [cgst, sgst, igst, vat, service_charge, other]
+        active:
+          type: boolean
+    TaxUpsertRequest:
+      type: object
+      required: [name, rate_percent, tax_type]
+      properties:
+        name:
+          type: string
+        rate_percent:
+          type: number
+          format: double
+        tax_type:
+          type: string
+          enum: [cgst, sgst, igst, vat, service_charge, other]
+        active:
+          type: boolean
+          default: true
+    TaxChannelRule:
+      type: object
+      required: [id, outlet_id, tax_id, channel, computation]
+      properties:
+        id:
+          type: string
+          format: uuid
+        outlet_id:
+          type: string
+          format: uuid
+        tax_id:
+          type: string
+          format: uuid
+        channel:
+          type: string
+          description: e.g. dine_in, takeaway, swiggy, zomato, direct_online.
+          example: dine_in
+        computation:
+          type: string
+          enum: [forward, backward]
+          description: forward = tax added on top of price; backward = tax extracted from a tax-inclusive price.
+        active:
+          type: boolean
+    TaxChannelRuleUpsertRequest:
+      type: object
+      required: [tax_id, channel, computation]
+      properties:
+        tax_id:
+          type: string
+          format: uuid
+        channel:
+          type: string
+        computation:
+          type: string
+          enum: [forward, backward]
+        active:
+          type: boolean
+          default: true

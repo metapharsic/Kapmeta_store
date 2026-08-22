@@ -1,0 +1,52 @@
+{
+  "name": "kapmeta-pos-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Multi-outlet restaurant POS and operations platform",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "services/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w @kapmeta/api\" \"npm run dev -w @kapmeta/pos-web\"",
+    "start:all": "node scripts/startup.js",
+    "stop:all": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\shutdown.ps1",
+    "status": "ts-node scripts/status.ts",
+    "logs:errors": "ts-node scripts/read-errors.ts",
+    "checkpoint:status": "ts-node scripts/checkpoint-manager.ts status",
+    "checkpoint:update": "ts-node scripts/checkpoint-manager.ts update",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm test --workspaces --if-present",
+    "test:unit": "vitest run",
+    "typecheck": "node scripts/typecheck.js",
+    "lint": "eslint apps packages services --max-warnings=-1",
+    "contracts:validate": "redocly lint --config=redocly.yaml",
+    "db:migrate": "node scripts/db-migrate.js",
+    "seed:dynamic": "ts-node scripts/seed-dynamic-data.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^17.4.2",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@redocly/cli": "^2.46.0",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^20.0.0",
+    "@types/pg": "^8.11.10",
+    "@typescript-eslint/eslint-plugin": "^8.66.0",
+    "@typescript-eslint/parser": "^8.66.0",
+    "concurrently": "^8.2.2",
+    "eslint": "^10.8.1",
+    "pg-mem": "^3.0.14",
+    "prisma": "^5.22.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.0.0",
+    "vitest": "^4.1.10"
+  },
+  "prisma": {
+    "schema": "kapmeta/schema.prisma"
+  }
+}

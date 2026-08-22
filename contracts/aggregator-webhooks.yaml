@@ -1,0 +1,218 @@
+openapi: 3.0.3
+info:
+  title: Kapmeta Aggregator Webhooks API
+  description: >
+    Online Live Feed screen backing API — inbound Swiggy/Zomato webhooks and the
+    outbound "mark food ready" (MFR) actions, including the resolved bulk MFR button
+    which reports per-order success/failure rather than a single pass/fail result.
+  version: "1.0.0"
+servers:
+  - url: https://api.kapmeta.com/v1
+paths:
+  /webhooks/swiggy:
+    post:
+      operationId: swiggyWebhook
+      summary: Inbound webhook from Swiggy (new order, status update, cancellation)
+      tags: [Aggregator Webhooks]
+      security:
+        - SwiggySignature: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SwiggyWebhookPayload'
+      responses:
+        '200':
+          description: Webhook accepted and processed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookAck'
+        '400':
+          $ref: 'common.yaml#/components/responses/BadRequest'
+        '401':
+          description: Missing or invalid Swiggy signature header.
+          content:
+            application/json:
+              schema:
+                $ref: 'common.yaml#/components/schemas/ErrorResponse'
+  /webhooks/zomato:
+    post:
+      operationId: zomatoWebhook
+      summary: Inbound webhook from Zomato (new order, status update, cancellation)
+      tags: [Aggregator Webhooks]
+      security:
+        - ZomatoSignature: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ZomatoWebhookPayload'
+      responses:
+        '200':
+          description: Webhook accepted and processed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookAck'
+        '400':
+          $ref: 'common.yaml#/components/responses/BadRequest'
+        '401':
+          description: Missing or invalid Zomato signature header.
+          content:
+            application/json:
+              schema:
+                $ref: 'common.yaml#/components/schemas/ErrorResponse'
+  /orders/{id}/aggregator/food-ready:
+    post:
+      operationId: markFoodReady
+      summary: Mark a single aggregator order's food as ready for pickup
+      tags: [Aggregator Webhooks]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Aggregator notified; order updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarkFoodReadyResult'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+        '409':
+          description: Order is not an active aggregator order, or is not in a state that permits marking food ready.
+          content:
+            application/json:
+              schema:
+                $ref: 'common.yaml#/components/schemas/ErrorResponse'
+  /orders/aggregator/mark-food-ready-bulk:
+    post:
+      operationId: markFoodReadyBulk
+      summary: Bulk "mark food ready" (MFR) for multiple aggregator orders
+      description: >
+        Resolved MFR button from the Online Live Feed screen: takes an array of order
+        ids and attempts to mark each ready with its aggregator. Always returns 200
+        (unless the request itself is malformed) with a per-order result array so that
+        partial failure is visible to the operator instead of being swallowed by a
+        single aggregate success/failure flag.
+      tags: [Aggregator Webhooks]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [order_ids]
+              properties:
+                order_ids:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                    format: uuid
+      responses:
+        '200':
+          description: Per-order results (individual orders may still have failed).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MarkFoodReadyResult'
+        '400':
+          $ref: 'common.yaml#/components/responses/BadRequest'
+components:
+  securitySchemes:
+    SwiggySignature:
+      type: apiKey
+      in: header
+      name: X-Swiggy-Signature
+      description: HMAC signature of the raw request body, computed with the outlet's Swiggy webhook secret; validated before the payload is trusted.
+    ZomatoSignature:
+      type: apiKey
+      in: header
+      name: X-Zomato-Signature
+      description: HMAC signature of the raw request body, computed with the outlet's Zomato webhook secret; validated before the payload is trusted.
+  schemas:
+    SwiggyWebhookPayload:
+      type: object
+      required: [event_type, swiggy_order_id, outlet_external_id]
+      properties:
+        event_type:
+          type: string
+          enum: [order_placed, order_status_update, order_cancelled]
+        swiggy_order_id:
+          type: string
+        outlet_external_id:
+          type: string
+          description: Swiggy's identifier for the outlet; mapped server-side to Kapmeta's outlet_id.
+        status:
+          type: string
+          nullable: true
+        payload:
+          type: object
+          description: Raw Swiggy order payload (items, customer, totals) when event_type is order_placed.
+          additionalProperties: true
+    ZomatoWebhookPayload:
+      type: object
+      required: [event_type, zomato_order_id, outlet_external_id]
+      properties:
+        event_type:
+          type: string
+          enum: [order_placed, order_status_update, order_cancelled]
+        zomato_order_id:
+          type: string
+        outlet_external_id:
+          type: string
+        status:
+          type: string
+          nullable: true
+        payload:
+          type: object
+          additionalProperties: true
+    WebhookAck:
+      type: object
+      properties:
+        received:
+          type: boolean
+          example: true
+        kapmeta_order_id:
+          type: string
+          format: uuid
+          nullable: true
+    MarkFoodReadyResult:
+      type: object
+      required: [order_id, success]
+      properties:
+        order_id:
+          type: string
+          format: uuid
+        success:
+          type: boolean
+        aggregator:
+          type: string
+          example: swiggy
+        error_code:
+          type: string
+          nullable: true
+          description: Set when success is false, e.g. AGGREGATOR_TIMEOUT, ORDER_ALREADY_READY, ORDER_NOT_FOUND.
+        error_message:
+          type: string
+          nullable: true

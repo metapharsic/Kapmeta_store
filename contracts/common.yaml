@@ -1,0 +1,189 @@
+openapi: 3.0.3
+info:
+  title: Kapmeta Common Components
+  description: >
+    Shared components (schemas, parameters, headers, security schemes) reused across
+    all Kapmeta API contract files. This document is not intended to be served on its
+    own; other contract files `$ref` into it (e.g. `common.yaml#/components/schemas/Money`).
+    All Kapmeta APIs are versioned under the `/v1` path prefix.
+  version: "1.0.0"
+servers:
+  - url: https://api.kapmeta.com/v1
+    description: Production
+  - url: https://staging-api.kapmeta.com/v1
+    description: Staging
+paths: {}
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        JWT bearer token issued at login. The token payload carries `outlet_ids`
+        (outlets the user may access) and `role`, one of:
+          - `cashier`: create/modify orders, print bills/KOTs, view tables, mark items OOS.
+          - `manager`: all cashier permissions plus menu/tax/settings CRUD, day summary
+            and item reports, order overrides (grand-total override, cancels).
+          - `admin`: all manager permissions plus the destructive/system endpoints in
+            `admin.yaml` (bill number reset, sync code reset, database migration, log
+            purges, etc.), which additionally require an explicit `confirm: true` flag
+            in the request body.
+        Endpoints declare their minimum required role via the `x-required-role`
+        extension on the operation.
+  parameters:
+    OutletIdHeader:
+      name: X-Outlet-Id
+      in: header
+      required: true
+      description: >
+        The outlet this request is scoped to. Kapmeta's data model is multi-outlet-ready
+        (every domain record carries `outlet_id`) even though v1 UI targets a single
+        outlet per deployment. Nearly every endpoint requires this header; the server
+        rejects requests where the caller's JWT does not include the given outlet.
+      schema:
+        type: string
+        format: uuid
+      example: "8f14e45f-ceea-467e-b3d6-2f5f2a0c3a19"
+    PageParam:
+      name: page
+      in: query
+      required: false
+      description: 1-indexed page number.
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSizeParam:
+      name: pageSize
+      in: query
+      required: false
+      description: Number of items per page.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 25
+  headers:
+    RateLimitRemaining:
+      description: Number of requests remaining in the current rate-limit window.
+      schema:
+        type: integer
+  schemas:
+    Money:
+      type: number
+      format: double
+      multipleOf: 0.01
+      description: A monetary amount, always expressed to exactly 2 decimal places, in the outlet's base currency.
+      example: 249.50
+    OrderStatus:
+      type: string
+      description: >
+        Canonical order lifecycle status (Phase 0 decision). `kot_sent` is tracked as a
+        separate boolean flag on the order and is NOT part of this enum, since an order
+        can have KOTs sent while remaining in `open` or `running` status.
+      enum:
+        - open
+        - running
+        - printed
+        - paid
+        - cancelled
+    PaginationMeta:
+      type: object
+      required: [page, pageSize, totalItems, totalPages]
+      properties:
+        page:
+          type: integer
+          example: 1
+        pageSize:
+          type: integer
+          example: 25
+        totalItems:
+          type: integer
+          example: 137
+        totalPages:
+          type: integer
+          example: 6
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code, e.g. `VALIDATION_ERROR`, `NOT_FOUND`, `CONFLICT`, `FORBIDDEN`.
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              example: "grand_total_amount override requires a non-empty reason."
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                  issue:
+                    type: string
+    AuditLogEntry:
+      type: object
+      description: >
+        A record written to order_audit_log (or the equivalent system audit log for
+        admin.yaml operations) whenever a sensitive or overriding action occurs.
+      required: [id, action, actor_id, occurred_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        action:
+          type: string
+          example: "order.override_total"
+        actor_id:
+          type: string
+          format: uuid
+        outlet_id:
+          type: string
+          format: uuid
+        reason:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+        occurred_at:
+          type: string
+          format: date-time
+  responses:
+    BadRequest:
+      description: Request failed validation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Missing or invalid bearer token.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Caller's role/outlet scope does not permit this action.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource does not exist (or is not visible in the caller's outlet scope).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Request conflicts with current resource state (e.g. stale version, duplicate).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'

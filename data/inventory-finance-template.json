@@ -1,0 +1,62 @@
+{
+  "ingredients": [
+    {
+      "name": "Basmati Rice",
+      "unitOfMeasure": "kg",
+      "reorderLevel": 10,
+      "unitCost": 8000
+    },
+    {
+      "name": "Chicken Breast",
+      "unitOfMeasure": "kg",
+      "reorderLevel": 5,
+      "unitCost": 22000
+    },
+    {
+      "name": "Tomato Puree",
+      "unitOfMeasure": "l",
+      "reorderLevel": 20,
+      "unitCost": 5000
+    }
+  ],
+  "recipes": [
+    {
+      "menuItemName": "Chicken Biryani",
+      "ingredients": [
+        {
+          "ingredientName": "Basmati Rice",
+          "quantity": 0.250,
+          "yieldPercent": 100
+        },
+        {
+          "ingredientName": "Chicken Breast",
+          "quantity": 0.200,
+          "yieldPercent": 85
+        }
+      ]
+    },
+    {
+      "menuItemName": "Butter Chicken",
+      "ingredients": [
+        {
+          "ingredientName": "Chicken Breast",
+          "quantity": 0.200,
+          "yieldPercent": 85
+        },
+        {
+          "ingredientName": "Tomato Puree",
+          "quantity": 0.150,
+          "yieldPercent": 100
+        }
+      ]
+    }
+  ],
+  "vendors": [
+    {
+      "name": "Metro Cash & Carry",
+      "phone": "9876543210",
+      "email": "sales@metro.co.in",
+      "taxNumber": "29AAECM1234N1Z5"
+    }
+  ]
+}

@@ -1,0 +1,354 @@
+openapi: 3.0.3
+info:
+  title: Kapmeta Settings API
+  description: Billing + Print Config screen backing API — outlet billing settings, outlet print settings, and payment types CRUD. Nothing here may be hardcoded client-side; every value is admin-configurable through these endpoints.
+  version: "1.0.0"
+servers:
+  - url: https://api.kapmeta.com/v1
+security:
+  - BearerAuth: []
+paths:
+  /outlets/{id}/billing-settings:
+    get:
+      operationId: getBillingSettings
+      summary: Get outlet billing settings
+      tags: [Settings]
+      x-required-role: manager
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Billing settings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingSettings'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+    put:
+      operationId: putBillingSettings
+      summary: Replace outlet billing settings
+      tags: [Settings]
+      x-required-role: manager
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BillingSettingsUpsertRequest'
+      responses:
+        '200':
+          description: Settings updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingSettings'
+        '400':
+          $ref: 'common.yaml#/components/responses/BadRequest'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+  /outlets/{id}/print-settings:
+    get:
+      operationId: getPrintSettings
+      summary: Get outlet print settings
+      tags: [Settings]
+      x-required-role: manager
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Print settings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrintSettings'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+    put:
+      operationId: putPrintSettings
+      summary: Replace outlet print settings
+      tags: [Settings]
+      x-required-role: manager
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrintSettingsUpsertRequest'
+      responses:
+        '200':
+          description: Settings updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrintSettings'
+        '400':
+          $ref: 'common.yaml#/components/responses/BadRequest'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+  /payment-types:
+    get:
+      operationId: listPaymentTypes
+      summary: List payment types
+      tags: [Settings]
+      x-required-role: manager
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+      responses:
+        '200':
+          description: List of payment types.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PaymentType'
+    post:
+      operationId: createPaymentType
+      summary: Create a payment type
+      tags: [Settings]
+      x-required-role: manager
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentTypeUpsertRequest'
+      responses:
+        '201':
+          description: Payment type created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentType'
+        '400':
+          $ref: 'common.yaml#/components/responses/BadRequest'
+  /payment-types/{id}:
+    patch:
+      operationId: updatePaymentType
+      summary: Update a payment type
+      tags: [Settings]
+      x-required-role: manager
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentTypeUpsertRequest'
+      responses:
+        '200':
+          description: Payment type updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentType'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+    delete:
+      operationId: deletePaymentType
+      summary: Delete a payment type
+      tags: [Settings]
+      x-required-role: manager
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Deleted.
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+        '409':
+          description: Payment type referenced by existing orders/payments; deactivate instead of deleting.
+          content:
+            application/json:
+              schema:
+                $ref: 'common.yaml#/components/schemas/ErrorResponse'
+components:
+  schemas:
+    BillingSettings:
+      type: object
+      required: [outlet_id, bill_number_prefix, next_bill_number]
+      properties:
+        outlet_id:
+          type: string
+          format: uuid
+        bill_number_prefix:
+          type: string
+          example: "KM-"
+        next_bill_number:
+          type: integer
+        round_off_enabled:
+          type: boolean
+        default_discount_percent:
+          type: number
+          format: double
+          nullable: true
+        allow_manual_total_override:
+          type: boolean
+          description: Gates whether cashiers/managers may call POST /orders/{id}/override-total for this outlet.
+        updated_at:
+          type: string
+          format: date-time
+    BillingSettingsUpsertRequest:
+      type: object
+      required: [bill_number_prefix]
+      properties:
+        bill_number_prefix:
+          type: string
+        round_off_enabled:
+          type: boolean
+          default: true
+        default_discount_percent:
+          type: number
+          format: double
+          nullable: true
+        allow_manual_total_override:
+          type: boolean
+          default: false
+    PrintSettings:
+      type: object
+      required: [outlet_id]
+      properties:
+        outlet_id:
+          type: string
+          format: uuid
+        bill_template:
+          type: string
+          enum: [standard, compact, detailed]
+        kot_template:
+          type: string
+          enum: [standard, compact]
+        bill_copies:
+          type: integer
+          minimum: 1
+          default: 1
+        kot_copies:
+          type: integer
+          minimum: 1
+          default: 1
+        auto_print_kot_on_add:
+          type: boolean
+        printer_routing:
+          type: array
+          description: Maps a document type/kitchen-section to a physical printer id.
+          items:
+            type: object
+            properties:
+              document_type:
+                type: string
+                enum: [bill, kot]
+              section:
+                type: string
+                nullable: true
+                description: Kitchen section (e.g. "bar", "grill") for KOT routing; null means default printer.
+              printer_id:
+                type: string
+                format: uuid
+        updated_at:
+          type: string
+          format: date-time
+    PrintSettingsUpsertRequest:
+      type: object
+      properties:
+        bill_template:
+          type: string
+          enum: [standard, compact, detailed]
+        kot_template:
+          type: string
+          enum: [standard, compact]
+        bill_copies:
+          type: integer
+          minimum: 1
+        kot_copies:
+          type: integer
+          minimum: 1
+        auto_print_kot_on_add:
+          type: boolean
+        printer_routing:
+          type: array
+          items:
+            type: object
+            properties:
+              document_type:
+                type: string
+                enum: [bill, kot]
+              section:
+                type: string
+                nullable: true
+              printer_id:
+                type: string
+                format: uuid
+    PaymentType:
+      type: object
+      required: [id, outlet_id, name, active]
+      properties:
+        id:
+          type: string
+          format: uuid
+        outlet_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: "UPI"
+        active:
+          type: boolean
+        sort_order:
+          type: integer
+    PaymentTypeUpsertRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        active:
+          type: boolean
+          default: true
+        sort_order:
+          type: integer

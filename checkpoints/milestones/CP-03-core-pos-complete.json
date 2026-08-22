@@ -1,0 +1,15 @@
+{
+  "gateId": "CP-03",
+  "title": "Core POS Feature-Complete",
+  "phase": "4-6",
+  "status": "PASSED",
+  "date": "2026-08-09",
+  "signatory": "Tech Lead",
+  "criteria": [
+    { "id": 1, "desc": "Auth, Menu, Orders, KOT, Billing, Dashboard done", "verified": true },
+    { "id": 2, "desc": "E2E dine-in / pickup / delivery pass", "verified": true },
+    { "id": 3, "desc": "Coverage targets met (55 tests passing)", "verified": true },
+    { "id": 4, "desc": "In-transaction audit logging verified on privileged actions", "verified": true },
+    { "id": 5, "desc": "No open critical or high defects", "verified": true }
+  ]
+}

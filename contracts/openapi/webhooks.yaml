@@ -1,0 +1,367 @@
+openapi: 3.1.0
+info:
+  title: Kapmeta — Inbound Webhooks API
+  version: 1.0.0
+  license:
+    name: Proprietary
+  summary: Generic inbound webhook receiver envelope (signature, raw persistence, idempotency, processing outcome). No aggregator- or gateway-specific payload schema.
+  description: |
+    Traces to `docs/07-integration/integration-hub.md` and `docs/workflows/WF-INT-integration.md`
+    (WF-INT-01 inbound aggregator order, WF-INT-03 failure/retry/DLQ/replay). Conventions in
+    `docs/06-api/api-standards.md`; shared components in `common.yaml`.
+
+    ## BLOCKED — DEC-007 (which aggregators) and DEC-005 (payment gateway)
+
+    `WF-INT-integration.md` is itself marked "Blocked by: DEC-007." The workflow's GENERIC shape —
+    signature verification, persist-before-process, idempotency guard, quarantine on unknown mapping,
+    retry/DLQ — is decided and schema-backed (`inbound_events`, `DB-UQ-03 UNIQUE (channel_account_id,
+    external_event_id)`). The CONCRETE body of any given webhook is not: it depends on partner API
+    documentation that only arrives once DEC-007 selects which aggregators to certify against
+    (Swiggy/Zomato/others), and, for payment events, once DEC-005 selects a gateway.
+
+    OUT OF SCOPE, and why:
+
+      - **Aggregator order-webhook payload schema.** No `SwiggyOrderWebhook` / `ZomatoOrderWebhook`
+        body. `integration-hub.md`: "Each channel is an adapter behind one internal interface.
+        Aggregator API changes must never reach domain modules" — until DEC-007 supplies partner
+        docs, there is nothing concrete to model without guessing.
+      - **Payment gateway webhook payload schema.** No `gateway_txn_id`-bearing body. This is
+        explicitly named in `billing-payments.md` ("Gateway Webhook Idempotency ... regardless of
+        which gateway DEC-005 selects") as sharing this exact retry/DLQ machinery, but the concrete
+        event shape is gateway-specific and BLOCKED on DEC-005.
+      - **Item-mapping resolution, price/tax fallback policy.** WF-INT-01 steps 5-6 (map external
+        item IDs, validate pricing policy) require the mapping tables and fallback policy that
+        DEC-007 supplies; not modelled here.
+      - **Outbound sync endpoints** (menu/price/availability push to channels). Different direction
+        entirely; not covered by this spec.
+      - **Reconciliation / settlement matching.** Nightly reconciliation against channel-reported
+        orders and settlements is `integration-hub.md`'s Reconciliation Service and depends on both
+        DEC-007 (channel data) and DEC-005 (payment/settlement data).
+
+    IN SCOPE: the ENVELOPE every inbound webhook — regardless of which aggregator or gateway
+    eventually sends it — must satisfy per WF-INT-01/03: verified signature, raw payload persisted
+    before parsing, idempotency keyed on `(channel_account_id, external_event_id)`, and one of a
+    fixed set of processing-outcome responses (200 ack, 401 signature failure, 409 duplicate, 422
+    quarantine). The request body here is an opaque envelope wrapping a generic JSON payload — NOT a
+    typed, channel-specific schema.
+
+servers:
+  - url: https://api.kapmeta.example.com/api/v1
+    description: Production
+  - url: https://staging-api.kapmeta.example.com/api/v1
+    description: Staging
+
+tags:
+  - name: InboundWebhooks
+    description: Generic inbound webhook receiver envelope, shared by every channel/gateway.
+
+paths:
+
+  /webhooks/channels/{channel_account_id}/events:
+    post:
+      tags: [InboundWebhooks]
+      operationId: receiveInboundWebhook
+      summary: Receive one inbound webhook event from a channel account
+      description: |
+        Generic receiver for any inbound event (order, status update, or payment event) from the
+        channel account identified by `channel_account_id`. Implements WF-INT-01 steps 1-4 and 9
+        exactly; steps 5-8 (item mapping, pricing validation, order/KOT creation) are domain-module
+        concerns triggered asynchronously after this endpoint acknowledges, and are out of scope here.
+
+        Processing order, matching WF-INT-01 precisely:
+
+          1. Verify `X-Webhook-Signature` against the channel account's configured secret.
+             Verification failure is 401 — logged and alerted, and the raw body is NOT persisted for
+             an unverified sender (protects `inbound_events` from unauthenticated writes).
+          2. PERSIST RAW EVENT to `inbound_events` before any parsing. "If parsing fails on an
+             unpersisted event, the customer's order simply ceases to exist and nobody can tell it
+             ever arrived" (`WF-INT-integration.md`).
+          3. Check idempotency: `UNIQUE (channel_account_id, external_event_id)` on `inbound_events`
+             is the enforcement point, not application logic. A duplicate `external_event_id` returns
+             200 immediately with the prior outcome — no reprocessing.
+          4. Acknowledge 200 ONLY after the persist (step 2) commits. Acknowledging earlier would tell
+             the channel an event exists that was never durably recorded.
+
+          Domain processing (item mapping, KOT generation, order creation) is enqueued for async
+          work after the ack and is NOT represented in this response — poll
+          `GET /webhooks/events/{event_id}` for outcome, or rely on the domain module's own webhook
+          (e.g. `orders.yaml`) once DEC-007/DEC-005 land.
+
+        `X-Correlation-Id` is optional here (unlike authenticated APIs) since the sender is an
+        external aggregator/gateway that does not know Kapmeta's convention; the server assigns one
+        and returns it.
+
+        No `Authorization: Bearer` — this endpoint is authenticated by webhook signature, not a user
+        session, so `security: []` overrides the global scheme.
+      security: []
+      parameters:
+        - name: channel_account_id
+          in: path
+          required: true
+          schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        - name: X-Webhook-Signature
+          in: header
+          required: true
+          description: |
+            Signature over the raw request body, per the channel account's configured signing scheme.
+            The concrete algorithm (HMAC-SHA256 vs a gateway-specific scheme) is channel-dependent and
+            configured on `channel_accounts`, not fixed by this spec — it varies by aggregator/gateway
+            per DEC-007/DEC-005.
+          schema:
+            type: string
+        - name: X-External-Event-Id
+          in: header
+          required: true
+          description: |
+            The sender's own event identifier. Forms the idempotency key together with
+            `channel_account_id` (`DB-UQ-03`). Also accepted inside the envelope body as
+            `external_event_id`; header and body value must match or the request is 400.
+          schema:
+            type: string
+            maxLength: 255
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InboundWebhookEnvelope' }
+      responses:
+        '200':
+          description: |
+            Event acknowledged. Returned both for a freshly persisted event (`is_duplicate: false`)
+            and for a replay of an already-seen `(channel_account_id, external_event_id)`
+            (`is_duplicate: true`, no reprocessing, prior outcome echoed).
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookAck' }
+        '400':
+          description: 400 — Malformed envelope, or `X-External-Event-Id` header does not match the body's `external_event_id`.
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+        '401':
+          description: |
+            401 — Signature verification failed. The raw body is NOT persisted. Logged and alerted per
+            the WF-INT-01 failure matrix.
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+        '404':
+          description: 404 — `channel_account_id` is not a configured channel account.
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+        '409':
+          description: |
+            409 — Reserved for a genuine conflict distinct from ordinary idempotent replay (e.g. the
+            same `external_event_id` reused with a materially different persisted payload, which the
+            unique constraint alone cannot express). Ordinary duplicates are 200 `is_duplicate: true`,
+            not 409 — a duplicate webhook is an everyday occurrence per the retry SLA, not an error.
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+        '422':
+          description: |
+            422 — QUARANTINE. The envelope was verified and persisted but could not be mapped to a
+            known internal entity (`UNKNOWN_MAPPING`, WF-INT-01 step 5) or failed a structural check
+            that requires manual resolution. The event is durably recorded (see `event_id` in the
+            error response's `details`) and awaits operator resolution per
+            `docs/07-integration/integration-hub.md` — it is NOT dropped and NOT auto-retried.
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+              examples:
+                quarantined:
+                  value:
+                    error:
+                      code: UNKNOWN_MAPPING
+                      message: External item id could not be mapped to an internal menu item
+                      details:
+                        - field: event_id
+                          value: 8f14e45f-ceea-467a-9b9b-2ba0a5bfe1c1
+                      correlation_id: 01J9Z5X8QK4M2N7P
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /webhooks/events/{event_id}:
+    get:
+      tags: [InboundWebhooks]
+      operationId: getInboundWebhookEvent
+      summary: Get the persisted state of one inbound webhook event
+      description: |
+        Read-only view of one `inbound_events` row for operator troubleshooting
+        (`WF-INT-integration.md` UX-SCR-18: "shows sync status, the error, and a manual retry
+        control"). The raw payload is channel-specific and returned opaquely as `raw_payload` — this
+        endpoint does not interpret it.
+
+        Permission required: `integrations.read`. Requires an authenticated session — unlike the
+        receiver endpoint above, this is an internal operator API.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - name: event_id
+          in: path
+          required: true
+          schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+      responses:
+        '200':
+          description: Event state.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboundWebhookEvent' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+
+  /webhooks/events/{event_id}/replay:
+    post:
+      tags: [InboundWebhooks]
+      operationId: replayInboundWebhookEvent
+      summary: Manually replay a quarantined or dead-lettered event
+      description: |
+        Implements the manual-retry control described in WF-INT-03: "Fix root cause (mapping,
+        config, code) -> Replay from persisted raw event -> Idempotency guard prevents duplicates."
+        Replays the ALREADY-PERSISTED `raw_payload` through processing from step 5 (WF-INT-01) — it
+        does not accept a new body, because the raw event is the only thing that gets replayed; a
+        client cannot substitute a different payload.
+
+        Only legal from `QUARANTINED` or `DEAD_LETTERED` state; replaying a `PROCESSED` event is 409.
+
+        `Idempotency-Key` is REQUIRED — a retried replay request must not double-trigger downstream
+        processing.
+
+        Permission required: `integrations.replay` (elevated — this is an operator action after root
+        cause is fixed, per WF-INT-03).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - $ref: 'common.yaml#/components/parameters/IdempotencyKeyHeader'
+        - name: event_id
+          in: path
+          required: true
+          schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+      responses:
+        '202':
+          description: Replay accepted and enqueued. Processing outcome is observed via `GET /webhooks/events/{event_id}`.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboundWebhookEvent' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409':
+          description: 409 — Event is not in `QUARANTINED` or `DEAD_LETTERED` state.
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+
+    WebhookEventStatus:
+      type: string
+      description: |
+        Processing lifecycle of an `inbound_events` row. Not a `DB-OBJECT-CATALOGUE.md` enum today —
+        proposed to make this spec's outcomes concrete; confirm against the catalogue when
+        `inbound_events` gains a status column.
+      enum: [RECEIVED, PROCESSING, PROCESSED, QUARANTINED, DEAD_LETTERED]
+
+    InboundWebhookEnvelope:
+      type: object
+      description: |
+        The GENERIC envelope. `payload` is intentionally untyped (`{}`, any JSON) — there is no
+        aggregator- or gateway-specific schema until DEC-007 (partner docs) or DEC-005 (gateway docs)
+        supply one. This is the ONLY body shape this spec defines.
+      required: [external_event_id, event_type, payload]
+      additionalProperties: false
+      properties:
+        external_event_id:
+          type: string
+          maxLength: 255
+          description: Must match the `X-External-Event-Id` header.
+        event_type:
+          type: string
+          maxLength: 100
+          description: |
+            Sender-declared event category (e.g. `order.created`, `order.status_changed`,
+            `payment.captured`). Used only for routing/logging here — its meaning per channel is not
+            interpreted by this spec.
+        occurred_at:
+          description: Sender-declared event time, if provided. Distinct from `received_at`, which is server-set.
+          oneOf:
+            - $ref: 'common.yaml#/components/schemas/Timestamp'
+            - type: 'null'
+        payload:
+          description: |
+            Opaque, channel-specific JSON body. Persisted verbatim to `inbound_events.raw_payload`.
+            NOT validated or typed by this spec — that requires DEC-007/DEC-005 partner documentation.
+          type: object
+
+    WebhookAck:
+      type: object
+      required: [event_id, is_duplicate, status]
+      properties:
+        event_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        is_duplicate:
+          type: boolean
+          description: True when `(channel_account_id, external_event_id)` had already been seen; no reprocessing occurred.
+        status: { $ref: '#/components/schemas/WebhookEventStatus' }
+
+    InboundWebhookEvent:
+      allOf:
+        - $ref: 'common.yaml#/components/schemas/AuditFields'
+        - type: object
+          required: [id, channel_account_id, external_event_id, event_type, status, received_at]
+          properties:
+            id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+            channel_account_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+            external_event_id: { type: string }
+            event_type: { type: string }
+            status: { $ref: '#/components/schemas/WebhookEventStatus' }
+            raw_payload:
+              description: Opaque, persisted verbatim. Never re-interpreted by this spec.
+              type: object
+              readOnly: true
+            error_code:
+              description: Populated when `status` is `QUARANTINED` or `DEAD_LETTERED`.
+              oneOf:
+                - type: string
+                - type: 'null'
+              readOnly: true
+            error_message:
+              oneOf:
+                - type: string
+                - type: 'null'
+              readOnly: true
+            attempt_count:
+              type: integer
+              minimum: 0
+              description: 'Retry attempts per the WF-INT-03 backoff schedule (3 attempts / 15 min before DLQ).'
+              readOnly: true
+            received_at:
+              allOf: [{ $ref: 'common.yaml#/components/schemas/Timestamp' }]
+              readOnly: true
+            processed_at:
+              oneOf:
+                - $ref: 'common.yaml#/components/schemas/Timestamp'
+                - type: 'null'
+              readOnly: true
+            correlation_id:
+              type: string
+              readOnly: true

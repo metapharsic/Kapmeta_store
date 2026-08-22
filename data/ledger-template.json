@@ -1,0 +1,34 @@
+{
+  "chartOfAccounts": [
+    {
+      "code": "1010-CASH",
+      "name": "Main Cash Drawer A/c",
+      "type": "ASSET",
+      "openingBalanceDebitPaise": 500000
+    },
+    {
+      "code": "1020-BANK-HDFC",
+      "name": "HDFC POS Settlement A/c",
+      "type": "ASSET",
+      "openingBalanceDebitPaise": 2500000
+    },
+    {
+      "code": "2010-OUTPUT-GST-5",
+      "name": "Output GST 5% A/c",
+      "type": "LIABILITY",
+      "openingBalanceDebitPaise": 0
+    },
+    {
+      "code": "4010-SALES-FNB",
+      "name": "Food & Beverage Sales A/c",
+      "type": "REVENUE",
+      "openingBalanceDebitPaise": 0
+    },
+    {
+      "code": "5010-DISCOUNTS",
+      "name": "Discounts & Promotions A/c",
+      "type": "EXPENSE",
+      "openingBalanceDebitPaise": 0
+    }
+  ]
+}

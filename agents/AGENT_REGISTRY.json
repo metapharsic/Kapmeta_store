@@ -1,0 +1,97 @@
+{
+  "version": "2.0.0",
+  "lastSync": "2026-08-14T14:35:00Z",
+  "agents": [
+    {
+      "id": "agent-orchestrator",
+      "name": "Orchestrator Agent",
+      "role": "SYSTEM_COORDINATOR",
+      "status": "READY",
+      "domain": "Cross-System Workflow Coordination & Port Management",
+      "currentTask": "Managing process lifecycle and checkpoint transitions",
+      "assignedFiles": [
+        "scripts/startup.ps1",
+        "scripts/shutdown.ps1",
+        "scripts/status.ts",
+        "Start_PetPooja.bat"
+      ]
+    },
+    {
+      "id": "agent-frontend",
+      "name": "Frontend UI Agent",
+      "role": "UI_ENGINEER",
+      "status": "READY",
+      "domain": "POS Web UI (Port 4444) & Admin Web (Port 4445)",
+      "currentTask": "Maintaining POS touch layout, KDS real-time feed, and auth guards",
+      "assignedFiles": [
+        "apps/pos-web/pages/*",
+        "apps/pos-web/components/*",
+        "apps/pos-web/lib/auth.ts"
+      ]
+    },
+    {
+      "id": "agent-backend",
+      "name": "Backend API Agent",
+      "role": "BACKEND_ENGINEER",
+      "status": "READY",
+      "domain": "API Gateway (Port 4001), Services & Event Bus",
+      "currentTask": "Routing HTTP routes, JWT claim verification, and event subscriptions",
+      "assignedFiles": [
+        "apps/api/src/index.ts",
+        "apps/api/src/routes/*",
+        "services/*"
+      ]
+    },
+    {
+      "id": "agent-database",
+      "name": "Database Persistence Agent",
+      "role": "DBA_ENGINEER",
+      "status": "READY",
+      "domain": "PostgreSQL (Port 5432) & Prisma Schema",
+      "currentTask": "Maintaining multi-tenant schema, seed tools, and backup parity",
+      "assignedFiles": [
+        "kapmeta/schema.prisma",
+        "scripts/db-migrate.js",
+        "scripts/seed-dynamic-data.ts"
+      ]
+    },
+    {
+      "id": "agent-integration",
+      "name": "Integration Hub Agent",
+      "role": "INTEGRATION_ENGINEER",
+      "status": "READY",
+      "domain": "Online Aggregators (Swiggy/Zomato), Payments & Thermal Printers",
+      "currentTask": "Handling HMAC webhooks, idempotent ingestion, and DLQ retries",
+      "assignedFiles": [
+        "services/integration-hub/*",
+        "services/integration/*"
+      ]
+    },
+    {
+      "id": "agent-qa",
+      "name": "QA & Verification Agent",
+      "role": "TEST_ENGINEER",
+      "status": "READY",
+      "domain": "Unit Tests, Contract Validation & E2E Simulation",
+      "currentTask": "Running 55-test vitest suite and pilot simulation drills",
+      "assignedFiles": [
+        "tests/*",
+        "scripts/pilot-e2e-simulation.ts",
+        "vitest.config.ts"
+      ]
+    },
+    {
+      "id": "agent-sre",
+      "name": "SRE & Diagnostics Agent",
+      "role": "OPERATIONS_ENGINEER",
+      "status": "READY",
+      "domain": "Logs Scanning, Port Health & Error Extraction",
+      "currentTask": "Monitoring logs/ and surfacing real-time error traces",
+      "assignedFiles": [
+        "logs/*",
+        "scripts/read-errors.ts",
+        "scripts/error-scanner.ps1"
+      ]
+    }
+  ]
+}

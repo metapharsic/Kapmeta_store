@@ -1,0 +1,576 @@
+openapi: 3.0.3
+info:
+  title: Kapmeta Orders API
+  description: >
+    Order Entry/Billing and Order History screens. Order money fields follow the
+    Phase 0 standard: subtotal_amount, tax_amount, discount_amount, grand_total_amount.
+    order_status is the canonical enum (open/running/printed/paid/cancelled); kot_sent
+    is tracked separately as a boolean.
+
+
+    Design note on grand-total overrides (DEC-022 / business-logic-rules): a manual
+    override of grand_total_amount is NOT exposed via the general PATCH /orders/{id}
+    endpoint. It is modeled as a dedicated POST /orders/{id}/override-total endpoint
+    that requires a `reason` field and always writes an order_audit_log entry. This is
+    a deliberate design choice for safety and auditability: folding the override into a
+    generic PATCH would make it easy to change the grand total silently as a side
+    effect of an unrelated field update, and would make the override harder to find,
+    rate-limit, and require confirmation on independently of other order edits.
+  version: "1.0.0"
+servers:
+  - url: https://api.kapmeta.com/v1
+security:
+  - BearerAuth: []
+paths:
+  /orders:
+    post:
+      operationId: createOrder
+      summary: Create a new order (dine-in, takeaway, delivery, or online-channel)
+      tags: [Orders]
+      x-required-role: cashier
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderCreateRequest'
+      responses:
+        '201':
+          description: Order created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          $ref: 'common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: 'common.yaml#/components/responses/Unauthorized'
+    get:
+      operationId: listOrders
+      summary: List/filter orders (backs the Order History screen)
+      tags: [Orders]
+      x-required-role: cashier
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/PageParam'
+        - $ref: 'common.yaml#/components/parameters/PageSizeParam'
+        - name: order_type
+          in: query
+          schema:
+            type: string
+            enum: [dine_in, takeaway, delivery, online]
+        - name: status
+          in: query
+          schema:
+            $ref: 'common.yaml#/components/schemas/OrderStatus'
+        - name: channel
+          in: query
+          description: Sales channel, e.g. dine_in, swiggy, zomato, direct_online.
+          schema:
+            type: string
+        - name: date_from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: date_to
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: table_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: search
+          in: query
+          description: Free-text search across order number, customer name/phone.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paged list of orders.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OrderSummary'
+                  meta:
+                    $ref: 'common.yaml#/components/schemas/PaginationMeta'
+        '400':
+          $ref: 'common.yaml#/components/responses/BadRequest'
+  /orders/{id}:
+    get:
+      operationId: getOrder
+      summary: Get a full order with items
+      tags: [Orders]
+      x-required-role: cashier
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: '#/components/parameters/OrderIdPath'
+      responses:
+        '200':
+          description: Full order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+    patch:
+      operationId: updateOrder
+      summary: Update non-financial order fields (customer info, notes, order_type, table assignment)
+      description: >
+        Does NOT accept grand_total_amount, subtotal_amount, tax_amount, or
+        discount_amount — those are recomputed server-side from order items and taxes,
+        or set explicitly via POST /orders/{id}/override-total. Attempting to set them
+        here returns 400.
+      tags: [Orders]
+      x-required-role: cashier
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: '#/components/parameters/OrderIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderUpdateRequest'
+      responses:
+        '200':
+          description: Order updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          $ref: 'common.yaml#/components/responses/BadRequest'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+        '409':
+          $ref: 'common.yaml#/components/responses/Conflict'
+  /orders/{id}/override-total:
+    post:
+      operationId: overrideOrderTotal
+      summary: Manually override an order's grand_total_amount
+      description: >
+        Dedicated, audited endpoint for manual grand-total overrides (see DEC-022). A
+        `reason` is mandatory. On success, the order's grand_total_amount is set to
+        `new_grand_total_amount` (bypassing the normal subtotal/tax/discount
+        computation) and an order_audit_log entry with action `order.override_total`
+        is written, capturing actor, previous total, new total, and reason.
+      tags: [Orders]
+      x-required-role: manager
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: '#/components/parameters/OrderIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [new_grand_total_amount, reason]
+              properties:
+                new_grand_total_amount:
+                  $ref: 'common.yaml#/components/schemas/Money'
+                reason:
+                  type: string
+                  minLength: 3
+                  example: "Manager comp for delayed order"
+      responses:
+        '200':
+          description: Order updated with overridden total; audit log entry created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order:
+                    $ref: '#/components/schemas/Order'
+                  audit_log_entry:
+                    $ref: 'common.yaml#/components/schemas/AuditLogEntry'
+        '400':
+          $ref: 'common.yaml#/components/responses/BadRequest'
+        '403':
+          $ref: 'common.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+  /orders/{id}/items:
+    post:
+      operationId: addOrderItems
+      summary: Add one or more items to an order
+      tags: [Orders]
+      x-required-role: cashier
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: '#/components/parameters/OrderIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  minItems: 1
+                  items:
+                    $ref: '#/components/schemas/OrderItemCreateRequest'
+      responses:
+        '201':
+          description: Items added; returns updated order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          $ref: 'common.yaml#/components/responses/BadRequest'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+        '409':
+          description: One or more items are marked out-of-stock.
+          content:
+            application/json:
+              schema:
+                $ref: 'common.yaml#/components/schemas/ErrorResponse'
+  /orders/{id}/items/{itemId}:
+    delete:
+      operationId: removeOrderItem
+      summary: Remove an item from an order
+      tags: [Orders]
+      x-required-role: cashier
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: '#/components/parameters/OrderIdPath'
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Item removed; returns updated order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+        '409':
+          description: Item already fired to kitchen and outlet policy disallows removal without manager override.
+          content:
+            application/json:
+              schema:
+                $ref: 'common.yaml#/components/schemas/ErrorResponse'
+  /orders/{id}/split:
+    post:
+      operationId: splitOrder
+      summary: Split an order into two or more child orders
+      tags: [Orders]
+      x-required-role: cashier
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: '#/components/parameters/OrderIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [splits]
+              properties:
+                splits:
+                  type: array
+                  minItems: 2
+                  description: Each entry lists the item ids (and optional split quantity for partially-split items) going into one resulting order.
+                  items:
+                    type: object
+                    required: [item_ids]
+                    properties:
+                      item_ids:
+                        type: array
+                        items:
+                          type: string
+                          format: uuid
+                      table_id:
+                        type: string
+                        format: uuid
+                        nullable: true
+      responses:
+        '201':
+          description: Original order closed/replaced by the resulting split orders.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  original_order_id:
+                    type: string
+                    format: uuid
+                  resulting_orders:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Order'
+        '400':
+          $ref: 'common.yaml#/components/responses/BadRequest'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+  /orders/{id}/print:
+    post:
+      operationId: printOrderDocument
+      summary: Print a bill or KOT for an order
+      description: >
+        Respects the outlet's outlet_print_settings (see settings.yaml) for template,
+        printer routing, and copy count. Printing a `kot` sets kot_sent=true on the
+        order (and on the order items included); printing a `bill` transitions
+        order_status to `printed` if it is currently `open` or `running`.
+      tags: [Orders]
+      x-required-role: cashier
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: '#/components/parameters/OrderIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [document_type]
+              properties:
+                document_type:
+                  type: string
+                  enum: [bill, kot]
+                item_ids:
+                  type: array
+                  description: For KOT printing, restrict to specific items (e.g. only newly-added ones). Omit to print all unsent items.
+                  items:
+                    type: string
+                    format: uuid
+                printer_id:
+                  type: string
+                  format: uuid
+                  description: Override the default printer routing from outlet_print_settings.
+      responses:
+        '200':
+          description: Print job accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  print_job_id:
+                    type: string
+                    format: uuid
+                  order:
+                    $ref: '#/components/schemas/Order'
+        '400':
+          $ref: 'common.yaml#/components/responses/BadRequest'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+  /orders/{id}/cancel:
+    post:
+      operationId: cancelOrder
+      summary: Cancel an order
+      tags: [Orders]
+      x-required-role: manager
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: '#/components/parameters/OrderIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+                  minLength: 3
+      responses:
+        '200':
+          description: Order cancelled; order_status set to cancelled and an audit log entry is written.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '404':
+          $ref: 'common.yaml#/components/responses/NotFound'
+        '409':
+          description: Order already paid or already cancelled.
+          content:
+            application/json:
+              schema:
+                $ref: 'common.yaml#/components/schemas/ErrorResponse'
+components:
+  parameters:
+    OrderIdPath:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    OrderItem:
+      type: object
+      required: [id, menu_item_id, name, quantity, unit_price_amount, line_total_amount]
+      properties:
+        id:
+          type: string
+          format: uuid
+        menu_item_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        quantity:
+          type: integer
+          minimum: 1
+        unit_price_amount:
+          $ref: 'common.yaml#/components/schemas/Money'
+        line_total_amount:
+          $ref: 'common.yaml#/components/schemas/Money'
+        notes:
+          type: string
+          nullable: true
+        kot_sent:
+          type: boolean
+        variant_id:
+          type: string
+          format: uuid
+          nullable: true
+        addon_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+    OrderItemCreateRequest:
+      type: object
+      required: [menu_item_id, quantity]
+      properties:
+        menu_item_id:
+          type: string
+          format: uuid
+        quantity:
+          type: integer
+          minimum: 1
+        notes:
+          type: string
+        variant_id:
+          type: string
+          format: uuid
+        addon_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+    OrderSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        outlet_id:
+          type: string
+          format: uuid
+        order_number:
+          type: string
+          example: "ORD-2026-08-21-0042"
+        order_type:
+          type: string
+          enum: [dine_in, takeaway, delivery, online]
+        channel:
+          type: string
+          example: dine_in
+        order_status:
+          $ref: 'common.yaml#/components/schemas/OrderStatus'
+        kot_sent:
+          type: boolean
+        table_id:
+          type: string
+          format: uuid
+          nullable: true
+        grand_total_amount:
+          $ref: 'common.yaml#/components/schemas/Money'
+        created_at:
+          type: string
+          format: date-time
+    Order:
+      allOf:
+        - $ref: '#/components/schemas/OrderSummary'
+        - type: object
+          properties:
+            subtotal_amount:
+              $ref: 'common.yaml#/components/schemas/Money'
+            tax_amount:
+              $ref: 'common.yaml#/components/schemas/Money'
+            discount_amount:
+              $ref: 'common.yaml#/components/schemas/Money'
+            grand_total_overridden:
+              type: boolean
+              description: True if grand_total_amount was last set via POST /orders/{id}/override-total.
+            customer_name:
+              type: string
+              nullable: true
+            customer_phone:
+              type: string
+              nullable: true
+            notes:
+              type: string
+              nullable: true
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/OrderItem'
+            updated_at:
+              type: string
+              format: date-time
+    OrderCreateRequest:
+      type: object
+      required: [order_type]
+      properties:
+        order_type:
+          type: string
+          enum: [dine_in, takeaway, delivery, online]
+        channel:
+          type: string
+          default: dine_in
+        table_id:
+          type: string
+          format: uuid
+          nullable: true
+        customer_name:
+          type: string
+        customer_phone:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItemCreateRequest'
+    OrderUpdateRequest:
+      type: object
+      properties:
+        order_type:
+          type: string
+          enum: [dine_in, takeaway, delivery, online]
+        table_id:
+          type: string
+          format: uuid
+          nullable: true
+        customer_name:
+          type: string
+        customer_phone:
+          type: string
+        notes:
+          type: string

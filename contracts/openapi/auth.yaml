@@ -1,0 +1,1171 @@
+openapi: 3.1.0
+info:
+  title: Kapmeta — Authentication & Access Control API
+  version: 1.0.0
+  license:
+    name: Proprietary
+  summary: Login, MFA, refresh, PIN shift switching, session management and elevated-action approval.
+  description: |
+    Traces to `docs/02-requirements/auth-access.md` and `docs/08-security/security-framework.md`.
+    Conventions in `docs/06-api/api-standards.md`; shared components in `common.yaml`.
+
+    Two populations, two auth models, deliberately not interchangeable:
+      - Administrative / back-office (Super Admin, Outlet Manager, Menu Admin, Inventory User,
+        Finance User, Auditor): email + password + MANDATORY MFA.
+      - POS floor (POS Operator, Kitchen User): PIN, only against a registered terminal that already
+        holds an authenticated shift session.
+
+    Invariants enforced by every endpoint here:
+      1. Authorization is enforced server-side on every request. UI hiding is cosmetic.
+      2. Outlet context comes from the session, never from the request body or query. A body-supplied
+         `outlet_id` is rejected with 400/403, not ignored.
+      3. Every authorization failure, login, MFA challenge, logout, revocation, PIN swap, shift
+         open/close, outlet switch and elevated approval writes an audit row.
+      4. Login and reset responses are identical for existing and non-existing accounts.
+
+    OPEN DECISION — DEC-011: concrete access/refresh token TTLs, absolute session lifetime, lockout
+    thresholds and durations, and the MFA factor list are DEC-011 outputs. `expires_in` is returned as
+    an integer so clients never hardcode a TTL, and `TOTP` is documented as the baseline factor only.
+    OPEN DECISION — DEC-001: whether outlet-scoped grants and NULL-outlet organization-wide grants are
+    real or degenerate. `grants[].outlet_id` is nullable in this spec regardless, because retrofitting
+    scoping later is the rewrite DEC-001 warns about.
+    OPEN DECISION — DEC-002: offline POS authentication and PIN verification while disconnected is
+    unsolved and potentially model-breaking. No offline auth endpoint is specified here.
+    OPEN DECISION — DEC-010: retention of session, audit and failed-login records.
+
+servers:
+  - url: https://api.kapmeta.example.com/api/v1
+    description: Production
+  - url: https://staging-api.kapmeta.example.com/api/v1
+    description: Staging
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Login
+    description: Establishing an authenticated session.
+  - name: MFA
+    description: Multi-factor challenge and enrolment.
+  - name: Shift
+    description: POS terminal shift sessions and PIN user swapping.
+  - name: Sessions
+    description: Session inspection, outlet switching and revocation.
+  - name: Elevation
+    description: Per-action manager approval. There is no manager mode.
+
+paths:
+
+  # ===========================================================================
+  # Login / password
+  # ===========================================================================
+
+  /auth/login:
+    post:
+      tags: [Login]
+      operationId: authLogin
+      summary: Password login (step 1 of 2 for admin roles)
+      description: |
+        Email + password. Unauthenticated endpoint.
+
+        MFA is MANDATORY for all password-authenticated roles and enrolment cannot be skipped or
+        postponed, so a successful password verification NEVER returns tokens directly — it returns
+        an `mfa_required` challenge. Tokens are issued only by `POST /auth/mfa/verify`.
+
+        Permission required: none (unauthenticated).
+
+        Anti-enumeration: the response is identical, and constant-time where feasible, for existing
+        and non-existent accounts. A wrong password and an unknown email both yield 401
+        `INVALID_CREDENTIALS` with no distinguishing detail.
+
+        Rate limited per user and per IP. Repeated failures increment a lockout counter kept per
+        account AND per source IP; thresholds and lock duration are DEC-011 outputs.
+
+        Audit: login success/failure records the attempted identifier, method, terminal, IP and outcome.
+        The attempted identifier may be an email and is therefore PII under DEC-010 retention rules.
+      security: []
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              additionalProperties: false
+              properties:
+                email:
+                  type: string
+                  format: email
+                  description: Case-insensitive (`citext` column).
+                password:
+                  type: string
+                  format: password
+                  minLength: 12
+                  description: Minimum 12 characters. Never logged, never echoed, never placed in an audit row.
+      responses:
+        '200':
+          description: Password accepted. An MFA challenge is now required.
+          headers:
+            X-Correlation-Id:
+              $ref: 'common.yaml#/components/headers/X-Correlation-Id'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MfaChallenge'
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '422':
+          description: |
+            422 — Business rule rejection. Account is deactivated, locked out, or must change its
+            password before proceeding (`PASSWORD_CHANGE_REQUIRED` on first login for an
+            admin-created account, or after a suspected compromise).
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /auth/mfa/verify:
+    post:
+      tags: [MFA, Login]
+      operationId: authMfaVerify
+      summary: Verify the MFA challenge and issue the session
+      description: |
+        Completes the admin login. On success a `sessions` row is created and an access/refresh token
+        pair is issued. The refresh token is long-lived, rotating and SINGLE-USE.
+
+        Permission required: none (completes an unauthenticated flow); the `mfa_token` from
+        `POST /auth/login` is the authorization to be here.
+
+        A failed factor increments the same lockout counter as a failed password.
+
+        Audit: MFA challenge success/failure records user, factor type and outcome. The code itself
+        is never logged.
+
+        OPEN DECISION — DEC-011: the accepted `factor_type` list beyond the TOTP baseline, and the
+        access/refresh TTLs behind `expires_in`.
+      security: []
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mfa_token, code]
+              additionalProperties: false
+              properties:
+                mfa_token:
+                  type: string
+                  description: Single-use, short-lived token from `POST /auth/login`.
+                code:
+                  type: string
+                  description: TOTP code or a one-time recovery code. Never logged, never audited.
+                factor_type:
+                  $ref: '#/components/schemas/MfaFactorType'
+                outlet_id:
+                  allOf: [{ $ref: 'common.yaml#/components/schemas/Uuid' }]
+                  description: |
+                    Outlet to bind the session to, chosen from the user's grants. This is the ONE place
+                    an outlet id is accepted in a request body, because no session exists yet to read it
+                    from. It is validated against the user's grants; an ungranted value is 403.
+                    Omit for a user whose only grant is organization-wide (`outlet_id` NULL).
+      responses:
+        '200':
+          description: Session established.
+          headers:
+            X-Correlation-Id:
+              $ref: 'common.yaml#/components/headers/X-Correlation-Id'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionTokens'
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '422': { $ref: 'common.yaml#/components/responses/UnprocessableEntity' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /auth/mfa/enrol:
+    post:
+      tags: [MFA]
+      operationId: authMfaEnrol
+      summary: Enrol or re-enrol an MFA factor
+      description: |
+        Enrolment cannot be skipped or postponed for any password-authenticated role. Recovery codes
+        are issued exactly once at enrolment and are hashed at rest — they are never retrievable again.
+
+        Permission required: none for enrolling one's own factor (the caller's own session).
+        Enrolling on behalf of another user requires `users.manage`.
+
+        Audit: password/PIN/MFA credential change is audited (actor, subject, mechanism).
+
+        OPEN DECISION — DEC-011: which factor types beyond TOTP are permitted, and whether more than
+        one factor may be enrolled concurrently.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [factor_type]
+              additionalProperties: false
+              properties:
+                factor_type:
+                  $ref: '#/components/schemas/MfaFactorType'
+                user_id:
+                  allOf: [{ $ref: 'common.yaml#/components/schemas/Uuid' }]
+                  description: Subject user. Omit to enrol yourself; supplying another user requires `users.manage`.
+      responses:
+        '201':
+          description: Factor provisioned. Recovery codes are returned here and nowhere else, ever.
+          headers:
+            X-Correlation-Id:
+              $ref: 'common.yaml#/components/headers/X-Correlation-Id'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [factor_type, recovery_codes]
+                properties:
+                  factor_type:
+                    $ref: '#/components/schemas/MfaFactorType'
+                  secret_provisioning_uri:
+                    type: string
+                    description: otpauth:// URI for TOTP enrolment. Present only for `TOTP`.
+                  recovery_codes:
+                    type: array
+                    description: Single-issue recovery codes, hashed server-side immediately.
+                    items:
+                      type: string
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /auth/refresh:
+    post:
+      tags: [Login]
+      operationId: authRefresh
+      summary: Exchange a refresh token for a new token pair
+      description: |
+        Refresh tokens rotate and are single-use. The old token is invalidated the moment a new pair
+        is issued.
+
+        REFRESH REUSE IS AN ATTACK SIGNAL: presenting an already-consumed refresh token revokes the
+        ENTIRE session family, not just that token, and returns 401 `REFRESH_TOKEN_REUSED`. The user
+        must re-authenticate.
+
+        Refresh also fails once the session's absolute lifetime cap is reached — re-authentication is
+        then mandatory.
+
+        Permission required: none (the refresh token is the credential).
+
+        Audit: refresh-token reuse detection records session id and reason.
+
+        OPEN DECISION — DEC-011: absolute session lifetime and refresh TTL.
+      security: []
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              additionalProperties: false
+              properties:
+                refresh_token:
+                  type: string
+      responses:
+        '200':
+          description: New token pair issued; the presented refresh token is now dead.
+          headers:
+            X-Correlation-Id:
+              $ref: 'common.yaml#/components/headers/X-Correlation-Id'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionTokens'
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /auth/logout:
+    post:
+      tags: [Sessions]
+      operationId: authLogout
+      summary: Explicit logout — revokes the session family
+      description: |
+        Revokes the current session row and its whole refresh-token family immediately. Revocation is
+        immediate because sessions are rows, not stateless-only tokens: a token whose session row is
+        revoked is rejected regardless of signature validity.
+
+        Permission required: none (own session).
+
+        Audit: logout records session id and reason.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+      responses:
+        '204':
+          description: Session revoked. Idempotent — logging out an already-revoked session is still 204.
+          headers:
+            X-Correlation-Id:
+              $ref: 'common.yaml#/components/headers/X-Correlation-Id'
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /auth/password/reset-request:
+    post:
+      tags: [Login]
+      operationId: authPasswordResetRequest
+      summary: Request a password reset token
+      description: |
+        Issues a single-use, short-lived, out-of-band reset token.
+
+        Permission required: none (unauthenticated).
+
+        ALWAYS returns 202 regardless of whether the account exists — the response is identical for
+        existing and non-existing accounts, per the anti-enumeration rule. Do not add a "user not
+        found" branch; that is a defect, not a usability improvement.
+
+        Audit: reset request records actor, subject and mechanism.
+      security: []
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              additionalProperties: false
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        '202':
+          description: Accepted. Returned identically whether or not the account exists.
+          headers:
+            X-Correlation-Id:
+              $ref: 'common.yaml#/components/headers/X-Correlation-Id'
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /auth/password/reset:
+    post:
+      tags: [Login]
+      operationId: authPasswordReset
+      summary: Complete a password reset
+      description: |
+        Consumes the single-use reset token and sets a new password.
+
+        A successful reset INVALIDATES ALL EXISTING SESSIONS for that user — including the one making
+        the request, if any.
+
+        Password policy: minimum 12 characters, screened against a known-breached password list, no
+        composition rules that force predictable substitutions. Stored with a memory-hard hash
+        (argon2id, or bcrypt at a reviewed cost factor); never reversible encryption.
+
+        Permission required: none (the reset token is the credential).
+
+        Audit: password change records actor, subject and mechanism. The password itself is never logged.
+      security: []
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reset_token, new_password]
+              additionalProperties: false
+              properties:
+                reset_token:
+                  type: string
+                new_password:
+                  type: string
+                  format: password
+                  minLength: 12
+      responses:
+        '204':
+          description: Password changed; all sessions for the user revoked.
+          headers:
+            X-Correlation-Id:
+              $ref: 'common.yaml#/components/headers/X-Correlation-Id'
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '422':
+          description: 422 — New password rejected by policy (too short, or found on the breached-password list).
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  # ===========================================================================
+  # POS shift sessions and PIN swap
+  # ===========================================================================
+
+  /auth/shifts:
+    post:
+      tags: [Shift]
+      operationId: authShiftOpen
+      summary: Open a POS shift session on a registered terminal
+      description: |
+        Establishes the terminal-bound shift session. `outlet_id` is bound HERE, ONCE, for the whole
+        shift, derived from the terminal's immutable outlet binding — never from the request body.
+        Every subsequent PIN swap inherits it and never re-derives it.
+
+        Requires a registered, non-revoked terminal presenting its device credential in
+        `X-Terminal-Id` plus the device credential header. A valid session on an unregistered or
+        revoked terminal is rejected with 403 `TERMINAL_NOT_TRUSTED`.
+
+        Opened with manager or operator credentials (password path). Admin credentials are accepted on
+        a POS terminal but do NOT confer PIN-swap behaviour.
+
+        Permission required: `shifts.open`.
+
+        Audit: shift open records terminal, opening user, outlet and timestamps.
+      security: []
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - $ref: 'common.yaml#/components/parameters/TerminalIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [device_credential, email, password]
+              additionalProperties: false
+              properties:
+                device_credential:
+                  type: string
+                  description: Credential from the terminal's secure storage. Not a shared secret across terminals.
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+      responses:
+        '201':
+          description: |
+            Shift session opened. No user context is attached yet — a PIN entry is required before any
+            operator action.
+          headers:
+            X-Correlation-Id:
+              $ref: 'common.yaml#/components/headers/X-Correlation-Id'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShiftSession'
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '409':
+          description: 409 — A shift session is already open on this terminal. Close it first.
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /auth/shifts/{shift_session_id}/close:
+    post:
+      tags: [Shift]
+      operationId: authShiftClose
+      summary: Close a POS shift session
+      description: |
+        Ends the shift session and CLEARS ALL USER CONTEXTS on it. Every token derived from the shift
+        session stops working immediately.
+
+        Permission required: `shifts.close`.
+
+        Audit: shift close records terminal, user, outlet and timestamps.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - $ref: 'common.yaml#/components/parameters/TerminalIdHeader'
+        - name: shift_session_id
+          in: path
+          required: true
+          schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+      responses:
+        '204':
+          description: Shift closed; all user contexts cleared.
+          headers:
+            X-Correlation-Id:
+              $ref: 'common.yaml#/components/headers/X-Correlation-Id'
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409':
+          description: 409 — Shift is already closed.
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /auth/shifts/{shift_session_id}/pin-switch:
+    post:
+      tags: [Shift]
+      operationId: authPinSwitch
+      summary: Swap the active user context on an open shift session (PIN)
+      description: |
+        The PIN model exists to preserve PER-ACTION ATTRIBUTION. It swaps the user context inside an
+        already-established, outlet-bound shift session. `outlet_id` is UNCHANGED by this call — a PIN
+        never establishes outlet context by itself.
+
+        Accepted ONLY on a registered terminal. A PIN is worthless off a registered terminal.
+
+        Also used to resume after an idle lock: the shift stays open, the user context is re-asserted.
+
+        PIN rules: unique per user within an outlet, minimum 6 digits, hashed with the same algorithm
+        class as passwords, NEVER logged, no sequential or repeated trivial values, rotated on staff
+        departure.
+
+        PIN lockout is stricter than password lockout because the keyspace is small: low failure
+        threshold, and the lock requires a manager unlock at the terminal. The lock is audited.
+
+        Permission required: none beyond a valid PIN on a valid shift session; the resulting context
+        carries only the PIN-holder's own permissions (POS Operator / Kitchen User — no Admin, no
+        Reports, no Inventory).
+
+        Audit: PIN swap records terminal, previous user, new user and shift session id.
+
+        OPEN DECISION — DEC-011: PIN lockout threshold and lock duration.
+        OPEN DECISION — DEC-002: behaviour when the terminal is offline is unsolved; this endpoint
+        assumes connectivity.
+      security: []
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - $ref: 'common.yaml#/components/parameters/TerminalIdHeader'
+        - name: shift_session_id
+          in: path
+          required: true
+          schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_identifier, pin, device_credential]
+              additionalProperties: false
+              properties:
+                user_identifier:
+                  type: string
+                  description: Staff code or username scoped to the outlet. Not an email.
+                pin:
+                  type: string
+                  minLength: 6
+                  maxLength: 12
+                  pattern: ^[0-9]+$
+                  description: Minimum 6 digits. Never logged, never audited, never echoed.
+                device_credential:
+                  type: string
+      responses:
+        '200':
+          description: |
+            User context swapped in. The returned access token inherits the shift session's outlet
+            binding and TTL.
+          headers:
+            X-Correlation-Id:
+              $ref: 'common.yaml#/components/headers/X-Correlation-Id'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionTokens'
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403':
+          description: |
+            403 — Terminal not registered or revoked (`TERMINAL_NOT_TRUSTED`), user not granted at this
+            outlet, or the PIN is locked and needs a manager unlock (`PIN_LOCKED`).
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409':
+          description: 409 — Shift session is closed; a PIN cannot resurrect it.
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /auth/pin/unlock:
+    post:
+      tags: [Shift]
+      operationId: authPinUnlock
+      summary: Manager unlock of a PIN-locked staff account at the terminal
+      description: |
+        A PIN lock clears only by manager action at the terminal — never by waiting it out and never
+        by the locked user.
+
+        Permission required: `users.manage` held by the unlocking manager AT THE SAME OUTLET as the
+        session.
+
+        Audit: unlock records actor, subject and mechanism.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - $ref: 'common.yaml#/components/parameters/TerminalIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id, reason_code]
+              additionalProperties: false
+              properties:
+                user_id:
+                  $ref: 'common.yaml#/components/schemas/Uuid'
+                reason_code:
+                  $ref: 'common.yaml#/components/schemas/ReasonCode'
+      responses:
+        '204':
+          description: PIN unlocked.
+          headers:
+            X-Correlation-Id:
+              $ref: 'common.yaml#/components/headers/X-Correlation-Id'
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  # ===========================================================================
+  # Session management
+  # ===========================================================================
+
+  /auth/session:
+    get:
+      tags: [Sessions]
+      operationId: authGetCurrentSession
+      summary: Resolve the current session, active outlet and effective permissions
+      description: |
+        Returns the caller's user, the ACTIVE OUTLET as resolved from the session (not from any
+        request field), and the flattened effective permission set for that outlet
+        (view `v_user_effective_permissions`): permissions from grants at the active outlet UNION
+        permissions from grants with `outlet_id` NULL.
+
+        Clients use this to decide what to render. Rendering is cosmetic — the server enforces
+        regardless. A hidden button is not a control.
+
+        Permission required: none (own session).
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+      responses:
+        '200':
+          description: Current session context.
+          headers:
+            X-Correlation-Id:
+              $ref: 'common.yaml#/components/headers/X-Correlation-Id'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionContext'
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /auth/session/outlet:
+    post:
+      tags: [Sessions]
+      operationId: authSwitchOutlet
+      summary: Switch the session's active outlet (re-issues the session)
+      description: |
+        The ONLY legitimate way for a multi-outlet user to change outlet. It is explicit, audited, and
+        RE-ISSUES the session — it does not mutate the existing one in place. Varying `X-Outlet-Id` or
+        an `outlet_id` body field on a normal request is a privilege-escalation attempt and is
+        rejected, not honoured.
+
+        The target outlet must be covered by one of the caller's grants (a specific grant, or an
+        organization-wide grant with `outlet_id` NULL).
+
+        Not available on POS shift sessions: a shift session's outlet binding is fixed at shift open
+        and is immutable until shift close (409 `OUTLET_BINDING_IMMUTABLE`).
+
+        Permission required: none beyond holding a grant at the target outlet.
+
+        Audit: outlet switch records from-outlet, to-outlet and the re-issued session id.
+
+        OPEN DECISION — DEC-001: if multi-outlet turns out to be degenerate, this endpoint is a no-op
+        in practice; the contract stays because retrofitting scoping later is the rewrite DEC-001 warns about.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target_outlet_id]
+              additionalProperties: false
+              properties:
+                target_outlet_id:
+                  $ref: 'common.yaml#/components/schemas/Uuid'
+      responses:
+        '200':
+          description: Session re-issued against the new outlet. The previous token pair is revoked.
+          headers:
+            X-Correlation-Id:
+              $ref: 'common.yaml#/components/headers/X-Correlation-Id'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionTokens'
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409':
+          description: 409 — Session is a POS shift session; its outlet binding is immutable.
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /auth/sessions:
+    get:
+      tags: [Sessions]
+      operationId: authListSessions
+      summary: List active sessions
+      description: |
+        Lists non-revoked, unexpired `sessions` rows. Callers see their own sessions by default;
+        listing another user's sessions requires `users.manage`.
+
+        Cursor pagination (`limit` + `cursor` -> `next_cursor`, null at end). No offset.
+
+        Permission required: `users.manage` when `user_id` is supplied; none for own sessions.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - $ref: 'common.yaml#/components/parameters/LimitParam'
+        - $ref: 'common.yaml#/components/parameters/CursorParam'
+        - name: user_id
+          in: query
+          required: false
+          description: Subject user. Requires `users.manage`. Omit for your own sessions.
+          schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+      responses:
+        '200':
+          description: Active sessions page.
+          headers:
+            X-Correlation-Id:
+              $ref: 'common.yaml#/components/headers/X-Correlation-Id'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: 'common.yaml#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/SessionSummary'
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /auth/sessions/{session_id}/revoke:
+    post:
+      tags: [Sessions]
+      operationId: authRevokeSession
+      summary: Revoke a specific session
+      description: |
+        Sets `revoked_at`. Revocation takes effect on the very next request — tokens are validated
+        against the session row, so a signature-valid token on a revoked session is rejected.
+
+        Revoking a POS shift session terminates all user contexts on it.
+
+        Permission required: `users.manage` to revoke another user's session; none for your own.
+
+        Audit: session revocation records session id and reason.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - name: session_id
+          in: path
+          required: true
+          schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason_code]
+              additionalProperties: false
+              properties:
+                reason_code:
+                  $ref: 'common.yaml#/components/schemas/ReasonCode'
+                reason_note:
+                  type: string
+                  maxLength: 500
+      responses:
+        '204':
+          description: Session revoked.
+          headers:
+            X-Correlation-Id:
+              $ref: 'common.yaml#/components/headers/X-Correlation-Id'
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  # ===========================================================================
+  # Elevated-action approval
+  # ===========================================================================
+
+  /auth/elevated-approvals:
+    post:
+      tags: [Elevation]
+      operationId: authCreateElevatedApproval
+      summary: Obtain a single-use approval token for one elevated action
+      description: |
+        The server-side half of the elevated-action flow. Called AFTER a mutation returned 403 with
+        `code = APPROVAL_REQUIRED`. The terminal prompts for the approver's credential (manager PIN on
+        a registered terminal, or password) and posts it here; the client can NEVER assert
+        `approved: true` itself.
+
+        The server verifies the approver AND that the approver holds `permission_code` at the SAME
+        OUTLET as the operator's session — outlet from session, always.
+
+        Applies to: post-KOT cancellation, discount above threshold (DEC-008), refund, payment
+        override, price override, till adjustment.
+
+        The returned token is:
+          - single-use;
+          - bound to exactly one `permission_code`, one `target_type`/`target_id`, and the operator's
+            session;
+          - short-lived (seconds).
+        It grants no window, no mode, and no elevated session. There is no "manager mode".
+
+        The subsequent action executes under the OPERATOR's `user_id` with `approved_by` set to the
+        approver. Recording the manager as the actor destroys attribution and is a defect.
+
+        Self-approval is only possible where the operator already holds the permission — in which case
+        the original call would have succeeded and this flow never occurs.
+
+        Permission required: the APPROVER must hold the `permission_code` being requested. The caller
+        (operator) needs only a valid session.
+
+        Audit: elevated-action approval records operator, approver, permission, reason code and target
+        record — one audit row, in the same transaction as the mutation it authorizes.
+
+        OPEN DECISION — DEC-008: the discount threshold that determines when `menu.price.update` /
+        discount actions enter this flow at all.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - $ref: 'common.yaml#/components/parameters/TerminalIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [permission_code, target_type, reason_code, approver_credential]
+              additionalProperties: false
+              properties:
+                permission_code:
+                  type: string
+                  description: The permission the action requires, e.g. `orders.cancel`, `orders.refund`, `payments.override`.
+                  examples: [orders.cancel]
+                target_type:
+                  type: string
+                  description: Resource kind the approval is bound to.
+                  enum: [order, order_item, kot_ticket, payment, refund, menu_item, till]
+                target_id:
+                  allOf: [{ $ref: 'common.yaml#/components/schemas/Uuid' }]
+                  description: Resource the approval is bound to. Omit only where the action creates the record.
+                reason_code:
+                  $ref: 'common.yaml#/components/schemas/ReasonCode'
+                reason_note:
+                  type: string
+                  maxLength: 500
+                approver_credential:
+                  type: object
+                  description: Approver's own credential. Never logged, never audited, never echoed.
+                  oneOf:
+                    - type: object
+                      title: ApproverPin
+                      required: [user_identifier, pin]
+                      additionalProperties: false
+                      properties:
+                        user_identifier: { type: string }
+                        pin:
+                          type: string
+                          minLength: 6
+                          pattern: ^[0-9]+$
+                    - type: object
+                      title: ApproverPassword
+                      required: [email, password]
+                      additionalProperties: false
+                      properties:
+                        email: { type: string, format: email }
+                        password: { type: string, format: password }
+      responses:
+        '201':
+          description: Approval granted. Replay the original mutation with this `approval_token`.
+          headers:
+            X-Correlation-Id:
+              $ref: 'common.yaml#/components/headers/X-Correlation-Id'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [approval_token, permission_code, approved_by, expires_at]
+                properties:
+                  approval_token:
+                    type: string
+                  permission_code:
+                    type: string
+                  target_type:
+                    type: string
+                  target_id:
+                    $ref: 'common.yaml#/components/schemas/Uuid'
+                  approved_by:
+                    allOf: [{ $ref: 'common.yaml#/components/schemas/Uuid' }]
+                    description: Approver's user id. The ACTING user remains the operator.
+                  expires_at:
+                    $ref: 'common.yaml#/components/schemas/Timestamp'
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401':
+          description: 401 — Approver credential is invalid. Denied and audited as a failed authorization.
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+        '403':
+          description: |
+            403 — The approver is valid but does not hold `permission_code` at this outlet, or is
+            attempting to approve on an untrusted terminal. Denied and audited.
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+        '422':
+          description: 422 — The requested permission is not an approvable elevated action.
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+
+    MfaFactorType:
+      type: string
+      description: |
+        TOTP is the mandated baseline. The full permitted factor list is a DEC-011 output — do not
+        implement additional factors until it lands.
+      enum: [TOTP, RECOVERY_CODE]
+
+    MfaChallenge:
+      type: object
+      required: [mfa_required, mfa_token, factor_types]
+      additionalProperties: false
+      properties:
+        mfa_required:
+          type: boolean
+          const: true
+          description: Always true. There is no path that skips MFA for a password-authenticated role.
+        mfa_token:
+          type: string
+          description: Single-use, short-lived token to be presented at `POST /auth/mfa/verify`.
+        factor_types:
+          type: array
+          items:
+            $ref: '#/components/schemas/MfaFactorType'
+        enrolment_required:
+          type: boolean
+          description: |
+            True when the account has no enrolled factor. Enrolment cannot be skipped or postponed —
+            the client must complete `POST /auth/mfa/enrol` before verification will succeed.
+
+    SessionTokens:
+      type: object
+      description: |
+        Access token is short-lived; refresh token is long-lived, rotating and single-use.
+        Concrete TTLs are a DEC-011 output and are therefore returned as values, never assumed.
+      required: [access_token, token_type, expires_in, session]
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+          description: |
+            Omitted for POS user contexts obtained via PIN swap — those inherit the shift session's
+            lifetime and are not independently refreshable.
+        token_type:
+          type: string
+          const: Bearer
+        expires_in:
+          type: integer
+          description: Access token lifetime in seconds. DEC-011 output — never hardcode this client-side.
+        absolute_expires_at:
+          allOf: [{ $ref: 'common.yaml#/components/schemas/Timestamp' }]
+          description: Absolute session lifetime cap. Re-authentication is mandatory after this. DEC-011 output.
+        session:
+          $ref: '#/components/schemas/SessionContext'
+
+    SessionContext:
+      type: object
+      description: The resolved session. `active_outlet_id` is authoritative; `X-Outlet-Id` is only validated against it.
+      required: [session_id, user_id, active_outlet_id, permissions, session_kind]
+      properties:
+        session_id:
+          $ref: 'common.yaml#/components/schemas/Uuid'
+        user_id:
+          $ref: 'common.yaml#/components/schemas/Uuid'
+        display_name:
+          type: string
+        session_kind:
+          type: string
+          description: |
+            ADMIN — password + MFA session.
+            POS_SHIFT — terminal-bound shift session with no user context yet.
+            POS_USER — a user context swapped into a shift session by PIN.
+          enum: [ADMIN, POS_SHIFT, POS_USER]
+        active_outlet_id:
+          description: |
+            Resolved from the session. Null only for an organization-wide session that has not yet
+            selected an outlet. Never read from a request body.
+          oneOf:
+            - $ref: 'common.yaml#/components/schemas/Uuid'
+            - type: 'null'
+        terminal_id:
+          description: Present for POS sessions only.
+          oneOf:
+            - $ref: 'common.yaml#/components/schemas/Uuid'
+            - type: 'null'
+        shift_session_id:
+          description: Present for POS_USER contexts.
+          oneOf:
+            - $ref: 'common.yaml#/components/schemas/Uuid'
+            - type: 'null'
+        roles:
+          type: array
+          description: |
+            Role names, for display only. Code checks reference the permission code, never a role
+            name — `if (user.role === 'Outlet Manager')` is a defect.
+          items:
+            $ref: '#/components/schemas/RoleName'
+        permissions:
+          type: array
+          description: Flattened effective permission codes for the active outlet (`v_user_effective_permissions`).
+          items:
+            type: string
+            examples: [orders.cancel]
+        grants:
+          type: array
+          items:
+            $ref: '#/components/schemas/Grant'
+
+    RoleName:
+      type: string
+      description: |
+        Role names are fixed by `docs/08-security/security-framework.md`. Do not invent new ones here
+        or in code. Authentication method per role is fixed: PIN for POS Operator and Kitchen User,
+        password + MFA for all others.
+      enum:
+        - Super Admin
+        - Outlet Manager
+        - POS Operator
+        - Kitchen User
+        - Menu Admin
+        - Inventory User
+        - Finance User
+        - Auditor
+
+    Grant:
+      type: object
+      description: A `user_roles` row — always scoped `(user_id, role_id, outlet_id)`.
+      required: [role, outlet_id]
+      properties:
+        role:
+          $ref: '#/components/schemas/RoleName'
+        outlet_id:
+          description: |
+            Null means an ORGANIZATION-WIDE grant covering all outlets present and future. Reserved for
+            Super Admin and, where the organization chooses, Auditor. Semantics contingent on DEC-001.
+          oneOf:
+            - $ref: 'common.yaml#/components/schemas/Uuid'
+            - type: 'null'
+
+    SessionSummary:
+      allOf:
+        - $ref: 'common.yaml#/components/schemas/AuditFields'
+        - type: object
+          required: [session_id, user_id, session_kind, expires_at]
+          properties:
+            session_id:
+              $ref: 'common.yaml#/components/schemas/Uuid'
+            user_id:
+              $ref: 'common.yaml#/components/schemas/Uuid'
+            session_kind:
+              type: string
+              enum: [ADMIN, POS_SHIFT, POS_USER]
+            outlet_id:
+              oneOf:
+                - $ref: 'common.yaml#/components/schemas/Uuid'
+                - type: 'null'
+            terminal_id:
+              oneOf:
+                - $ref: 'common.yaml#/components/schemas/Uuid'
+                - type: 'null'
+            expires_at:
+              $ref: 'common.yaml#/components/schemas/Timestamp'
+            revoked_at:
+              oneOf:
+                - $ref: 'common.yaml#/components/schemas/Timestamp'
+                - type: 'null'
+            last_seen_ip:
+              type: string
+              description: Source IP of the most recent request. Subject to DEC-010 retention.
+
+    ShiftSession:
+      allOf:
+        - $ref: 'common.yaml#/components/schemas/AuditFields'
+        - type: object
+          required: [shift_session_id, terminal_id, outlet_id, opened_at, opened_by]
+          properties:
+            shift_session_id:
+              $ref: 'common.yaml#/components/schemas/Uuid'
+            terminal_id:
+              $ref: 'common.yaml#/components/schemas/Uuid'
+            outlet_id:
+              allOf: [{ $ref: 'common.yaml#/components/schemas/Uuid' }]
+              description: Bound once at shift open from the terminal's immutable outlet binding. Never re-derived.
+            opened_at:
+              $ref: 'common.yaml#/components/schemas/Timestamp'
+            opened_by:
+              $ref: 'common.yaml#/components/schemas/Uuid'
+            closed_at:
+              oneOf:
+                - $ref: 'common.yaml#/components/schemas/Timestamp'
+                - type: 'null'
+            business_date:
+              $ref: 'common.yaml#/components/schemas/BusinessDate'

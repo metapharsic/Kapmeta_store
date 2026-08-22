@@ -1,0 +1,122 @@
+/*
+ * AppShell layout styles.
+ *
+ * Colors/spacing are defined as local CSS custom properties for now.
+ * TODO(integration): these fallbacks should eventually be replaced by
+ * values pulled from packages/ui-kit/tokens.json once that package is
+ * published; keep the property names stable so the swap is a no-op.
+ */
+
+:root {
+  --kap-color-primary: #1e6fd9;
+  --kap-color-primary-dark: #164f9c;
+  --kap-color-bg: #f4f6f9;
+  --kap-color-surface: #ffffff;
+  --kap-color-border: #dfe4ea;
+  --kap-color-text: #1c2733;
+  --kap-color-text-muted: #6b7684;
+  --kap-color-danger: #d9432b;
+
+  --kap-space-xs: 4px;
+  --kap-space-sm: 8px;
+  --kap-space-md: 16px;
+  --kap-space-lg: 24px;
+
+  --kap-radius-sm: 4px;
+  --kap-radius-md: 8px;
+}
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: var(--kap-color-bg);
+  color: var(--kap-color-text);
+  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+.topBar {
+  display: flex;
+  align-items: center;
+  gap: var(--kap-space-sm);
+  flex-wrap: wrap;
+  padding: var(--kap-space-sm) var(--kap-space-md);
+  background: var(--kap-color-surface);
+  border-bottom: 1px solid var(--kap-color-border);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.newOrderButton {
+  background: var(--kap-color-primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--kap-radius-md);
+  padding: var(--kap-space-sm) var(--kap-space-md);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.newOrderButton:hover {
+  background: var(--kap-color-primary-dark);
+}
+
+.searchInput {
+  border: 1px solid var(--kap-color-border);
+  border-radius: var(--kap-radius-sm);
+  padding: var(--kap-space-xs) var(--kap-space-sm);
+  font-size: 13px;
+  width: 120px;
+}
+
+.navButton {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--kap-radius-sm);
+  padding: var(--kap-space-xs) var(--kap-space-sm);
+  color: var(--kap-color-text);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.navButton:hover {
+  background: var(--kap-color-bg);
+  border-color: var(--kap-color-border);
+}
+
+.logoutButton {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--kap-radius-sm);
+  padding: var(--kap-space-xs) var(--kap-space-sm);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--kap-color-danger);
+}
+
+.logoutButton:hover {
+  background: var(--kap-color-bg);
+  border-color: var(--kap-color-border);
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+.supportPhone {
+  font-size: 13px;
+  color: var(--kap-color-text-muted);
+  white-space: nowrap;
+  padding: 0 var(--kap-space-sm);
+}
+
+.content {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}

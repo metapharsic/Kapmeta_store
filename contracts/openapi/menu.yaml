@@ -1,0 +1,1258 @@
+openapi: 3.1.0
+info:
+  title: Kapmeta — Menu & Catalog API
+  version: 1.0.0
+  license:
+    name: Proprietary
+  summary: Categories, items, variants, modifier groups, per-channel availability and channel sync.
+  description: |
+    Traces to `docs/02-requirements/menu-catalog.md`. Conventions in `docs/06-api/api-standards.md`;
+    shared components in `common.yaml`.
+
+    Key rules encoded here:
+      - Availability state is per `(item, channel)` — NEVER global. An item ON internally but not yet
+        synced to an external channel reads as `PARTIAL`.
+      - Every availability and price change carries a `version`. Version numbers guarantee ordering:
+        a stale sync response never overwrites a newer local state. A mutation with a stale version is 409.
+      - Every price and status change writes to `audit_logs`.
+      - Master data is deactivated (`is_active`), never physically deleted, because transactional rows
+        reference it forever.
+
+    OPEN DECISION — DEC-004 (tax): there are deliberately NO tax fields on items in this spec.
+    `hsn_code` is carried because it is a catalogue attribute, not a tax computation. Tax rates,
+    inclusivity and rules live in `taxes` / `tax_rules`, which are 🔴 blocked on DEC-004.
+    OPEN DECISION — DEC-008 (discount stacking): no discount fields are specified here.
+    OPEN DECISION — DEC-007: which external channels ship. `channel_type` is limited to the
+    `DB-ENUM-12` values with `OTHER` as the placeholder.
+    OPEN DECISION — DEC-001: per-outlet menu overrides. Every resource here is outlet-scoped via the
+    session; whether overrides are real is DEC-001's call.
+    OPEN DECISION — DEC-004 / price lists: `price_lists` and `item_prices` are 🔴 blocked, so this
+    spec exposes channel price as a read-through `Money` on the item/variant and does NOT specify a
+    price-list management surface.
+
+servers:
+  - url: https://api.kapmeta.example.com/api/v1
+    description: Production
+  - url: https://staging-api.kapmeta.example.com/api/v1
+    description: Staging
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Categories
+    description: Menu category CRUD.
+  - name: Items
+    description: Menu item CRUD, pricing and outlet scoping.
+  - name: Variants
+    description: Item variants (size, portion).
+  - name: Modifiers
+    description: Modifier groups and options attached to items.
+  - name: Availability
+    description: Per-item on/off/partial/unscheduled availability, versioned for sync ordering.
+  - name: Channel Sync
+    description: Per-channel menu/price/availability synchronization status and retry.
+
+paths:
+
+  # ===========================================================================
+  # Categories
+  # ===========================================================================
+
+  /menu/categories:
+    get:
+      tags: [Categories]
+      operationId: listCategories
+      summary: List categories
+      description: |
+        Cursor-paginated list of categories for the session's outlet.
+        Permission required: `menu.read`.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - $ref: 'common.yaml#/components/parameters/LimitParam'
+        - $ref: 'common.yaml#/components/parameters/CursorParam'
+        - name: parent_id
+          in: query
+          description: Restrict to children of this category. Omit for all.
+          schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        - name: is_active
+          in: query
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: Category page.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: 'common.yaml#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/Category' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+    post:
+      tags: [Categories]
+      operationId: createCategory
+      summary: Create a category
+      description: |
+        Permission required: `menu.manage`.
+        `outlet_id` is taken from the session; sending it in the body is 400.
+        No `Idempotency-Key` — this creates neither an order nor money.
+        Audit: configuration change row.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CategoryWrite' }
+      responses:
+        '201':
+          description: Category created.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Category' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'common.yaml#/components/responses/UnprocessableEntity' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /menu/categories/{category_id}:
+    parameters:
+      - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+      - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+      - name: category_id
+        in: path
+        required: true
+        schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+    get:
+      tags: [Categories]
+      operationId: getCategory
+      summary: Get a category
+      description: 'Permission required: `menu.read`. 404 also covers "exists but not visible to this outlet".'
+      responses:
+        '200':
+          description: Category.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Category' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+    patch:
+      tags: [Categories]
+      operationId: updateCategory
+      summary: Update a category
+      description: |
+        Permission required: `menu.manage`.
+        Optimistic concurrency: `version` is required and a stale value is 409 `VERSION_MISMATCH`.
+        Deactivation is via `is_active: false`. There is no DELETE — master data is never physically
+        deleted because transactional rows reference it forever.
+        Audit: configuration change row.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/CategoryWrite'
+                - type: object
+                  required: [version]
+                  properties:
+                    version: { $ref: 'common.yaml#/components/schemas/Version' }
+      responses:
+        '200':
+          description: Category updated.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Category' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'common.yaml#/components/responses/UnprocessableEntity' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  # ===========================================================================
+  # Items
+  # ===========================================================================
+
+  /menu/items:
+    get:
+      tags: [Items]
+      operationId: listMenuItems
+      summary: List menu items
+      description: |
+        Cursor-paginated. Supports filtering by category, veg flag and effective availability state on
+        a given channel (backed by `v_item_availability_effective`, i.e. after schedule rules).
+        Permission required: `menu.read`.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - $ref: 'common.yaml#/components/parameters/LimitParam'
+        - $ref: 'common.yaml#/components/parameters/CursorParam'
+        - name: category_id
+          in: query
+          schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        - name: channel_id
+          in: query
+          description: Evaluate availability for this channel. Required if `availability_state` is supplied.
+          schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        - name: availability_state
+          in: query
+          description: Filter by effective availability on `channel_id`.
+          schema: { $ref: 'common.yaml#/components/schemas/AvailabilityState' }
+        - name: is_veg
+          in: query
+          schema: { type: boolean }
+        - name: is_active
+          in: query
+          schema: { type: boolean }
+        - name: q
+          in: query
+          description: Free-text name search.
+          schema: { type: string, maxLength: 120 }
+      responses:
+        '200':
+          description: Menu item page.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: 'common.yaml#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/MenuItem' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+    post:
+      tags: [Items]
+      operationId: createMenuItem
+      summary: Create a menu item
+      description: |
+        Permission required: `menu.manage`.
+        Audit: creation writes an `audit_logs` row.
+        OPEN DECISION — DEC-004: no tax fields are accepted. `hsn_code` is a catalogue attribute only.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MenuItemWrite' }
+      responses:
+        '201':
+          description: Item created. Availability defaults to `UNSCHEDULED` on every mapped channel until set.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MenuItem' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'common.yaml#/components/responses/UnprocessableEntity' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /menu/items/{item_id}:
+    parameters:
+      - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+      - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+      - name: item_id
+        in: path
+        required: true
+        schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+    get:
+      tags: [Items]
+      operationId: getMenuItem
+      summary: Get a menu item with variants, modifier groups and per-channel availability
+      description: 'Permission required: `menu.read`.'
+      responses:
+        '200':
+          description: Menu item.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+            ETag: { $ref: 'common.yaml#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MenuItemDetail' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+    patch:
+      tags: [Items]
+      operationId: updateMenuItem
+      summary: Update a menu item
+      description: |
+        Permission required: `menu.manage` for descriptive fields; changing any price field
+        additionally requires `menu.price.update`.
+        Optimistic concurrency: `version` required; stale value is 409 `VERSION_MISMATCH`.
+        Audit: every price and status change writes to `audit_logs` (before/after).
+        A price change never rewrites history — `order_items.unit_price_minor` is a snapshot.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/MenuItemWrite'
+                - type: object
+                  required: [version]
+                  properties:
+                    version: { $ref: 'common.yaml#/components/schemas/Version' }
+      responses:
+        '200':
+          description: Item updated.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MenuItemDetail' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'common.yaml#/components/responses/UnprocessableEntity' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  # ===========================================================================
+  # Variants
+  # ===========================================================================
+
+  /menu/items/{item_id}/variants:
+    parameters:
+      - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+      - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+      - name: item_id
+        in: path
+        required: true
+        schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+    get:
+      tags: [Variants]
+      operationId: listItemVariants
+      summary: List variants of an item
+      description: 'Permission required: `menu.read`. Size/portion variants; exactly one may be `is_default`.'
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/LimitParam'
+        - $ref: 'common.yaml#/components/parameters/CursorParam'
+      responses:
+        '200':
+          description: Variant page.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: 'common.yaml#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/ItemVariant' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+    post:
+      tags: [Variants]
+      operationId: createItemVariant
+      summary: Create a variant
+      description: |
+        Permission required: `menu.manage`; setting `price` also requires `menu.price.update`.
+        422 if a second `is_default` variant is requested.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ItemVariantWrite' }
+      responses:
+        '201':
+          description: Variant created.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ItemVariant' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '422': { $ref: 'common.yaml#/components/responses/UnprocessableEntity' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /menu/variants/{variant_id}:
+    parameters:
+      - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+      - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+      - name: variant_id
+        in: path
+        required: true
+        schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+    patch:
+      tags: [Variants]
+      operationId: updateItemVariant
+      summary: Update a variant
+      description: |
+        Permission required: `menu.manage`; price changes require `menu.price.update`.
+        `version` required; stale value is 409. Audit row on every price/status change.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ItemVariantWrite'
+                - type: object
+                  required: [version]
+                  properties:
+                    version: { $ref: 'common.yaml#/components/schemas/Version' }
+      responses:
+        '200':
+          description: Variant updated.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ItemVariant' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'common.yaml#/components/responses/UnprocessableEntity' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  # ===========================================================================
+  # Modifier groups
+  # ===========================================================================
+
+  /menu/modifier-groups:
+    get:
+      tags: [Modifiers]
+      operationId: listModifierGroups
+      summary: List modifier groups
+      description: 'Permission required: `menu.read`.'
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - $ref: 'common.yaml#/components/parameters/LimitParam'
+        - $ref: 'common.yaml#/components/parameters/CursorParam'
+      responses:
+        '200':
+          description: Modifier group page.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: 'common.yaml#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/ModifierGroup' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+    post:
+      tags: [Modifiers]
+      operationId: createModifierGroup
+      summary: Create a modifier group
+      description: |
+        Permission required: `menu.manage`.
+        `min_select <= max_select` is enforced by `DB-CK-02`; a violation is 422.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ModifierGroupWrite' }
+      responses:
+        '201':
+          description: Modifier group created.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ModifierGroup' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '422': { $ref: 'common.yaml#/components/responses/UnprocessableEntity' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /menu/modifier-groups/{group_id}:
+    parameters:
+      - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+      - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+      - name: group_id
+        in: path
+        required: true
+        schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+    patch:
+      tags: [Modifiers]
+      operationId: updateModifierGroup
+      summary: Update a modifier group and its modifiers
+      description: |
+        Permission required: `menu.manage`; changing any `price_delta` requires `menu.price.update`.
+        `version` required; stale value is 409. 422 when `min_select > max_select`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ModifierGroupWrite'
+                - type: object
+                  required: [version]
+                  properties:
+                    version: { $ref: 'common.yaml#/components/schemas/Version' }
+      responses:
+        '200':
+          description: Modifier group updated.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ModifierGroup' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'common.yaml#/components/responses/UnprocessableEntity' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /menu/items/{item_id}/modifier-groups:
+    parameters:
+      - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+      - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+      - name: item_id
+        in: path
+        required: true
+        schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+    put:
+      tags: [Modifiers]
+      operationId: setItemModifierGroups
+      summary: Replace the set of modifier groups attached to an item
+      description: |
+        Full replacement of `item_modifier_groups` for this item — the request body is the desired
+        final set, not a delta.
+        Permission required: `menu.manage`. `version` required; stale value is 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [group_ids, version]
+              additionalProperties: false
+              properties:
+                group_ids:
+                  type: array
+                  items: { $ref: 'common.yaml#/components/schemas/Uuid' }
+                version: { $ref: 'common.yaml#/components/schemas/Version' }
+      responses:
+        '200':
+          description: Attachment set replaced.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MenuItemDetail' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  # ===========================================================================
+  # Availability (per channel)
+  # ===========================================================================
+
+  /menu/items/{item_id}/availability:
+    parameters:
+      - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+      - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+      - name: item_id
+        in: path
+        required: true
+        schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+    get:
+      tags: [Availability]
+      operationId: getItemAvailability
+      summary: Get per-channel availability for an item
+      description: |
+        Returns one row per mapped channel — availability is per `(item, channel)`, never global.
+        `state` is the stored explicit state; `effective_state` applies schedule rules
+        (`v_item_availability_effective`).
+        `PARTIAL` means channel-specific configuration divergence: some channels synced, some not. An
+        item ON internally but not yet synced to an external channel reads `PARTIAL`.
+        Permission required: `menu.read`.
+      responses:
+        '200':
+          description: Availability rows, one per channel.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [item_id, channels]
+                properties:
+                  item_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+                  channels:
+                    type: array
+                    items: { $ref: '#/components/schemas/ItemChannelAvailability' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /menu/items/{item_id}/availability/{channel_id}:
+    parameters:
+      - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+      - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+      - name: item_id
+        in: path
+        required: true
+        schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+      - name: channel_id
+        in: path
+        required: true
+        schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+    put:
+      tags: [Availability]
+      operationId: setItemChannelAvailability
+      summary: Set availability state for one (item, channel) pair
+      description: |
+        The single write path for availability. Turning an item OFF blocks NEW orders only — existing
+        orders stay valid and fulfillable.
+
+        Flow (menu-catalog.md): validate permission + channel mapping -> store the change with a
+        version number -> generate the channel-specific payload -> queue for async processing. The
+        adapter call itself is asynchronous and idempotent; this endpoint returns once the change is
+        durably stored and queued, with `sync_status: PENDING`.
+
+        Optimistic concurrency: `version` is REQUIRED. Version numbers guarantee ordering so a stale
+        sync response never overwrites a newer local state. A stale `version` is 409 `VERSION_MISMATCH`.
+
+        `UNSCHEDULED` means no active availability schedule rule; it is set implicitly when the last
+        schedule window is removed and may also be set explicitly.
+
+        Permission required: `menu.availability.update`.
+
+        Audit: every status change writes to `audit_logs` with before/after and the channel.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [state, version]
+              additionalProperties: false
+              properties:
+                state: { $ref: 'common.yaml#/components/schemas/AvailabilityState' }
+                version: { $ref: 'common.yaml#/components/schemas/Version' }
+                reason_code: { $ref: 'common.yaml#/components/schemas/ReasonCode' }
+      responses:
+        '200':
+          description: Availability stored and queued for channel sync.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ItemChannelAvailability' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404':
+          description: 404 — Item not found, or the item is not mapped to this channel.
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'common.yaml#/components/responses/UnprocessableEntity' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /menu/items/{item_id}/availability-schedules:
+    parameters:
+      - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+      - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+      - name: item_id
+        in: path
+        required: true
+        schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+    put:
+      tags: [Availability]
+      operationId: setAvailabilitySchedules
+      summary: Replace an item's scheduled availability windows
+      description: |
+        Full replacement of `availability_schedules` for the item, e.g. breakfast 07:00-11:00.
+        Times are OUTLET-LOCAL wall-clock (`*_time` columns), not UTC — this is the one place in the
+        API where a time is not UTC, because a breakfast window means 07:00 at the outlet.
+        Sending an empty list leaves the item `UNSCHEDULED`.
+        Permission required: `menu.availability.update`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [schedules, version]
+              additionalProperties: false
+              properties:
+                schedules:
+                  type: array
+                  items: { $ref: '#/components/schemas/AvailabilitySchedule' }
+                version: { $ref: 'common.yaml#/components/schemas/Version' }
+      responses:
+        '200':
+          description: Schedules replaced.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+                  schedules:
+                    type: array
+                    items: { $ref: '#/components/schemas/AvailabilitySchedule' }
+                  version: { $ref: 'common.yaml#/components/schemas/Version' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'common.yaml#/components/responses/UnprocessableEntity' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /menu/availability/bulk:
+    post:
+      tags: [Availability]
+      operationId: bulkSetAvailability
+      summary: Bulk enable/disable items or a whole category on a channel
+      description: |
+        Bulk operations are a first-class requirement (enable/disable category, bulk price update) and
+        are ALL audited — one audit row per affected `(item, channel)` pair, not one for the batch.
+
+        Applies per channel; availability remains per `(item, channel)`.
+
+        Permission required: `menu.availability.update`. A bulk price update additionally requires
+        `menu.price.update`.
+
+        No `Idempotency-Key` is required (this creates neither an order nor money), but the operation
+        is naturally idempotent: re-applying the same target state is a no-op that still audits.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channel_id, state]
+              additionalProperties: false
+              properties:
+                channel_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+                state: { $ref: 'common.yaml#/components/schemas/AvailabilityState' }
+                item_ids:
+                  type: array
+                  description: Explicit item list. Mutually exclusive with `category_id`.
+                  items: { $ref: 'common.yaml#/components/schemas/Uuid' }
+                category_id:
+                  allOf: [{ $ref: 'common.yaml#/components/schemas/Uuid' }]
+                  description: Apply to every active item in this category. Mutually exclusive with `item_ids`.
+                reason_code: { $ref: 'common.yaml#/components/schemas/ReasonCode' }
+      responses:
+        '202':
+          description: Accepted. Changes stored and queued; per-item sync status is polled via the sync endpoints.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [affected_count, sync_job_id]
+                properties:
+                  affected_count: { type: integer }
+                  sync_job_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '422':
+          description: 422 — Both or neither of `item_ids` and `category_id` supplied, or channel not mapped.
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  # ===========================================================================
+  # Channel sync
+  # ===========================================================================
+
+  /menu/channel-sync:
+    post:
+      tags: [Channel Sync]
+      operationId: triggerChannelSync
+      summary: Trigger a channel sync job
+      description: |
+        Queues a `sync_jobs` row. The adapter call to the external channel is ASYNCHRONOUS and
+        IDEMPOTENT — this endpoint never blocks on the aggregator.
+
+        Version numbers on the queued payload guarantee ordering: a stale sync response never
+        overwrites a newer local state.
+
+        Also the retry path for a `FAILED` job: pass `retry_of_sync_job_id`.
+
+        Permission required: `menu.channel.sync`.
+
+        OPEN DECISION — DEC-007: which external channels exist. `channel_type` is restricted to the
+        `DB-ENUM-12` values, with `OTHER` as the placeholder until DEC-007 lands. Channel-specific
+        payload shapes are adapter-internal and deliberately not exposed here.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channel_id, entity]
+              additionalProperties: false
+              properties:
+                channel_id:
+                  allOf: [{ $ref: 'common.yaml#/components/schemas/Uuid' }]
+                  description: A `channel_accounts` row for this outlet.
+                entity:
+                  type: string
+                  description: What to push. `AVAILABILITY` is the R1 case.
+                  enum: [CATALOG, AVAILABILITY, PRICE]
+                item_ids:
+                  type: array
+                  description: Restrict the sync to these items. Omit for a full entity sync.
+                  items: { $ref: 'common.yaml#/components/schemas/Uuid' }
+                retry_of_sync_job_id:
+                  allOf: [{ $ref: 'common.yaml#/components/schemas/Uuid' }]
+                  description: Retry a previously FAILED job rather than creating an unrelated one.
+      responses:
+        '202':
+          description: Sync job queued.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SyncJob' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '422':
+          description: 422 — Channel not mapped to this outlet, or `PRICE` requested while DEC-004 price lists are unavailable.
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+    get:
+      tags: [Channel Sync]
+      operationId: listSyncJobs
+      summary: List channel sync jobs
+      description: |
+        The operator failure surface — Synchronized / Failed / Pending with retry and audit trail.
+        Cursor-paginated.
+        Permission required: `menu.read`.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - $ref: 'common.yaml#/components/parameters/LimitParam'
+        - $ref: 'common.yaml#/components/parameters/CursorParam'
+        - name: channel_id
+          in: query
+          schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        - name: status
+          in: query
+          schema: { $ref: 'common.yaml#/components/schemas/SyncStatus' }
+      responses:
+        '200':
+          description: Sync job page.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: 'common.yaml#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/SyncJob' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /menu/channel-sync/{sync_job_id}:
+    get:
+      tags: [Channel Sync]
+      operationId: getSyncJob
+      summary: Get one sync job
+      description: 'Permission required: `menu.read`.'
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - name: sync_job_id
+          in: path
+          required: true
+          schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+      responses:
+        '200':
+          description: Sync job.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SyncJob' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+
+    Category:
+      allOf:
+        - $ref: 'common.yaml#/components/schemas/OutletScoped'
+        - $ref: 'common.yaml#/components/schemas/AuditFields'
+        - type: object
+          required: [id, name, sort_order, is_active, version]
+          properties:
+            id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+            name: { type: string, maxLength: 120 }
+            sort_order: { type: integer }
+            parent_id:
+              oneOf:
+                - $ref: 'common.yaml#/components/schemas/Uuid'
+                - type: 'null'
+            is_active:
+              type: boolean
+              description: Master data is deactivated, never physically deleted.
+            version: { $ref: 'common.yaml#/components/schemas/Version' }
+
+    CategoryWrite:
+      type: object
+      description: '`outlet_id` is NOT accepted — it comes from the session. Sending it is 400.'
+      additionalProperties: false
+      properties:
+        name: { type: string, maxLength: 120 }
+        sort_order: { type: integer }
+        parent_id:
+          oneOf:
+            - $ref: 'common.yaml#/components/schemas/Uuid'
+            - type: 'null'
+        is_active: { type: boolean }
+
+    MenuItem:
+      allOf:
+        - $ref: 'common.yaml#/components/schemas/OutletScoped'
+        - $ref: 'common.yaml#/components/schemas/AuditFields'
+        - type: object
+          required: [id, category_id, name, is_veg, is_active, version]
+          properties:
+            id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+            category_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+            name: { type: string, maxLength: 200 }
+            description: { type: string, maxLength: 1000 }
+            is_veg: { type: boolean }
+            hsn_code:
+              type: string
+              description: |
+                Catalogue attribute carried for statutory classification. It is NOT a tax rate and
+                drives no computation in this spec — tax rules are 🔴 blocked on DEC-004.
+              maxLength: 16
+            has_modifiers: { type: boolean }
+            is_active: { type: boolean }
+            base_price:
+              allOf: [{ $ref: 'common.yaml#/components/schemas/Money' }]
+              description: |
+                Default POS-channel price. Channel-specific pricing is exposed per channel in
+                `channel_prices`. The full price-list surface (`price_lists`, `item_prices`) is
+                🔴 blocked on DEC-004 and is not managed through this API yet.
+            version: { $ref: 'common.yaml#/components/schemas/Version' }
+
+    MenuItemDetail:
+      allOf:
+        - $ref: '#/components/schemas/MenuItem'
+        - type: object
+          properties:
+            variants:
+              type: array
+              items: { $ref: '#/components/schemas/ItemVariant' }
+            modifier_groups:
+              type: array
+              items: { $ref: '#/components/schemas/ModifierGroup' }
+            availability:
+              type: array
+              description: One entry per mapped channel. Availability is per `(item, channel)`.
+              items: { $ref: '#/components/schemas/ItemChannelAvailability' }
+            channel_prices:
+              type: array
+              description: Channel-specific price and channel-specific display name overrides.
+              items: { $ref: '#/components/schemas/ChannelPrice' }
+
+    MenuItemWrite:
+      type: object
+      description: '`outlet_id` is NOT accepted. Tax fields are NOT accepted — DEC-004.'
+      additionalProperties: false
+      properties:
+        category_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        name: { type: string, maxLength: 200 }
+        description: { type: string, maxLength: 1000 }
+        is_veg: { type: boolean }
+        hsn_code: { type: string, maxLength: 16 }
+        is_active: { type: boolean }
+        base_price:
+          allOf: [{ $ref: 'common.yaml#/components/schemas/Money' }]
+          description: Requires `menu.price.update` in addition to `menu.manage`.
+
+    ItemVariant:
+      allOf:
+        - $ref: 'common.yaml#/components/schemas/AuditFields'
+        - type: object
+          required: [id, item_id, name, is_default, is_active, version]
+          properties:
+            id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+            item_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+            name:
+              type: string
+              maxLength: 120
+              description: Size or portion, e.g. "Half", "Full".
+            is_default:
+              type: boolean
+              description: Exactly one variant per item may be default. A second is 422.
+            is_active: { type: boolean }
+            price:
+              allOf: [{ $ref: 'common.yaml#/components/schemas/Money' }]
+              description: Absolute price for this variant when set; otherwise the item's `base_price` applies.
+            version: { $ref: 'common.yaml#/components/schemas/Version' }
+
+    ItemVariantWrite:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string, maxLength: 120 }
+        is_default: { type: boolean }
+        is_active: { type: boolean }
+        price: { $ref: 'common.yaml#/components/schemas/Money' }
+
+    ModifierGroup:
+      allOf:
+        - $ref: 'common.yaml#/components/schemas/OutletScoped'
+        - $ref: 'common.yaml#/components/schemas/AuditFields'
+        - type: object
+          required: [id, name, min_select, max_select, modifiers, version]
+          properties:
+            id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+            name: { type: string, maxLength: 120 }
+            min_select:
+              type: integer
+              minimum: 0
+              description: Minimum selections required. `DB-CK-02` enforces `min_select <= max_select`.
+            max_select:
+              type: integer
+              minimum: 1
+            is_active: { type: boolean }
+            modifiers:
+              type: array
+              items: { $ref: '#/components/schemas/Modifier' }
+            version: { $ref: 'common.yaml#/components/schemas/Version' }
+
+    ModifierGroupWrite:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string, maxLength: 120 }
+        min_select: { type: integer, minimum: 0 }
+        max_select: { type: integer, minimum: 1 }
+        is_active: { type: boolean }
+        modifiers:
+          type: array
+          description: Full replacement of the group's modifiers when supplied.
+          items:
+            type: object
+            required: [name, price_delta]
+            additionalProperties: false
+            properties:
+              id:
+                allOf: [{ $ref: 'common.yaml#/components/schemas/Uuid' }]
+                description: Omit to create a new modifier; supply to update an existing one.
+              name: { type: string, maxLength: 120 }
+              price_delta: { $ref: 'common.yaml#/components/schemas/Money' }
+              is_active: { type: boolean }
+
+    Modifier:
+      allOf:
+        - $ref: 'common.yaml#/components/schemas/AuditFields'
+        - type: object
+          required: [id, group_id, name, price_delta, is_active]
+          properties:
+            id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+            group_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+            name: { type: string, maxLength: 120 }
+            price_delta:
+              allOf: [{ $ref: 'common.yaml#/components/schemas/Money' }]
+              description: |
+                `price_delta_minor`. May be negative (a modifier that reduces price), which is why it
+                is not constrained to >= 0. Snapshotted onto `order_item_modifiers` at order time.
+            is_active: { type: boolean }
+
+    ItemChannelAvailability:
+      allOf:
+        - $ref: 'common.yaml#/components/schemas/AuditFields'
+        - type: object
+          required: [item_id, channel_id, channel_type, state, effective_state, version, sync_status]
+          properties:
+            item_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+            channel_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+            channel_type: { $ref: 'common.yaml#/components/schemas/ChannelType' }
+            state:
+              allOf: [{ $ref: 'common.yaml#/components/schemas/AvailabilityState' }]
+              description: The explicitly stored state for this `(item, channel)` pair.
+            effective_state:
+              allOf: [{ $ref: 'common.yaml#/components/schemas/AvailabilityState' }]
+              description: |
+                State after schedule rules are applied (`v_item_availability_effective`). Read-only.
+                Outside a scheduled window an item reads `OFF` even when `state` is `ON`.
+              readOnly: true
+            version:
+              allOf: [{ $ref: 'common.yaml#/components/schemas/Version' }]
+              description: Ordering guarantee. A sync response carrying a lower version is discarded, not applied.
+            sync_status: { $ref: 'common.yaml#/components/schemas/SyncStatus' }
+            last_synced_at:
+              oneOf:
+                - $ref: 'common.yaml#/components/schemas/Timestamp'
+                - type: 'null'
+            last_sync_error_code:
+              description: Populated when `sync_status` is `FAILED`. Surfaces in the operator retry UI.
+              oneOf:
+                - type: string
+                - type: 'null'
+
+    AvailabilitySchedule:
+      type: object
+      description: |
+        A scheduled availability window. `start_time`/`end_time` are outlet-local wall-clock (`*_time`
+        columns), NOT UTC.
+      required: [day_of_week, start_time, end_time]
+      additionalProperties: false
+      properties:
+        day_of_week:
+          type: integer
+          minimum: 0
+          maximum: 6
+          description: 0 = Sunday.
+        start_time:
+          type: string
+          pattern: ^([01][0-9]|2[0-3]):[0-5][0-9]$
+          examples: ['07:00']
+        end_time:
+          type: string
+          pattern: ^([01][0-9]|2[0-3]):[0-5][0-9]$
+          examples: ['11:00']
+
+    ChannelPrice:
+      type: object
+      description: |
+        Channel-specific price and display name. Read-only in R1: the managed price-list surface
+        (`price_lists`, `item_prices`) is 🔴 blocked on DEC-004.
+      required: [channel_id, price]
+      properties:
+        channel_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        channel_type: { $ref: 'common.yaml#/components/schemas/ChannelType' }
+        price: { $ref: 'common.yaml#/components/schemas/Money' }
+        channel_item_name:
+          type: string
+          description: Channel-specific item naming override.
+        external_item_id:
+          type: string
+          description: The channel's own identifier from `channel_item_mapping`.
+
+    SyncJob:
+      allOf:
+        - $ref: 'common.yaml#/components/schemas/AuditFields'
+        - type: object
+          required: [id, channel_id, entity, status, version]
+          properties:
+            id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+            channel_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+            channel_type: { $ref: 'common.yaml#/components/schemas/ChannelType' }
+            entity:
+              type: string
+              enum: [CATALOG, AVAILABILITY, PRICE]
+            status: { $ref: 'common.yaml#/components/schemas/SyncStatus' }
+            version:
+              allOf: [{ $ref: 'common.yaml#/components/schemas/Version' }]
+              description: Local state version this job was generated from. Guarantees ordering against responses.
+            attempt:
+              type: integer
+              minimum: 0
+            item_count:
+              type: integer
+            error_code:
+              oneOf:
+                - type: string
+                - type: 'null'
+            error_detail:
+              oneOf:
+                - type: string
+                - type: 'null'
+            completed_at:
+              oneOf:
+                - $ref: 'common.yaml#/components/schemas/Timestamp'
+                - type: 'null'

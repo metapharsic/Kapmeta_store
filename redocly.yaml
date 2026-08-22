@@ -1,0 +1,33 @@
+extends:
+  - recommended
+
+rules:
+  # No real domain is registered yet (pre-launch project). Server URLs are
+  # openly placeholder — swapping example.com for a different fake domain
+  # would silence this rule without fixing anything real. Revisit once a
+  # real domain exists.
+  no-server-example.com: off
+
+apis:
+  # common.yaml is NOT listed as its own api entry — it's a shared component
+  # library consumed via $ref by every file below, not an entry point. Linting
+  # it standalone falsely flags every component as "unused" (no-unused-components)
+  # since nothing in that document itself references them.
+  auth:
+    root: contracts/openapi/auth.yaml
+  menu:
+    root: contracts/openapi/menu.yaml
+  orders:
+    root: contracts/openapi/orders.yaml
+  kitchen:
+    root: contracts/openapi/kitchen.yaml
+  inventory:
+    root: contracts/openapi/inventory.yaml
+  payments:
+    root: contracts/openapi/payments.yaml
+  reporting:
+    root: contracts/openapi/reporting.yaml
+  webhooks:
+    root: contracts/openapi/webhooks.yaml
+# contracts/openapi/openapi.yaml deliberately excluded — marked SUPERSEDED in
+# its own info.description, kept only as reference pending an ADR to retire it.

@@ -1,0 +1,273 @@
+openapi: 3.0.3
+info:
+  title: 'Kapmeta POS & Operations API [SUPERSEDED — see NOTICE below]'
+  description: |
+    SUPERSEDED as of 2026-08-08 by the modular spec set: common.yaml, auth.yaml, menu.yaml,
+    orders.yaml, kitchen.yaml. This file conflicts with that set (OpenAPI 3.0.3 vs 3.1.0,
+    camelCase vs snake_case bodies, /kitchen/kots vs /kot/tickets, missing X-Outlet-Id /
+    X-Correlation-Id / Idempotency-Key requirements) and does not match
+    docs/06-api/api-standards.md, which the modular set was written against.
+
+    DO NOT implement or generate clients against this file. Kept only as a reference pending
+    an ADR to formally retire it — see contracts/openapi/README.md.
+  version: 1.0.0
+  license:
+    name: Proprietary
+servers:
+  - url: https://{host}/api/v1
+    description: Development and production endpoint template
+    variables:
+      host:
+        default: localhost:4444
+        description: API host
+paths:
+  /auth/login:
+    post:
+      summary: Cashier or Admin Login
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  expiresAt:
+                    type: string
+                    format: date-time
+        '401':
+          description: Invalid credentials
+
+  /orders:
+    post:
+      summary: Create a new order (Cashier checkout)
+      operationId: createOrder
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Unique idempotency key to prevent order duplicates (Engineering Protocol Rule 6).
+        - name: X-Correlation-ID
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Distributed tracing correlation ID.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - id
+                - terminalNumber
+                - items
+                - subtotal
+                - taxTotal
+                - grandTotal
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                  description: Client-generated UUIDv7 order ID (ADR-0003).
+                terminalNumber:
+                  type: string
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - menuItemId
+                      - quantity
+                      - unitPrice
+                    properties:
+                      menuItemId:
+                        type: string
+                        format: uuid
+                      quantity:
+                        type: integer
+                        minimum: 1
+                      unitPrice:
+                        type: integer
+                        description: Price in minor currency units (cents/paise) to prevent float inaccuracies.
+                subtotal:
+                  type: integer
+                taxTotal:
+                  type: integer
+                grandTotal:
+                  type: integer
+      responses:
+        '201':
+          description: Order created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  orderNumber:
+                    type: string
+                    description: Local terminal-partitioned sequence order number.
+        '400':
+          description: Bad request (validation errors)
+        '409':
+          description: Conflict (order ID or idempotency key already exists)
+
+  /menu/items:
+    get:
+      summary: Retrieve all active menu items
+      operationId: getMenuItems
+      responses:
+        '200':
+          description: List of active menu items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      format: uuid
+                    name:
+                      type: string
+                    category:
+                      type: string
+                    price:
+                      type: integer
+                      description: Price in minor currency units (cents/paise).
+                    stock:
+                      type: integer
+
+  /kitchen/kots:
+    get:
+      summary: Retrieve active kitchen order tickets (KOT)
+      operationId: getKitchenTickets
+      responses:
+        '200':
+          description: List of active KOT tickets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      format: uuid
+                    ticketNumber:
+                      type: string
+                    status:
+                      type: string
+                      enum: [QUEUED, PREPARING, READY, SERVED]
+                    createdAt:
+                      type: string
+                      format: date-time
+
+  /kitchen/kots/{id}/status:
+    post:
+      summary: Update KOT ticket status
+      operationId: updateKOTStatus
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum: [QUEUED, PREPARING, READY, SERVED]
+      responses:
+        '200':
+          description: KOT status updated successfully
+
+  /billing/invoices:
+    post:
+      summary: Settle order, create invoice and capture payment
+      operationId: createInvoice
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - orderId
+                - amount
+                - taxAmount
+                - method
+              properties:
+                orderId:
+                  type: string
+                  format: uuid
+                amount:
+                  type: integer
+                  description: Amount in minor units.
+                taxAmount:
+                  type: integer
+                method:
+                  type: string
+                  enum: [CASH, CARD, UPI]
+                transactionId:
+                  type: string
+      responses:
+        '201':
+          description: Invoice generated successfully
+
+  /billing/sales-summary:
+    get:
+      summary: Retrieve operational daily sales aggregates
+      operationId: getSalesSummary
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Financial metrics report summary
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

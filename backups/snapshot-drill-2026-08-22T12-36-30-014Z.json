@@ -1,0 +1,259 @@
+{
+  "metadata": {
+    "timestamp": "2026-08-22T12:36:30.206Z",
+    "rpoTargetMinutes": 60,
+    "rtoTargetMinutes": 15,
+    "version": "1.0"
+  },
+  "tables": {
+    "organizations": 1,
+    "outlets": 1,
+    "users": 6,
+    "menuItems": 11,
+    "orders": 24,
+    "ledgerEntries": 15
+  },
+  "payload": {
+    "organizations": [
+      {
+        "id": "00000000-0000-0000-0000-000000000000",
+        "name": "Hotel Kapila Hospitality Group",
+        "taxNumber": "36AAACH7412K1Z9",
+        "createdAt": "2026-08-09T06:50:00.651Z",
+        "updatedAt": "2026-08-22T12:24:05.620Z",
+        "createdBy": null,
+        "updatedBy": null
+      }
+    ],
+    "outlets": [
+      {
+        "id": "11111111-1111-1111-1111-111111111111",
+        "organizationId": "00000000-0000-0000-0000-000000000000",
+        "name": "Hotel Kapila",
+        "code": "NZB-01",
+        "address": "Pragathi Nagar, Central Nizamabad, Telangana 503001",
+        "fssaiNumber": "13619014000382",
+        "upiVpa": "hotelkapila@hdfcbank",
+        "timezone": "Asia/Kolkata",
+        "currency": "INR",
+        "dayStartTime": "06:00",
+        "isActive": true,
+        "createdAt": "2026-08-09T06:51:03.115Z",
+        "updatedAt": "2026-08-22T12:24:05.631Z",
+        "createdBy": null,
+        "updatedBy": null
+      }
+    ],
+    "users": [
+      {
+        "id": "66666666-6666-6666-6666-666666666666",
+        "email": "cashier@petpooja.com",
+        "firstName": "Diner",
+        "lastName": "Cashier",
+        "isActive": true
+      },
+      {
+        "id": "299bb3ed-18e9-4ece-ace8-b99ba238c66f",
+        "email": "test@hotelkapila.com",
+        "firstName": "Test",
+        "lastName": "TestLast",
+        "isActive": true
+      },
+      {
+        "id": "a37ecd75-f1aa-4ef5-9756-d9a0e58aa99b",
+        "email": "waiter@hotelkapila.com",
+        "firstName": "Ravi",
+        "lastName": "Waiter",
+        "isActive": true
+      },
+      {
+        "id": "2888299c-7f8e-4ec8-8aa9-a365101caeef",
+        "email": "admin@hotelkapila.com",
+        "firstName": "Abdul",
+        "lastName": "Mannan",
+        "isActive": true
+      },
+      {
+        "id": "dc5cabf7-0d73-47af-a8dc-466ca88979d4",
+        "email": "cashier@hotelkapila.com",
+        "firstName": "Kapila",
+        "lastName": "Cashier",
+        "isActive": true
+      },
+      {
+        "id": "d836473c-b65e-4ca1-a3f4-6984eb580325",
+        "email": "chef@hotelkapila.com",
+        "firstName": "Head",
+        "lastName": "Chef",
+        "isActive": true
+      }
+    ],
+    "menuItems": [
+      {
+        "id": "88888888-8888-8888-8888-888888888888",
+        "outletId": "11111111-1111-1111-1111-111111111111",
+        "categoryId": "77777777-7777-7777-7777-777777777777",
+        "stationId": null,
+        "name": "Veg Spring Rolls",
+        "onlineDisplayName": null,
+        "description": null,
+        "price": "15000",
+        "isVeg": true,
+        "taxRate": "5",
+        "isActive": true,
+        "createdAt": "2026-08-09T06:51:55.426Z",
+        "updatedAt": "2026-08-09T06:51:55.426Z"
+      },
+      {
+        "id": "ab567f46-4df1-4398-b1e6-6890aa092e65",
+        "outletId": "11111111-1111-1111-1111-111111111111",
+        "categoryId": "cat-kap-9",
+        "stationId": null,
+        "name": "Test Item",
+        "onlineDisplayName": null,
+        "description": null,
+        "price": "1000",
+        "isVeg": true,
+        "taxRate": "5",
+        "isActive": true,
+        "createdAt": "2026-08-09T07:21:33.766Z",
+        "updatedAt": "2026-08-09T07:21:33.766Z"
+      },
+      {
+        "id": "item-kap-ghee-sambar-bowl",
+        "outletId": "11111111-1111-1111-1111-111111111111",
+        "categoryId": "cat-kap-19",
+        "stationId": null,
+        "name": "Ghee Sambar Rice Bowl",
+        "onlineDisplayName": null,
+        "description": "Hot and tangy sambar tempered with ghee, served over steamed rice.",
+        "price": "12900",
+        "isVeg": true,
+        "taxRate": "5",
+        "isActive": true,
+        "createdAt": "2026-08-11T06:25:59.009Z",
+        "updatedAt": "2026-08-11T06:25:59.009Z"
+      },
+      {
+        "id": "item-kap-steamed-rice-chicken-curry",
+        "outletId": "11111111-1111-1111-1111-111111111111",
+        "categoryId": "cat-kap-19",
+        "stationId": null,
+        "name": "Steamed Rice With Telangana Chicken Curry",
+        "onlineDisplayName": null,
+        "description": "Steamed rice packed with Telangana-style chicken curry.",
+        "price": "17800",
+        "isVeg": false,
+        "taxRate": "5",
+        "isActive": true,
+        "createdAt": "2026-08-11T06:25:59.041Z",
+        "updatedAt": "2026-08-11T06:25:59.041Z"
+      },
+      {
+        "id": "item-kap-mini-chicken-biryani",
+        "outletId": "11111111-1111-1111-1111-111111111111",
+        "categoryId": "cat-kap-10",
+        "stationId": null,
+        "name": "Mini Chicken Dum Biryani",
+        "onlineDisplayName": null,
+        "description": "750ml dum biryani with 2 chicken pieces.",
+        "price": "17900",
+        "isVeg": false,
+        "taxRate": "5",
+        "isActive": true,
+        "createdAt": "2026-08-11T06:25:59.058Z",
+        "updatedAt": "2026-08-11T06:25:59.058Z"
+      },
+      {
+        "id": "item-kap-executive-egg-meal-box",
+        "outletId": "11111111-1111-1111-1111-111111111111",
+        "categoryId": "cat-kap-20",
+        "stationId": null,
+        "name": "Executive Egg Meal Box",
+        "onlineDisplayName": null,
+        "description": "Egg fried rice + egg snack + egg curry + sambar rice + curd rice.",
+        "price": "17900",
+        "isVeg": false,
+        "taxRate": "5",
+        "isActive": true,
+        "createdAt": "2026-08-11T06:25:59.070Z",
+        "updatedAt": "2026-08-11T06:25:59.070Z"
+      },
+      {
+        "id": "item-kap-north-indian-meal",
+        "outletId": "11111111-1111-1111-1111-111111111111",
+        "categoryId": "cat-kap-18",
+        "stationId": null,
+        "name": "North Indian Meal",
+        "onlineDisplayName": null,
+        "description": "Veg biryani + wheat tandoor roti + veg curry + paneer curry.",
+        "price": "18900",
+        "isVeg": true,
+        "taxRate": "5",
+        "isActive": true,
+        "createdAt": "2026-08-11T06:25:59.086Z",
+        "updatedAt": "2026-08-11T06:25:59.086Z"
+      },
+      {
+        "id": "item-kap-spl-biryani",
+        "outletId": "11111111-1111-1111-1111-111111111111",
+        "categoryId": "cat-kap-10",
+        "stationId": null,
+        "name": "Hotel Kapila Special Chicken Biryani (Boneless)",
+        "onlineDisplayName": null,
+        "description": "Nizamabad signature boneless fried chicken masala over dum basmati rice.",
+        "price": "34000",
+        "isVeg": false,
+        "taxRate": "5",
+        "isActive": true,
+        "createdAt": "2026-08-09T07:11:46.383Z",
+        "updatedAt": "2026-08-22T12:24:06.643Z"
+      },
+      {
+        "id": "165c602a-e740-4053-9d0b-7a42fc77e271",
+        "outletId": "11111111-1111-1111-1111-111111111111",
+        "categoryId": "cat-kap-9",
+        "stationId": null,
+        "name": "Hyderabadi Paneer Dum Biryani",
+        "onlineDisplayName": null,
+        "description": "Fragrant saffron basmati rice layered with spiced paneer cubes and herbs.",
+        "price": "28000",
+        "isVeg": true,
+        "taxRate": "5",
+        "isActive": true,
+        "createdAt": "2026-08-09T15:41:10.305Z",
+        "updatedAt": "2026-08-22T12:24:06.650Z"
+      },
+      {
+        "id": "4c62079b-afab-4f56-a58a-8410622fbb62",
+        "outletId": "11111111-1111-1111-1111-111111111111",
+        "categoryId": "cat-kap-6",
+        "stationId": null,
+        "name": "Murgh Malai Tikka",
+        "onlineDisplayName": null,
+        "description": "Creamy cashew and cardamom marinated chicken morsels grilled in tandoor.",
+        "price": "32000",
+        "isVeg": false,
+        "taxRate": "5",
+        "isActive": true,
+        "createdAt": "2026-08-09T15:41:10.313Z",
+        "updatedAt": "2026-08-22T12:24:06.656Z"
+      },
+      {
+        "id": "6ebda724-3d5f-4c11-b627-1c792cb11a9c",
+        "outletId": "11111111-1111-1111-1111-111111111111",
+        "categoryId": "cat-kap-26",
+        "stationId": null,
+        "name": "Kapila Electric Blue Lagoon",
+        "onlineDisplayName": null,
+        "description": "Blue curacao, fresh lime, sprite and crushed ice.",
+        "price": "16000",
+        "isVeg": true,
+        "taxRate": "5",
+        "isActive": true,
+        "createdAt": "2026-08-09T15:41:10.320Z",
+        "updatedAt": "2026-08-22T12:24:06.663Z"
+      }
+    ]
+  }
+}

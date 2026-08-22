@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "commonjs",
+    "lib": ["es2022", "dom", "dom.iterable"],
+    "strict": true,
+    "jsx": "preserve",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "node",
+    "baseUrl": ".",
+    "paths": {
+      "@pos-web/*": ["apps/pos-web/*"],
+      "@admin-web/*": ["apps/admin-web/*"],
+      "@api/*": ["apps/api/*"],
+      "@kapmeta/config": ["packages/config"],
+      "@kapmeta/shared-types": ["packages/shared-types"],
+      "@kapmeta/ui-kit": ["packages/ui-kit"]
+    }
+  },
+  "exclude": ["node_modules", "dist"]
+}

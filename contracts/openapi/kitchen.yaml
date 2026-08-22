@@ -1,0 +1,626 @@
+openapi: 3.1.0
+info:
+  title: Kapmeta — Kitchen / KOT API
+  version: 1.0.0
+  license:
+    name: Proprietary
+  summary: KOT tickets, station routing, item completion, reprint and amendment.
+  description: |
+    Traces to `docs/02-requirements/kitchen-kot.md` and `docs/workflows/WF-KOT-kitchen.md`.
+    Conventions in `docs/06-api/api-standards.md`; shared components in `common.yaml`.
+
+    ## Cardinality
+
+    One order produces ONE `kitchen_order` and MANY `kot_tickets` — one per kitchen station the
+    order's items route to. Tandoor and beverages are different physical places with different prep
+    times. The order reaches `READY` only when EVERY ticket is `DONE`.
+
+    This is the most commonly misread relationship in the schema. There is no endpoint that
+    "completes an order's KOT" — you complete tickets, and the orders module derives readiness.
+
+    ## Ticket lifecycle (`DB-ENUM-04` `kot_status`)
+
+        PENDING -> PREPARING -> DONE
+             |
+             +--> CANCELLED   (elevated role, mandatory reason)
+
+    Item-level and ticket-level completion are BOTH supported. A station can finish 3 of 4 items and
+    the board must reflect it, so `kot_items` carry their own status.
+
+    ## Reprint is not re-create
+
+    `POST /kot/tickets/{ticketId}/reprint` increments `reprint_count` on the SAME ticket and writes an
+    audit row. It never creates a new ticket. A duplicate ticket means the dish is cooked twice —
+    a real, expensive, food-wasting defect.
+
+    ## Amendments are additive
+
+    Items added or changed after a KOT was issued produce a DELTA ticket with `is_amendment: true`,
+    printed and displayed alongside the original. The original is never silently replaced — the
+    kitchen already started cooking from it.
+
+    ## Printing never blocks
+
+    Printer failure degrades to the kitchen display and raises an operator alert. No endpoint in this
+    spec fails because a printer is unavailable; `print_status` is reported, not enforced.
+
+    OPEN DECISION — DEC-006 (printer / KOT hardware): print transport, ESC-POS profile and printer
+    configuration are NOT specified. `print_status` is an observable outcome only; there is no
+    printer-configuration endpoint until DEC-006 lands.
+    OPEN DECISION — DEC-003 (inventory automation): post-KOT cancellation signals wastage via
+    `wastage_required` but the wastage record itself is not modelled here.
+    OPEN DECISION — DEC-002 (offline): no offline queue or replay endpoint is specified. Whether a
+    station can mark items done while disconnected is unresolved.
+
+servers:
+  - url: https://api.kapmeta.example.com/api/v1
+    description: Production
+  - url: https://staging-api.kapmeta.example.com/api/v1
+    description: Staging
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Tickets
+    description: KOT ticket lifecycle — creation, status transitions, cancellation.
+  - name: Items
+    description: Item-level completion within a ticket.
+  - name: Stations
+    description: Kitchen station configuration and per-station ticket queues.
+  - name: Printing
+    description: KOT print job status and reprint.
+
+paths:
+
+  /kot/tickets:
+    get:
+      tags: [Tickets]
+      operationId: listKotTickets
+      summary: KOT board
+      description: |
+        The kitchen board. Backed by `v_open_kot_tickets`, which carries computed ticket age so the
+        client does not recompute it per render.
+
+        Default (no `status` filter) returns OPEN tickets only — `PENDING` and `PREPARING`. The board
+        queries open tickets thousands of times a day and never wants the completed ones; this is
+        served by the partial index `idx_kot_tickets_station_open`.
+
+        Scoped to the session's outlet. Optionally narrowed to one station for a per-station display.
+
+        Permission required: `kot.read`.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - $ref: 'common.yaml#/components/parameters/LimitParam'
+        - $ref: 'common.yaml#/components/parameters/CursorParam'
+        - name: station_id
+          in: query
+          description: Narrow to one station. Omit for the all-station board.
+          schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        - name: status
+          in: query
+          description: |
+            Repeatable. Defaults to `PENDING,PREPARING` when omitted. Pass explicitly to include
+            `DONE` or `CANCELLED`.
+          schema:
+            type: array
+            items: { $ref: 'common.yaml#/components/schemas/KotStatus' }
+          style: form
+          explode: true
+        - name: sla_breached
+          in: query
+          description: |
+            When true, returns only tickets whose age exceeds the station's `sla_seconds`. Feeds the
+            escalation view.
+          schema: { type: boolean }
+        - name: business_date
+          in: query
+          description: Server-computed business date (`fn_business_date`), not `created_at::date`.
+          schema: { $ref: 'common.yaml#/components/schemas/BusinessDate' }
+      responses:
+        '200':
+          description: Ticket page, oldest first.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: 'common.yaml#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/KotTicketSummary' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /kot/tickets/{ticketId}:
+    get:
+      tags: [Tickets]
+      operationId: getKotTicket
+      summary: Get one ticket with its items
+      description: |
+        Permission required: `kot.read`.
+
+        Returns 404 rather than 403 when the ticket belongs to another outlet — an out-of-scope
+        record is indistinguishable from a non-existent one by design.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - $ref: '#/components/parameters/TicketIdPath'
+      responses:
+        '200':
+          description: Ticket detail.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KotTicket' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+
+  /kot/tickets/{ticketId}/transitions:
+    post:
+      tags: [Tickets]
+      operationId: transitionKotTicket
+      summary: Move a ticket to the next status
+      description: |
+        Ticket status is append-only in effect: transitions are validated server-side and audited.
+        There is no `PATCH` on `status`.
+
+        Legal transitions:
+
+          | From      | To         | Guard                                                   |
+          |-----------|------------|---------------------------------------------------------|
+          | PENDING   | PREPARING  | Station acknowledged the ticket                          |
+          | PREPARING | DONE       | Every `kot_item` on the ticket is `DONE`                 |
+          | PENDING   | DONE       | Allowed — short-prep stations may skip PREPARING         |
+          | any open  | CANCELLED  | Elevated role + mandatory reason code                    |
+
+        Marking a ticket `DONE` while any of its items is still open returns **422**, not 409 — the
+        request is well-formed and the state is legal, the business rule rejects it. Complete the
+        items first (`PATCH /kot/items/{itemId}`) or use `complete_all_items: true`.
+
+        When the last open ticket for an order reaches `DONE`, the kitchen module publishes
+        `kot.completed`; the orders module derives `READY` from it. This endpoint never writes to
+        `orders` — cross-module table writes are forbidden.
+
+        Permission required: `kot.update`. Cancellation additionally requires `kot.cancel` (elevated).
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - $ref: 'common.yaml#/components/parameters/IdempotencyKeyHeader'
+        - $ref: '#/components/parameters/TicketIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/KotTransitionRequest' }
+      responses:
+        '200':
+          description: Transition applied.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KotTicket' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403':
+          description: |
+            Caller lacks `kot.update`, or lacks `kot.cancel` for a cancellation, or the ticket is
+            outside the session's outlet grant.
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409':
+          description: |
+            Illegal transition for the ticket's current status (e.g. `DONE` -> `PREPARING`), or the
+            ticket was modified concurrently.
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+              examples:
+                illegalTransition:
+                  value:
+                    error:
+                      code: KOT_ILLEGAL_TRANSITION
+                      message: Cannot move ticket from DONE to PREPARING
+                      details:
+                        - field: to_status
+                          value: PREPARING
+                      correlation_id: 7f3a91c2-0b64-4f3e-9a11-2c4d5e6f7a80
+        '422':
+          description: |
+            Business rule rejection — most commonly `DONE` requested while items remain open, or a
+            cancellation without a reason code.
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+              examples:
+                itemsStillOpen:
+                  value:
+                    error:
+                      code: KOT_ITEMS_NOT_COMPLETE
+                      message: 2 items on this ticket are not marked DONE
+                      details:
+                        - field: items
+                          value: '2 open'
+                      correlation_id: 7f3a91c2-0b64-4f3e-9a11-2c4d5e6f7a81
+
+  /kot/items/{itemId}:
+    patch:
+      tags: [Items]
+      operationId: updateKotItem
+      summary: Mark a single ticket item
+      description: |
+        Item-level completion. A station finishing 3 of 4 items must be able to say so — the board
+        shows per-item state, and prep metrics depend on it.
+
+        Only `status` is mutable. Quantity and item identity come from the order and are never edited
+        here; changing what is being cooked is an order amendment, which produces a delta ticket.
+
+        Permission required: `kot.update`.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - name: itemId
+          in: path
+          required: true
+          schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [status]
+              properties:
+                status: { $ref: 'common.yaml#/components/schemas/KotStatus' }
+      responses:
+        '200':
+          description: Item updated.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KotItem' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+
+  /kot/tickets/{ticketId}/reprint:
+    post:
+      tags: [Printing]
+      operationId: reprintKotTicket
+      summary: Reprint an existing ticket
+      description: |
+        Increments `reprint_count` on the SAME ticket, writes an audit row (who, when, why) and
+        re-sends to the printer and display.
+
+        **This never creates a new ticket.** If an operator cannot find a ticket, reprint it — do not
+        re-place the order. A duplicate ticket gets the dish cooked twice.
+
+        A high reprint rate across an outlet signals a hardware or process problem, not user error;
+        `kot_performance` tracks it for exactly that reason.
+
+        Returns 200 even when the printer is unavailable — `print_status` reports the outcome. Printing
+        is a P2 dependency (`DEP-HW-01`) and must never block kitchen operation.
+
+        Permission required: `kot.reprint`.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - $ref: 'common.yaml#/components/parameters/IdempotencyKeyHeader'
+        - $ref: '#/components/parameters/TicketIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                  description: |
+                    Mandatory. Recorded in the audit row. Free text pending a configured reason-code
+                    list (see `docs/02-requirements/kitchen-kot.md`).
+                  examples: ['Original ticket lost at pass']
+                target:
+                  type: string
+                  enum: [PRINTER, DISPLAY, BOTH]
+                  default: BOTH
+      responses:
+        '200':
+          description: |
+            Reprint recorded. `print_status` reports whether the printer accepted it; a
+            `PRINTER_UNAVAILABLE` value is a warning, not a failure.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReprintResult' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '422':
+          description: Missing reason.
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+
+  /kitchen/stations:
+    get:
+      tags: [Stations]
+      operationId: listKitchenStations
+      summary: List kitchen stations for the outlet
+      description: |
+        Stations are the routing targets for tickets. Used to populate the station selector on the
+        board and to configure `station_routes`.
+
+        Permission required: `kot.read`.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+      responses:
+        '200':
+          description: Stations for the session's outlet.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/KitchenStation' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+
+  /kitchen/stations/{stationId}/routes:
+    get:
+      tags: [Stations]
+      operationId: listStationRoutes
+      summary: Routing rules for a station
+      description: |
+        `station_routes` map a category or a specific item to a station. An item with no matching
+        route falls back to the outlet's default station and is flagged for configuration — routing
+        never silently drops an item, because a dropped item is food that never gets cooked.
+
+        Permission required: `kot.read`.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - name: stationId
+          in: path
+          required: true
+          schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+      responses:
+        '200':
+          description: Routes for the station.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/StationRoute' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+
+    TicketIdPath:
+      name: ticketId
+      in: path
+      required: true
+      schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+
+  schemas:
+
+    KotTicketSummary:
+      type: object
+      description: Board row. Carries computed age so the client does not recompute per render.
+      required: [id, kitchen_order_id, order_id, station_id, status, age_seconds, created_at]
+      properties:
+        id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        kitchen_order_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        order_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        order_number:
+          type: string
+          description: Denormalised for display. Unique per `(outlet_id, order_number)`.
+        station_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        station_name: { type: string }
+        status: { $ref: 'common.yaml#/components/schemas/KotStatus' }
+        is_amendment:
+          type: boolean
+          description: |
+            True for a delta ticket raised after the original KOT. Displayed distinctly — the kitchen
+            must see that this ADDS to work already in progress rather than replacing it.
+        reprint_count:
+          type: integer
+          minimum: 0
+          description: Incremented by `/reprint`. Never resets.
+        age_seconds:
+          type: integer
+          minimum: 0
+          description: Server-computed `now() - created_at`. Drives board colour thresholds.
+        sla_seconds:
+          type: integer
+          description: The station's configured threshold, echoed so the client can colour locally.
+        sla_breached:
+          type: boolean
+          description: '`age_seconds > sla_seconds` on an open ticket.'
+        item_count: { type: integer, minimum: 0 }
+        items_done: { type: integer, minimum: 0 }
+        created_at: { $ref: 'common.yaml#/components/schemas/Timestamp' }
+
+    KotTicket:
+      allOf:
+        - $ref: '#/components/schemas/KotTicketSummary'
+        - type: object
+          properties:
+            items:
+              type: array
+              items: { $ref: '#/components/schemas/KotItem' }
+            print_status: { $ref: '#/components/schemas/PrintStatus' }
+            cancelled_reason_code:
+              type: string
+              description: Present only on `CANCELLED` tickets.
+            completed_at:
+              oneOf:
+                - $ref: 'common.yaml#/components/schemas/Timestamp'
+                - type: 'null'
+              description: |
+                Set when the ticket reached `DONE`. `completed_at - created_at` is the prep duration
+                feeding `kot_performance`.
+        - $ref: 'common.yaml#/components/schemas/AuditFields'
+
+    KotItem:
+      type: object
+      required: [id, ticket_id, order_item_id, name, qty, status]
+      properties:
+        id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        ticket_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        order_item_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        name:
+          type: string
+          description: |
+            Snapshot of the item name at order time, not resolved from `menu_items` at read time.
+            A menu rename must not change what an in-flight ticket says.
+        variant_name:
+          oneOf:
+            - type: string
+            - type: 'null'
+        modifiers:
+          type: array
+          description: |
+            Preparation-relevant modifiers only, as text. Prices are deliberately absent — the kitchen
+            has no reason to see money, and no money is computed on this path.
+          items: { type: string }
+          examples: [['no onion', 'extra spicy']]
+        qty:
+          type: integer
+          minimum: 1
+        notes:
+          oneOf:
+            - type: string
+            - type: 'null'
+          description: Free-text kitchen note captured at order entry.
+        status: { $ref: 'common.yaml#/components/schemas/KotStatus' }
+
+    KotTransitionRequest:
+      type: object
+      additionalProperties: false
+      required: [to_status]
+      properties:
+        to_status: { $ref: 'common.yaml#/components/schemas/KotStatus' }
+        reason_code:
+          type: string
+          description: |
+            **Mandatory when `to_status` is `CANCELLED`.** Recorded on the ticket and in the audit
+            row. Omitting it on a cancellation returns 422.
+        complete_all_items:
+          type: boolean
+          default: false
+          description: |
+            Convenience for short-prep stations: marks every open item `DONE` in the same transaction
+            as the ticket transition. Without it, a `DONE` request with open items returns 422.
+        wastage_required:
+          type: boolean
+          readOnly: true
+          description: |
+            Server-set on a post-KOT cancellation when inventory automation is enabled. Signals that
+            a wastage record is expected. The record itself is not modelled here — BLOCKED on DEC-003.
+
+    ReprintResult:
+      type: object
+      required: [ticket_id, reprint_count, print_status]
+      properties:
+        ticket_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        reprint_count:
+          type: integer
+          minimum: 1
+          description: Value AFTER this reprint.
+        print_status: { $ref: '#/components/schemas/PrintStatus' }
+
+    PrintStatus:
+      type: object
+      description: |
+        Observable print outcome. `PRINTER_UNAVAILABLE` is reported, never thrown — the ticket remains
+        valid on the kitchen display and the order is unaffected.
+      required: [state]
+      properties:
+        state:
+          type: string
+          enum: [PRINTED, QUEUED, PRINTER_UNAVAILABLE, NOT_ATTEMPTED]
+        detail:
+          oneOf:
+            - type: string
+            - type: 'null'
+          description: Operator-facing text. Never a stack trace.
+        attempted_at:
+          oneOf:
+            - $ref: 'common.yaml#/components/schemas/Timestamp'
+            - type: 'null'
+
+    KitchenStation:
+      type: object
+      required: [id, outlet_id, name, sla_seconds]
+      properties:
+        id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        outlet_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        name: { type: string }
+        sla_seconds:
+          type: integer
+          minimum: 1
+          description: Prep threshold. Tickets older than this are flagged `sla_breached`.
+        is_default:
+          type: boolean
+          description: Fallback target for items with no matching route.
+        is_active: { type: boolean }
+
+    StationRoute:
+      type: object
+      description: |
+        Maps a category OR a specific item to a station. Exactly one of `category_id` / `item_id` is
+        set; an item-level route wins over its category's route.
+      required: [id, station_id]
+      properties:
+        id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        station_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        category_id:
+          oneOf:
+            - $ref: 'common.yaml#/components/schemas/Uuid'
+            - type: 'null'
+        item_id:
+          oneOf:
+            - $ref: 'common.yaml#/components/schemas/Uuid'
+            - type: 'null'

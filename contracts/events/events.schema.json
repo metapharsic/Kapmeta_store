@@ -1,0 +1,619 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kapmeta.internal/contracts/events/events.schema.json",
+  "title": "Kapmeta Domain Events",
+  "description": "Envelope and per-event payload schemas for the 13 domain events in MAP-EVT. Money is always {amount_minor:integer, currency}. Never a float. Delivery is at-least-once; every consumer must be idempotent.",
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "timestamp": {
+      "description": "RFC 3339 UTC. Zulu suffix required; offsets other than Z are rejected.",
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+    },
+    "date": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "currency": {
+      "description": "ISO 4217 alphabetic code, denormalized so a historical event keeps its own currency.",
+      "type": "string",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "money": {
+      "description": "Smallest currency unit as an integer. Mirrors the *_minor BIGINT DB convention. A float here is a contract violation.",
+      "type": "object",
+      "properties": {
+        "amount_minor": { "type": "integer" },
+        "currency": { "$ref": "#/$defs/currency" }
+      },
+      "required": ["amount_minor", "currency"],
+      "additionalProperties": false
+    },
+    "money_non_negative": {
+      "allOf": [
+        { "$ref": "#/$defs/money" },
+        { "properties": { "amount_minor": { "type": "integer", "minimum": 0 } } }
+      ]
+    },
+    "rate_bps": {
+      "description": "Rate in integer basis points. 5% = 500. Keeps the tax path integer-only.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "order_channel": {
+      "description": "Origin of the order. Distinct from order type, which is fulfillment.",
+      "type": "string",
+      "enum": ["POS", "SWIGGY", "ZOMATO", "CALL_CENTER", "OWN_ONLINE", "OTHER"]
+    },
+    "order_type": {
+      "description": "Fulfillment mode. Distinct from channel, which is origin.",
+      "type": "string",
+      "enum": ["DINE_IN", "PICKUP", "DELIVERY"]
+    },
+    "order_status": {
+      "type": "string",
+      "enum": [
+        "DRAFT",
+        "CONFIRMED",
+        "PREPARING",
+        "READY",
+        "ASSIGNED",
+        "OUT_FOR_DELIVERY",
+        "HANDED_OVER",
+        "COMPLETED",
+        "CANCELLED"
+      ]
+    },
+    "actor": {
+      "description": "Who caused the fact. actor_type SYSTEM carries a null user_id, matching the nullable created_by convention.",
+      "type": "object",
+      "properties": {
+        "actor_type": { "type": "string", "enum": ["USER", "SYSTEM", "CHANNEL"] },
+        "user_id": { "oneOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }] },
+        "role": { "type": ["string", "null"] }
+      },
+      "required": ["actor_type", "user_id"],
+      "additionalProperties": false
+    },
+    "order_line": {
+      "type": "object",
+      "description": "Snapshot of the line as sold. Prices are snapshotted, never re-derived from the catalogue.",
+      "properties": {
+        "order_item_id": { "$ref": "#/$defs/uuid" },
+        "item_id": { "$ref": "#/$defs/uuid" },
+        "item_name": { "type": "string" },
+        "qty": { "type": "number", "exclusiveMinimum": 0 },
+        "uom": { "type": "string" },
+        "unit_price": { "$ref": "#/$defs/money" },
+        "line_total": { "$ref": "#/$defs/money" },
+        "tax_rate_bps": { "$ref": "#/$defs/rate_bps" },
+        "station_id": { "oneOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }] },
+        "modifiers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "modifier_id": { "$ref": "#/$defs/uuid" },
+              "name": { "type": "string" },
+              "price_delta": { "$ref": "#/$defs/money" }
+            },
+            "required": ["modifier_id", "name", "price_delta"],
+            "additionalProperties": false
+          }
+        },
+        "is_substituted": { "type": "boolean" }
+      },
+      "required": ["order_item_id", "item_id", "item_name", "qty", "unit_price", "line_total"]
+    },
+    "order_totals": {
+      "type": "object",
+      "properties": {
+        "subtotal": { "$ref": "#/$defs/money" },
+        "discount_total": { "$ref": "#/$defs/money" },
+        "tax_total": { "$ref": "#/$defs/money" },
+        "charge_total": { "$ref": "#/$defs/money" },
+        "grand_total": { "$ref": "#/$defs/money" }
+      },
+      "required": ["subtotal", "tax_total", "grand_total"],
+      "additionalProperties": false
+    },
+    "envelope_base": {
+      "type": "object",
+      "properties": {
+        "event_id": {
+          "$ref": "#/$defs/uuid",
+          "description": "Unique per emission. Consumers dedupe on this."
+        },
+        "event_type": { "type": "string" },
+        "event_version": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Payload contract version, incremented independently per event_type. Breaking changes require a new version; never an in-place edit."
+        },
+        "occurred_at": { "$ref": "#/$defs/timestamp" },
+        "outlet_id": {
+          "$ref": "#/$defs/uuid",
+          "description": "Scoping boundary. Resolved from the session or channel account, never from a request body."
+        },
+        "correlation_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Propagated from X-Correlation-Id through logs, queue messages and downstream calls."
+        },
+        "idempotency_key": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable across redeliveries of the same fact. The consumer's dedupe key of record."
+        },
+        "payload": { "type": "object" }
+      },
+      "required": [
+        "event_id",
+        "event_type",
+        "event_version",
+        "occurred_at",
+        "outlet_id",
+        "correlation_id",
+        "idempotency_key",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+
+    "payload_order_placed": {
+      "title": "order.placed",
+      "type": "object",
+      "properties": {
+        "order_id": { "$ref": "#/$defs/uuid" },
+        "order_number": { "type": "string" },
+        "channel": { "$ref": "#/$defs/order_channel" },
+        "type": { "$ref": "#/$defs/order_type" },
+        "status": { "$ref": "#/$defs/order_status" },
+        "business_date": { "$ref": "#/$defs/date" },
+        "placed_at": { "$ref": "#/$defs/timestamp" },
+        "actor": { "$ref": "#/$defs/actor" },
+        "table_id": { "oneOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }] },
+        "external_order_id": { "type": ["string", "null"] },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/order_line" }
+        },
+        "totals": { "$ref": "#/$defs/order_totals" }
+      },
+      "required": ["order_id", "channel", "type", "status", "business_date", "items", "totals"]
+    },
+
+    "payload_order_status_changed": {
+      "title": "order.status_changed",
+      "description": "Status history is append-only and must not regress. Consumers verify against order_status_history, not the event alone.",
+      "type": "object",
+      "properties": {
+        "order_id": { "$ref": "#/$defs/uuid" },
+        "from": { "oneOf": [{ "$ref": "#/$defs/order_status" }, { "type": "null" }] },
+        "to": { "$ref": "#/$defs/order_status" },
+        "changed_at": { "$ref": "#/$defs/timestamp" },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Monotonic per order. Lets a consumer detect out-of-order delivery."
+        },
+        "actor": { "$ref": "#/$defs/actor" },
+        "reason": { "type": ["string", "null"] },
+        "reason_code": { "type": ["string", "null"] }
+      },
+      "required": ["order_id", "from", "to", "changed_at", "actor"]
+    },
+
+    "payload_order_cancelled": {
+      "title": "order.cancelled",
+      "description": "Post-KOT cancellation, as distinct from a pre-kitchen void. Finance must issue any refund exactly once even on redelivery.",
+      "type": "object",
+      "properties": {
+        "order_id": { "$ref": "#/$defs/uuid" },
+        "cancellation_type": { "type": "string", "enum": ["VOID", "CANCELLATION"] },
+        "reason_code": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Mandatory, drawn from the configured list. Never free text."
+        },
+        "reason_note": { "type": ["string", "null"] },
+        "actor": { "$ref": "#/$defs/actor" },
+        "post_kot": { "type": "boolean" },
+        "cancelled_at": { "$ref": "#/$defs/timestamp" },
+        "business_date": {
+          "$ref": "#/$defs/date",
+          "description": "The ORIGINAL business date of the order, not today."
+        },
+        "refund_expected": { "type": "boolean" },
+        "cancelled_amount": { "$ref": "#/$defs/money_non_negative" },
+        "wastage_recorded": { "type": "boolean" },
+        "audit_id": { "$ref": "#/$defs/uuid" }
+      },
+      "required": ["order_id", "cancellation_type", "reason_code", "actor", "post_kot", "cancelled_at", "business_date"]
+    },
+
+    "payload_kot_created": {
+      "title": "kot.created",
+      "description": "One ticket per station. A reprint increments reprint_count on the SAME ticket and does not emit a new kot.created.",
+      "type": "object",
+      "properties": {
+        "kot_id": { "$ref": "#/$defs/uuid" },
+        "order_id": { "$ref": "#/$defs/uuid" },
+        "station_id": { "$ref": "#/$defs/uuid" },
+        "station_name": { "type": "string" },
+        "ticket_number": { "type": "string" },
+        "is_amendment": {
+          "type": "boolean",
+          "description": "A delta ticket for a post-KOT change. Never a silent replacement of the original.",
+          "default": false
+        },
+        "parent_kot_id": { "oneOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }] },
+        "created_at": { "$ref": "#/$defs/timestamp" },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "properties": {
+              "kot_item_id": { "$ref": "#/$defs/uuid" },
+              "order_item_id": { "$ref": "#/$defs/uuid" },
+              "item_name": { "type": "string" },
+              "qty": { "type": "number", "exclusiveMinimum": 0 },
+              "notes": { "type": ["string", "null"] },
+              "modifiers": { "type": "array", "items": { "type": "string" } }
+            },
+            "required": ["kot_item_id", "order_item_id", "item_name", "qty"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["kot_id", "order_id", "station_id", "created_at", "items"]
+    },
+
+    "payload_kot_completed": {
+      "title": "kot.completed",
+      "description": "The order reaches READY only when every ticket for it is complete. Consumers must not infer READY from a single ticket.",
+      "type": "object",
+      "properties": {
+        "kot_id": { "$ref": "#/$defs/uuid" },
+        "order_id": { "$ref": "#/$defs/uuid" },
+        "station_id": { "$ref": "#/$defs/uuid" },
+        "completed_at": { "$ref": "#/$defs/timestamp" },
+        "duration_ms": { "type": "integer", "minimum": 0 },
+        "completed_by": { "$ref": "#/$defs/actor" },
+        "sla_breached": { "type": "boolean" },
+        "reprint_count": { "type": "integer", "minimum": 0 },
+        "is_final_ticket_for_order": {
+          "type": "boolean",
+          "description": "True only when this was the last open ticket on the order."
+        }
+      },
+      "required": ["kot_id", "order_id", "station_id", "completed_at", "duration_ms"]
+    },
+
+    "payload_payment_captured": {
+      "title": "payment.captured",
+      "description": "Exactly-once semantics via the envelope idempotency_key. invoice.generated subscribes to this event, never to a timer.",
+      "type": "object",
+      "properties": {
+        "payment_id": { "$ref": "#/$defs/uuid" },
+        "order_id": { "$ref": "#/$defs/uuid" },
+        "method": {
+          "type": "string",
+          "enum": ["CASH", "CARD", "UPI", "WALLET", "CHANNEL_PREPAID", "CREDIT", "OTHER"]
+        },
+        "amount": { "$ref": "#/$defs/money_non_negative" },
+        "tip": { "$ref": "#/$defs/money_non_negative" },
+        "captured_at": { "$ref": "#/$defs/timestamp" },
+        "business_date": { "$ref": "#/$defs/date" },
+        "gateway": { "type": ["string", "null"] },
+        "gateway_reference": {
+          "type": ["string", "null"],
+          "description": "Gateway transaction reference. No PAN, ever."
+        },
+        "is_partial": { "type": "boolean" },
+        "actor": { "$ref": "#/$defs/actor" }
+      },
+      "required": ["payment_id", "order_id", "method", "amount", "captured_at", "business_date"]
+    },
+
+    "payload_refund_issued": {
+      "title": "refund.issued",
+      "description": "business_day is the ORIGINAL order's business date. Booking a refund against today silently corrupts historical totals.",
+      "type": "object",
+      "properties": {
+        "refund_id": { "$ref": "#/$defs/uuid" },
+        "payment_id": { "$ref": "#/$defs/uuid" },
+        "order_id": { "$ref": "#/$defs/uuid" },
+        "amount": { "$ref": "#/$defs/money_non_negative" },
+        "business_day": { "$ref": "#/$defs/date" },
+        "issued_at": { "$ref": "#/$defs/timestamp" },
+        "is_partial": { "type": "boolean" },
+        "reason_code": { "type": "string", "minLength": 1 },
+        "actor": { "$ref": "#/$defs/actor" },
+        "lines": {
+          "type": "array",
+          "description": "Present for line-item-granular partial refunds.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "order_item_id": { "$ref": "#/$defs/uuid" },
+              "qty": { "type": "number", "exclusiveMinimum": 0 },
+              "amount": { "$ref": "#/$defs/money_non_negative" }
+            },
+            "required": ["order_item_id", "amount"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["refund_id", "payment_id", "order_id", "amount", "business_day", "issued_at", "reason_code"]
+    },
+
+    "payload_invoice_generated": {
+      "title": "invoice.generated",
+      "description": "A statutory document. Numbering has no gaps and no duplicates; the invoice is immutable once generated.",
+      "type": "object",
+      "properties": {
+        "invoice_id": { "$ref": "#/$defs/uuid" },
+        "order_id": { "$ref": "#/$defs/uuid" },
+        "payment_id": { "oneOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }] },
+        "invoice_number": { "type": "string", "minLength": 1 },
+        "generated_at": { "$ref": "#/$defs/timestamp" },
+        "business_date": { "$ref": "#/$defs/date" },
+        "totals": { "$ref": "#/$defs/order_totals" },
+        "tax_breakup": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "tax_name": { "type": "string" },
+              "rate_bps": { "$ref": "#/$defs/rate_bps" },
+              "taxable_amount": { "$ref": "#/$defs/money" },
+              "tax_amount": { "$ref": "#/$defs/money" }
+            },
+            "required": ["tax_name", "rate_bps", "taxable_amount", "tax_amount"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["invoice_id", "order_id", "invoice_number", "generated_at", "business_date", "totals"]
+    },
+
+    "payload_menu_item_availability_changed": {
+      "title": "menu.item_availability_changed",
+      "description": "VERSION-ORDERED. Consumers MUST discard an event whose version is lower than or equal to the version already applied for the same (item_id, channel_id). A lower version never overwrites a higher one. This is the system's one consumer-implemented ordering guarantee.",
+      "type": "object",
+      "properties": {
+        "item_id": { "$ref": "#/$defs/uuid" },
+        "item_name": { "type": "string" },
+        "channel_id": {
+          "oneOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }],
+          "description": "Null means the internal/all-channel default state."
+        },
+        "state": {
+          "type": "string",
+          "enum": ["ON", "OFF", "PARTIAL", "UNSCHEDULED"],
+          "description": "OFF blocks new orders but leaves existing orders valid and fulfillable."
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Monotonic per (item_id, channel_id). INTEGER, never a string or float. The out-of-order guard."
+        },
+        "previous_state": {
+          "oneOf": [{ "type": "string", "enum": ["ON", "OFF", "PARTIAL", "UNSCHEDULED"] }, { "type": "null" }]
+        },
+        "changed_at": { "$ref": "#/$defs/timestamp" },
+        "actor": { "$ref": "#/$defs/actor" },
+        "bulk_operation_id": {
+          "oneOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }],
+          "description": "Groups a bulk action. Each item still gets its own event, own version and own audit row."
+        },
+        "audit_id": { "$ref": "#/$defs/uuid" }
+      },
+      "required": ["item_id", "channel_id", "state", "version", "changed_at", "actor"]
+    },
+
+    "payload_channel_sync_failed": {
+      "title": "channel.sync_failed",
+      "description": "Internal OFF with channel ON is the highest-severity case: customers can order food the kitchen will not make. Treat it as an incident, not a warning.",
+      "type": "object",
+      "properties": {
+        "sync_job_id": { "$ref": "#/$defs/uuid" },
+        "channel": { "type": "string" },
+        "channel_account_id": { "$ref": "#/$defs/uuid" },
+        "sync_type": {
+          "type": "string",
+          "enum": ["MENU_AVAILABILITY", "MENU_PRICE", "MENU_FULL", "ORDER_STATUS", "OTHER"]
+        },
+        "item_id": { "oneOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }] },
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": { "type": "string" },
+            "message": { "type": "string" },
+            "http_status": { "type": ["integer", "null"] },
+            "is_transient": { "type": "boolean" }
+          },
+          "required": ["code", "message"],
+          "additionalProperties": false
+        },
+        "attempt": { "type": "integer", "minimum": 1 },
+        "max_attempts": { "type": "integer", "minimum": 1 },
+        "will_retry": { "type": "boolean" },
+        "dead_lettered": { "type": "boolean" },
+        "severity": {
+          "type": "string",
+          "enum": ["WARNING", "CRITICAL"],
+          "description": "CRITICAL when internal state is OFF and the channel still shows ON."
+        },
+        "failed_at": { "$ref": "#/$defs/timestamp" }
+      },
+      "required": ["sync_job_id", "channel", "sync_type", "error", "attempt", "failed_at"]
+    },
+
+    "payload_channel_order_received": {
+      "title": "channel.order_received",
+      "description": "Idempotency-guarded by UNIQUE (channel_account_id, external_event_id) on inbound_events. The raw event is persisted before parsing, so replay is always possible and always safe.",
+      "type": "object",
+      "properties": {
+        "inbound_event_id": { "$ref": "#/$defs/uuid" },
+        "channel": { "type": "string" },
+        "channel_account_id": { "$ref": "#/$defs/uuid" },
+        "external_order_id": { "type": "string", "minLength": 1 },
+        "external_event_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Half of the DB unique constraint that makes duplicate delivery safe."
+        },
+        "received_at": { "$ref": "#/$defs/timestamp" },
+        "is_duplicate": {
+          "type": "boolean",
+          "description": "True when this delivery was recognised as a redelivery. A duplicate is a normal condition of at-least-once delivery, not an error."
+        },
+        "processing_state": {
+          "type": "string",
+          "enum": ["ACCEPTED", "QUARANTINED", "REJECTED", "DUPLICATE"]
+        },
+        "quarantine_reason": {
+          "type": ["string", "null"],
+          "description": "Set when an external item ID has no internal mapping. No order and no KOT are created."
+        },
+        "order_id": {
+          "oneOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }],
+          "description": "Null until the internal order commits."
+        }
+      },
+      "required": [
+        "inbound_event_id",
+        "channel",
+        "channel_account_id",
+        "external_order_id",
+        "external_event_id",
+        "received_at",
+        "processing_state"
+      ]
+    },
+
+    "payload_stock_moved": {
+      "title": "stock.moved",
+      "description": "Carries source_event_id so a redelivery cannot double-deduct.",
+      "type": "object",
+      "properties": {
+        "movement_id": { "$ref": "#/$defs/uuid" },
+        "ingredient_id": { "$ref": "#/$defs/uuid" },
+        "ingredient_name": { "type": "string" },
+        "qty": {
+          "type": "number",
+          "description": "Signed. Negative for consumption and wastage, positive for receipt and return."
+        },
+        "uom": { "type": "string" },
+        "type": {
+          "type": "string",
+          "enum": ["CONSUMPTION", "RECEIPT", "WASTAGE", "ADJUSTMENT", "TRANSFER", "RETURN"]
+        },
+        "cost": {
+          "$ref": "#/$defs/money",
+          "description": "Snapshot of the cost at movement time."
+        },
+        "source_event_id": {
+          "$ref": "#/$defs/uuid",
+          "description": "The event_id that caused this movement. The inventory consumer's dedupe key."
+        },
+        "reference_type": {
+          "type": ["string", "null"],
+          "enum": ["ORDER", "PURCHASE_ORDER", "CANCELLATION", "REFUND", "MANUAL", null]
+        },
+        "reference_id": { "oneOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }] },
+        "balance_after_qty": { "type": ["number", "null"] },
+        "is_low_stock": { "type": "boolean" },
+        "moved_at": { "$ref": "#/$defs/timestamp" },
+        "business_date": { "$ref": "#/$defs/date" },
+        "actor": { "$ref": "#/$defs/actor" }
+      },
+      "required": ["movement_id", "ingredient_id", "qty", "uom", "type", "source_event_id", "moved_at"]
+    },
+
+    "payload_user_role_changed": {
+      "title": "user.role_changed",
+      "description": "Drives session invalidation and audit. outlet_id null in a grant means an organization-wide grant.",
+      "type": "object",
+      "properties": {
+        "user_id": { "$ref": "#/$defs/uuid" },
+        "target_outlet_id": {
+          "oneOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }],
+          "description": "Outlet the grant applies to. Null means organization-wide (user_roles.outlet_id IS NULL)."
+        },
+        "roles_before": { "type": "array", "items": { "type": "string" } },
+        "roles_after": { "type": "array", "items": { "type": "string" } },
+        "changed_at": { "$ref": "#/$defs/timestamp" },
+        "actor": { "$ref": "#/$defs/actor" },
+        "requires_session_invalidation": { "type": "boolean", "default": true },
+        "audit_id": { "$ref": "#/$defs/uuid" }
+      },
+      "required": ["user_id", "target_outlet_id", "roles_before", "roles_after", "changed_at", "actor"]
+    },
+
+    "event": {
+      "description": "Any domain event. The envelope is fixed; event_type selects the payload schema.",
+      "allOf": [
+        { "$ref": "#/$defs/envelope_base" },
+        {
+          "properties": {
+            "event_type": {
+              "enum": [
+                "order.placed",
+                "order.status_changed",
+                "order.cancelled",
+                "kot.created",
+                "kot.completed",
+                "payment.captured",
+                "refund.issued",
+                "invoice.generated",
+                "menu.item_availability_changed",
+                "channel.sync_failed",
+                "channel.order_received",
+                "stock.moved",
+                "user.role_changed"
+              ]
+            }
+          }
+        },
+        { "if": { "properties": { "event_type": { "const": "order.placed" } }, "required": ["event_type"] },
+          "then": { "properties": { "payload": { "$ref": "#/$defs/payload_order_placed" } } } },
+        { "if": { "properties": { "event_type": { "const": "order.status_changed" } }, "required": ["event_type"] },
+          "then": { "properties": { "payload": { "$ref": "#/$defs/payload_order_status_changed" } } } },
+        { "if": { "properties": { "event_type": { "const": "order.cancelled" } }, "required": ["event_type"] },
+          "then": { "properties": { "payload": { "$ref": "#/$defs/payload_order_cancelled" } } } },
+        { "if": { "properties": { "event_type": { "const": "kot.created" } }, "required": ["event_type"] },
+          "then": { "properties": { "payload": { "$ref": "#/$defs/payload_kot_created" } } } },
+        { "if": { "properties": { "event_type": { "const": "kot.completed" } }, "required": ["event_type"] },
+          "then": { "properties": { "payload": { "$ref": "#/$defs/payload_kot_completed" } } } },
+        { "if": { "properties": { "event_type": { "const": "payment.captured" } }, "required": ["event_type"] },
+          "then": { "properties": { "payload": { "$ref": "#/$defs/payload_payment_captured" } } } },
+        { "if": { "properties": { "event_type": { "const": "refund.issued" } }, "required": ["event_type"] },
+          "then": { "properties": { "payload": { "$ref": "#/$defs/payload_refund_issued" } } } },
+        { "if": { "properties": { "event_type": { "const": "invoice.generated" } }, "required": ["event_type"] },
+          "then": { "properties": { "payload": { "$ref": "#/$defs/payload_invoice_generated" } } } },
+        { "if": { "properties": { "event_type": { "const": "menu.item_availability_changed" } }, "required": ["event_type"] },
+          "then": { "properties": { "payload": { "$ref": "#/$defs/payload_menu_item_availability_changed" } } } },
+        { "if": { "properties": { "event_type": { "const": "channel.sync_failed" } }, "required": ["event_type"] },
+          "then": { "properties": { "payload": { "$ref": "#/$defs/payload_channel_sync_failed" } } } },
+        { "if": { "properties": { "event_type": { "const": "channel.order_received" } }, "required": ["event_type"] },
+          "then": { "properties": { "payload": { "$ref": "#/$defs/payload_channel_order_received" } } } },
+        { "if": { "properties": { "event_type": { "const": "stock.moved" } }, "required": ["event_type"] },
+          "then": { "properties": { "payload": { "$ref": "#/$defs/payload_stock_moved" } } } },
+        { "if": { "properties": { "event_type": { "const": "user.role_changed" } }, "required": ["event_type"] },
+          "then": { "properties": { "payload": { "$ref": "#/$defs/payload_user_role_changed" } } } }
+      ]
+    }
+  },
+  "$ref": "#/$defs/event"
+}

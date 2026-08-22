@@ -1,0 +1,663 @@
+openapi: 3.1.0
+info:
+  title: Kapmeta — Inventory API
+  version: 1.0.0
+  license:
+    name: Proprietary
+  summary: Ingredient master, stock locations, read-only stock balances, generic (non-consumption) stock movements. Recipe-to-consumption wiring is OUT OF SCOPE.
+  description: |
+    Traces to `docs/02-requirements/inventory-recipe.md`. Conventions in `docs/06-api/api-standards.md`;
+    shared components in `common.yaml`. Release scope per the requirements doc is **R2**; this spec is
+    written now only to the extent it does NOT depend on DEC-003.
+
+    ## BLOCKED — DEC-003 (recipe/BOM automation not decided)
+
+    `inventory-recipe.md` states: "Nothing here is buildable until DEC-003 closes," and names the
+    open question precisely: whether stock is maintained manually or deducted automatically from
+    recipes on order/KOT activity, and if automatic, which of four trigger options (A manual-only,
+    B on-confirm, C on-KOT-complete, D periodic batch) applies. Each option has a different event
+    source, cancellation semantics and cost model — "not a config flag that can be flipped later
+    without rework."
+
+    OUT OF SCOPE, and why:
+
+      - **Recipes / BOM.** No `recipes` or `recipe_items` endpoints. Sub-recipe resolution mode
+        (stocked prep vs exploded prep, DEC-003a), whether modifiers carry recipe lines (DEC-003b)
+        and recursion/versioning rules are all unresolved.
+      - **The `CONSUMPTION` movement type.** `DB-ENUM-07` `movement_type` includes `CONSUMPTION`, but
+        no endpoint here can post it — consumption is exactly the order/KOT-triggered write DEC-003
+        decides the timing of. Only the movement types with a trigger independent of order activity
+        are exposed: `RECEIPT`, `TRANSFER_IN`, `TRANSFER_OUT`, `WASTAGE`, `ADJUSTMENT`, `RETURN_OUT`.
+      - **Stock shortage behaviour (block / alert / substitute, DEC-003c).** No endpoint enforces or
+        reports a shortage decision; there is no live-balance gate on order placement here — that
+        belongs to `orders.yaml` once DEC-003c lands.
+      - **Low-stock alerting.** Depends on which DEC-003 option provides a live balance to threshold
+        against (options B/C only); not modelled.
+      - **Wastage tied to post-KOT cancellation.** `orders.yaml` reports `wastage_recorded: false` as
+        a placeholder for exactly this; the wastage-record write path itself is not exposed here
+        beyond the generic `WASTAGE` movement type, which requires a mandatory reason but does not
+        wire to order cancellation.
+      - **Physical count / cycle count sessions.** The count workflow (snapshot, blind entry,
+        variance, supervisor hold) is PROPOSED with no source coverage and is not modelled; posting
+        an `ADJUSTMENT` movement directly is the only variance-correction path exposed here.
+      - **Costing method (moving average vs FIFO vs standard cost).** A "New DEC needed" per the
+        requirements doc. `unit_cost` is accepted and stored on the movement (matching the
+        append-only design) but no valuation report or costing formula is exposed.
+      - **Reporting surface** (variance, food cost %, wastage by reason/station) — `reporting.yaml`
+        does not cover it either; both are gated on DEC-003 and DEC-009 respectively.
+
+    IN SCOPE, because it is schema-backed and independent of the trigger decision:
+
+      - Ingredient master CRUD (`ingredients`).
+      - Stock location CRUD (`stock_locations`).
+      - Read-only `stock_balances` (a derived/trigger-maintained cache per
+        `inventory-recipe.md` — "No API, job, screen hand-edits a balance").
+      - Recording a generic `stock_movement`: `RECEIPT`, `TRANSFER_IN`/`TRANSFER_OUT` (as a paired
+        transfer), `WASTAGE`, `ADJUSTMENT`, `RETURN_OUT`. `stock_movements` is append-only and
+        immutable — there is no PATCH or DELETE anywhere in this file, matching the non-negotiable in
+        `docs/ENGINEERING-PROTOCOL.md` §1.
+
+servers:
+  - url: https://api.kapmeta.example.com/api/v1
+    description: Production
+  - url: https://staging-api.kapmeta.example.com/api/v1
+    description: Staging
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Ingredients
+    description: Ingredient master data (unit of measure, reorder level).
+  - name: StockLocations
+    description: Store/location master for stock tracking.
+  - name: StockBalances
+    description: Read-only current stock balances, derived from the movement ledger.
+  - name: StockMovements
+    description: Non-consumption stock movements (receipt, transfer, wastage, adjustment).
+
+paths:
+
+  /inventory/ingredients:
+    get:
+      tags: [Ingredients]
+      operationId: listIngredients
+      summary: List ingredients
+      description: |
+        Cursor-paginated, outlet-scoped `ingredients` master list.
+        Permission required: `inventory.read`.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - $ref: 'common.yaml#/components/parameters/LimitParam'
+        - $ref: 'common.yaml#/components/parameters/CursorParam'
+        - name: active
+          in: query
+          schema: { type: boolean }
+        - name: category
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Ingredient page.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: 'common.yaml#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/Ingredient' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+    post:
+      tags: [Ingredients]
+      operationId: createIngredient
+      summary: Create an ingredient
+      description: |
+        Creates an `ingredients` master row. `base_uom` is immutable once any movement exists for the
+        ingredient (`inventory-recipe.md`); changing it after that point requires deactivating this
+        ingredient and creating a new one.
+
+        `Idempotency-Key` is REQUIRED — this creates a master record.
+
+        Permission required: `inventory.manage`.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - $ref: 'common.yaml#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IngredientCreate' }
+      responses:
+        '201':
+          description: Ingredient created.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ingredient' }
+        '200':
+          description: Idempotent replay — the original response is returned.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ingredient' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'common.yaml#/components/responses/UnprocessableEntity' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /inventory/ingredients/{ingredient_id}:
+    parameters:
+      - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+      - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+      - name: ingredient_id
+        in: path
+        required: true
+        schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+    get:
+      tags: [Ingredients]
+      operationId: getIngredient
+      summary: Get an ingredient
+      description: 'Permission required: `inventory.read`.'
+      responses:
+        '200':
+          description: Ingredient.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ingredient' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+    patch:
+      tags: [Ingredients]
+      operationId: updateIngredient
+      summary: Amend an ingredient
+      description: |
+        `base_uom` is NOT patchable here once a movement exists — a `base_uom` key in that state is
+        409. Optimistic concurrency: `version` is REQUIRED.
+
+        Permission required: `inventory.manage`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IngredientUpdate' }
+      responses:
+        '200':
+          description: Ingredient amended.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ingredient' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409':
+          description: 409 — Version mismatch, or an attempt to change `base_uom` after a movement exists.
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+        '422': { $ref: 'common.yaml#/components/responses/UnprocessableEntity' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /inventory/stock-locations:
+    get:
+      tags: [StockLocations]
+      operationId: listStockLocations
+      summary: List stock locations for the outlet
+      description: 'Permission required: `inventory.read`.'
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+      responses:
+        '200':
+          description: Stock locations for the session's outlet.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/StockLocation' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+
+    post:
+      tags: [StockLocations]
+      operationId: createStockLocation
+      summary: Create a stock location
+      description: |
+        `Idempotency-Key` is REQUIRED — this creates a master record.
+        Permission required: `inventory.manage`.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - $ref: 'common.yaml#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StockLocationCreate' }
+      responses:
+        '201':
+          description: Stock location created.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StockLocation' }
+        '200':
+          description: Idempotent replay.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StockLocation' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /inventory/stock-balances:
+    get:
+      tags: [StockBalances]
+      operationId: listStockBalances
+      summary: View stock balances (read-only)
+      description: |
+        `stock_balances` is a derived/trigger-maintained cache of `stock_movements`
+        (`inventory-recipe.md`: "No API, job, screen, or support script hand-edits a balance. If a
+        balance disagrees with the movement ledger, the ledger is right and the balance is
+        rebuilt."). There is NO write endpoint for this resource anywhere in this API.
+
+        Permission required: `inventory.read`.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - $ref: 'common.yaml#/components/parameters/LimitParam'
+        - $ref: 'common.yaml#/components/parameters/CursorParam'
+        - name: ingredient_id
+          in: query
+          schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        - name: stock_location_id
+          in: query
+          schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+      responses:
+        '200':
+          description: Stock balance page.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: 'common.yaml#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/StockBalance' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+  /inventory/stock-movements:
+    get:
+      tags: [StockMovements]
+      operationId: listStockMovements
+      summary: List stock movements (the append-only ledger)
+      description: |
+        Read-only view of `stock_movements`. Never updated, never deleted; a correction is a new,
+        reversing movement.
+
+        Permission required: `inventory.read`.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - $ref: 'common.yaml#/components/parameters/LimitParam'
+        - $ref: 'common.yaml#/components/parameters/CursorParam'
+        - name: ingredient_id
+          in: query
+          schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        - name: stock_location_id
+          in: query
+          schema: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        - name: movement_type
+          in: query
+          description: Repeatable.
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/MovementType' }
+          style: form
+          explode: true
+        - name: business_date
+          in: query
+          schema: { $ref: 'common.yaml#/components/schemas/BusinessDate' }
+      responses:
+        '200':
+          description: Movement page, newest first.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: 'common.yaml#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/StockMovement' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+    post:
+      tags: [StockMovements]
+      operationId: createStockMovement
+      summary: Record a generic stock movement
+      description: |
+        Posts ONE immutable row to `stock_movements`. There is no PATCH, no DELETE — a mistake is
+        corrected by posting a reversing movement.
+
+        `movement_type` is restricted to types whose trigger is independent of order/KOT activity:
+        `RECEIPT`, `TRANSFER_IN`, `TRANSFER_OUT`, `WASTAGE`, `ADJUSTMENT`, `RETURN_OUT`. `CONSUMPTION`
+        is REJECTED here (400) — it is exactly the order-triggered write BLOCKED on DEC-003; wiring it
+        to `orders.yaml`/`kitchen.yaml` is not decided.
+
+        A `TRANSFER_OUT` MUST be paired with a `TRANSFER_IN` sharing one `transfer_group_id`, posted
+        in one transaction — supply `paired_stock_location_id` and the server writes both rows.
+
+        `WASTAGE` requires a `reason_code`; omitting it on a `WASTAGE` movement is 422.
+
+        `direction` is derived server-side from `movement_type` and is never client-supplied.
+
+        `Idempotency-Key` is REQUIRED, and posting is additionally idempotent on
+        `(reference_type, reference_id, ingredient_id, movement_type)` per
+        `inventory-recipe.md`, so a retried event cannot double-post.
+
+        Permission required: `inventory.movement.create`. `WASTAGE` above the outlet's configured
+        value threshold additionally requires elevated approval (`APPROVAL_REQUIRED`, mirroring the
+        pattern in `orders.yaml`).
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/OutletIdHeader'
+        - $ref: 'common.yaml#/components/parameters/CorrelationIdHeader'
+        - $ref: 'common.yaml#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StockMovementCreate' }
+      responses:
+        '201':
+          description: Movement posted; `stock_balances` updated by the maintaining trigger.
+          headers:
+            X-Correlation-Id: { $ref: 'common.yaml#/components/headers/X-Correlation-Id' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StockMovement' }
+        '200':
+          description: Idempotent replay — the original movement is returned, no new row posted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StockMovement' }
+        '400':
+          description: |
+            400 — Validation failure, or `movement_type: CONSUMPTION` was supplied
+            (`CONSUMPTION_NOT_SUPPORTED` — blocked on DEC-003).
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthenticated' }
+        '403':
+          description: 403 — `PERMISSION_DENIED`, or `APPROVAL_REQUIRED` for a wastage movement above threshold.
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/ApprovalRequiredError' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+        '422':
+          description: |
+            422 — Missing mandatory `reason_code` on `WASTAGE`, negative-balance rejection where the
+            outlet blocks it, or a referenced ingredient/location does not belong to this outlet.
+          content:
+            application/json:
+              schema: { $ref: 'common.yaml#/components/schemas/Error' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+
+    UomClass:
+      type: string
+      description: '`DB-ENUM-10` `uom_class`.'
+      enum: [WEIGHT, VOLUME, COUNT]
+
+    MovementType:
+      type: string
+      description: |
+        Restriction of `DB-ENUM-07` `movement_type` to the subset this API accepts on write.
+        `CONSUMPTION` is a valid database enum value but is NEVER accepted by
+        `POST /inventory/stock-movements` — see BLOCKED DEC-003 above.
+      enum: [RECEIPT, TRANSFER_IN, TRANSFER_OUT, WASTAGE, ADJUSTMENT, RETURN_OUT]
+
+    Ingredient:
+      allOf:
+        - $ref: 'common.yaml#/components/schemas/OutletScoped'
+        - $ref: 'common.yaml#/components/schemas/AuditFields'
+        - type: object
+          required: [id, ingredient_code, name, base_uom, base_uom_class, is_active, version]
+          properties:
+            id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+            ingredient_code:
+              type: string
+              description: Unique per outlet.
+            name: { type: string, maxLength: 200 }
+            category: { type: string, maxLength: 100 }
+            base_uom:
+              type: string
+              description: |
+                The single unit this ingredient's balances are stored in. Immutable once any movement
+                exists (server-enforced).
+              readOnly: true
+            base_uom_class: { $ref: '#/components/schemas/UomClass' }
+            is_perishable: { type: boolean, default: false }
+            shelf_life_days: { type: integer, minimum: 0 }
+            reorder_level: { type: integer, minimum: 0 }
+            reorder_qty: { type: integer, minimum: 0 }
+            par_level: { type: integer, minimum: 0 }
+            is_active: { type: boolean, default: true }
+            version: { $ref: 'common.yaml#/components/schemas/Version' }
+
+    IngredientCreate:
+      type: object
+      description: |
+        Costing fields (`last_purchase_price`, `moving_average_cost`) and `tracking_mode` are NOT
+        accepted here — costing method is an open "New DEC needed" and `tracking_mode` is a DEC-003
+        sub-question.
+      required: [ingredient_code, name, base_uom, base_uom_class]
+      additionalProperties: false
+      properties:
+        ingredient_code: { type: string, maxLength: 64 }
+        name: { type: string, maxLength: 200 }
+        category: { type: string, maxLength: 100 }
+        base_uom: { type: string, maxLength: 16 }
+        base_uom_class: { $ref: '#/components/schemas/UomClass' }
+        is_perishable: { type: boolean, default: false }
+        shelf_life_days: { type: integer, minimum: 0 }
+        reorder_level: { type: integer, minimum: 0 }
+        reorder_qty: { type: integer, minimum: 0 }
+        par_level: { type: integer, minimum: 0 }
+
+    IngredientUpdate:
+      type: object
+      description: '`base_uom` and `base_uom_class` are NOT patchable once a movement exists.'
+      required: [version]
+      additionalProperties: false
+      properties:
+        version: { $ref: 'common.yaml#/components/schemas/Version' }
+        name: { type: string, maxLength: 200 }
+        category: { type: string, maxLength: 100 }
+        is_perishable: { type: boolean }
+        shelf_life_days: { type: integer, minimum: 0 }
+        reorder_level: { type: integer, minimum: 0 }
+        reorder_qty: { type: integer, minimum: 0 }
+        par_level: { type: integer, minimum: 0 }
+        is_active: { type: boolean }
+
+    StockLocation:
+      allOf:
+        - $ref: 'common.yaml#/components/schemas/OutletScoped'
+        - $ref: 'common.yaml#/components/schemas/AuditFields'
+        - type: object
+          required: [id, name, is_default]
+          properties:
+            id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+            name: { type: string, maxLength: 100 }
+            type:
+              type: string
+              description: 'Free text location type (main store, kitchen floor, bar, cold room), pending a configured enum.'
+            is_default: { type: boolean }
+            is_active: { type: boolean, default: true }
+
+    StockLocationCreate:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: { type: string, maxLength: 100 }
+        type: { type: string, maxLength: 50 }
+        is_default: { type: boolean, default: false }
+
+    StockBalance:
+      type: object
+      description: |
+        Read-only. Derived from `stock_movements` by a maintaining trigger; never client-written.
+      required: [ingredient_id, stock_location_id, qty, base_uom, updated_at]
+      properties:
+        ingredient_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        stock_location_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        qty:
+          type: integer
+          description: Quantity in `base_uom`, integer at the ingredient's configured precision. May be negative if the outlet permits negative balances (DEC-003c, not yet decided).
+          readOnly: true
+        base_uom:
+          type: string
+          readOnly: true
+        updated_at:
+          allOf: [{ $ref: 'common.yaml#/components/schemas/Timestamp' }]
+          description: Timestamp of the last contributing movement.
+          readOnly: true
+
+    StockMovement:
+      allOf:
+        - $ref: 'common.yaml#/components/schemas/OutletScoped'
+        - $ref: 'common.yaml#/components/schemas/AuditFields'
+        - type: object
+          required: [id, ingredient_id, stock_location_id, movement_type, direction, qty, business_date]
+          properties:
+            id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+            ingredient_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+            stock_location_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+            movement_type: { $ref: '#/components/schemas/MovementType' }
+            direction:
+              type: string
+              enum: [IN, OUT]
+              description: Server-derived from `movement_type`. Never client-supplied.
+              readOnly: true
+            qty:
+              type: integer
+              description: In `base_uom`.
+            unit_cost:
+              allOf: [{ $ref: 'common.yaml#/components/schemas/Money' }]
+              description: |
+                Cost at post time, minor units. Stored on the movement so later cost changes do not
+                restate history. No valuation/costing-method endpoint is exposed (open "New DEC needed").
+            reference_type:
+              type: string
+              description: 'Source document type, e.g. `goods_receipt`, `transfer`, `manual`.'
+            reference_id:
+              oneOf:
+                - $ref: 'common.yaml#/components/schemas/Uuid'
+                - type: 'null'
+            transfer_group_id:
+              description: Shared by a `TRANSFER_OUT`/`TRANSFER_IN` pair. Null otherwise.
+              oneOf:
+                - $ref: 'common.yaml#/components/schemas/Uuid'
+                - type: 'null'
+              readOnly: true
+            reason_code:
+              description: Mandatory on `WASTAGE`; from the outlet's configured list.
+              oneOf:
+                - $ref: 'common.yaml#/components/schemas/ReasonCode'
+                - type: 'null'
+            reason_note:
+              type: string
+              maxLength: 500
+            business_date:
+              allOf: [{ $ref: 'common.yaml#/components/schemas/BusinessDate' }]
+              readOnly: true
+            correlation_id:
+              type: string
+              readOnly: true
+
+    StockMovementCreate:
+      type: object
+      description: |
+        `direction` is NOT accepted — derived server-side from `movement_type`. `CONSUMPTION` is NOT
+        an accepted `movement_type` value here — see BLOCKED DEC-003 above.
+      required: [ingredient_id, stock_location_id, movement_type, qty]
+      additionalProperties: false
+      properties:
+        ingredient_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        stock_location_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        movement_type: { $ref: '#/components/schemas/MovementType' }
+        qty:
+          type: integer
+          minimum: 1
+          description: In `base_uom`.
+        unit_cost: { $ref: 'common.yaml#/components/schemas/Money' }
+        reference_type:
+          type: string
+          maxLength: 64
+        reference_id: { $ref: 'common.yaml#/components/schemas/Uuid' }
+        paired_stock_location_id:
+          allOf: [{ $ref: 'common.yaml#/components/schemas/Uuid' }]
+          description: 'Required when `movement_type` is `TRANSFER_OUT`; the server posts the paired `TRANSFER_IN` at this location.'
+        reason_code:
+          allOf: [{ $ref: 'common.yaml#/components/schemas/ReasonCode' }]
+          description: Mandatory when `movement_type` is `WASTAGE`.
+        reason_note:
+          type: string
+          maxLength: 500
+        elevated_approval:
+          allOf: [{ $ref: 'common.yaml#/components/schemas/ElevatedApproval' }]
+          description: Present only when replaying after a 403 `APPROVAL_REQUIRED` (high-value wastage).

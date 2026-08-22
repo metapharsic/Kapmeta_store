@@ -1,0 +1,621 @@
+openapi: 3.1.0
+info:
+  title: Kapmeta — Shared Components
+  version: 1.0.0
+  license:
+    name: Proprietary
+  summary: Shared schemas, parameters, headers and responses for all Kapmeta Release 1 APIs.
+  description: |
+    Not a standalone API. This document exists only to be `$ref`-ed by the module specs
+    (`auth.yaml`, `menu.yaml`, `orders.yaml`, `kitchen.yaml`).
+
+    Source of truth: `docs/06-api/api-standards.md`, `docs/database/mappings/DB-MAP-column-conventions.md`,
+    `docs/database/objects/DB-OBJECT-CATALOGUE.md`.
+
+    Non-negotiables encoded here:
+      - `snake_case` JSON bodies; UUIDs as strings.
+      - Money is ALWAYS `{ amount_minor: integer, currency: "INR" }`. Never a float, never a decimal string.
+      - Timestamps are RFC 3339 UTC (`2026-08-08T10:15:30Z`).
+      - Cursor pagination only (`limit` + `cursor` -> `next_cursor`, null at end). Offset pagination is not used.
+      - `outlet_id` is resolved from the session and validated against `X-Outlet-Id`.
+        A body- or query-supplied outlet id is a privilege-escalation vector and is rejected (403),
+        per `docs/02-requirements/auth-access.md` Non-Negotiable 2.
+servers:
+  - url: https://api.kapmeta.example.com/api/v1
+    description: Production
+  - url: https://staging-api.kapmeta.example.com/api/v1
+    description: Staging
+
+# This file contributes components only. An empty paths object keeps it a valid OpenAPI document.
+paths: {}
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Session-backed access token. Sessions are rows in `sessions`; a token whose session row is
+        revoked or expired is rejected regardless of signature validity.
+
+  # ---------------------------------------------------------------------------
+  # Parameters — required headers (api-standards.md "Required Headers")
+  # ---------------------------------------------------------------------------
+  parameters:
+
+    OutletIdHeader:
+      name: X-Outlet-Id
+      in: header
+      required: true
+      description: |
+        Outlet context. The server validates this against the grants on the resolved session and
+        returns 403 (`OUTLET_NOT_PERMITTED`) on mismatch. It never *establishes* outlet context —
+        the session does.
+      schema:
+        type: string
+        format: uuid
+
+    CorrelationIdHeader:
+      name: X-Correlation-Id
+      in: header
+      required: true
+      description: |
+        Client-generated request correlation id. Propagated to logs, audit rows, queue messages and
+        downstream calls, and echoed back in `error.correlation_id`.
+      schema:
+        type: string
+        maxLength: 128
+
+    IdempotencyKeyHeader:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        REQUIRED on every POST that creates an order or moves money.
+        Key + request fingerprint are stored for 24 h. A repeat with the same key returns the original
+        response. A repeat with the same key but a different body returns 409 (`IDEMPOTENCY_KEY_REUSED`).
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 255
+
+    TerminalIdHeader:
+      name: X-Terminal-Id
+      in: header
+      required: false
+      description: |
+        Registered terminal identifier. REQUIRED in practice for every PIN-authenticated POS request:
+        a valid session presented on an unregistered or revoked terminal is rejected
+        (`docs/02-requirements/auth-access.md`, Terminal Registration rule 3). Marked optional at the
+        schema level because admin/back-office calls do not carry it.
+      schema:
+        type: string
+        format: uuid
+
+    LimitParam:
+      name: limit
+      in: query
+      required: false
+      description: Page size. Cursor pagination — there is no `offset` parameter anywhere in this API.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+
+    CursorParam:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque cursor from the previous page's `next_cursor`. Omit for the first page.
+      schema:
+        type: string
+        maxLength: 512
+
+  # ---------------------------------------------------------------------------
+  # Response headers
+  # ---------------------------------------------------------------------------
+  headers:
+
+    X-Correlation-Id:
+      description: Echo of the request correlation id.
+      required: true
+      schema:
+        type: string
+
+    RateLimit-Limit:
+      description: Request quota for the current window (per user and per IP).
+      schema:
+        type: integer
+
+    RateLimit-Remaining:
+      description: Requests remaining in the current window.
+      schema:
+        type: integer
+
+    RateLimit-Reset:
+      description: Seconds until the current window resets.
+      schema:
+        type: integer
+
+    Retry-After:
+      description: Seconds the client should wait before retrying.
+      schema:
+        type: integer
+
+    ETag:
+      description: |
+        Entity version token. Send back as `If-Match` on mutations that must not clobber a concurrent
+        write; a mismatch is 409 (`VERSION_MISMATCH`).
+      schema:
+        type: string
+
+  # ---------------------------------------------------------------------------
+  # Schemas
+  # ---------------------------------------------------------------------------
+  schemas:
+
+    Uuid:
+      type: string
+      format: uuid
+      description: UUID rendered as a string.
+      examples:
+        - 8f14e45f-ceea-467a-9b9b-2ba0a5bfe1c1
+
+    Timestamp:
+      type: string
+      format: date-time
+      description: RFC 3339 timestamp, always UTC with a `Z` offset.
+      examples:
+        - 2026-08-08T10:15:30Z
+
+    BusinessDate:
+      type: string
+      format: date
+      description: |
+        Calendar business date computed server-side by `fn_business_date()` using the outlet's
+        `day_start_time`. It is NOT `created_at::date` and is never supplied by the client.
+      examples:
+        - 2026-08-08
+
+    Currency:
+      type: string
+      description: ISO 4217 alphabetic code. Denormalized onto every money object so a historical row keeps its own currency.
+      pattern: ^[A-Z]{3}$
+      default: INR
+      examples:
+        - INR
+
+    Money:
+      type: object
+      description: |
+        The ONLY representation of an amount in this API. `amount_minor` is an integer count of the
+        smallest currency unit (paise for INR), mirroring the `*_minor BIGINT` column convention.
+        Never a float. Never a decimal string.
+      required: [amount_minor, currency]
+      additionalProperties: false
+      properties:
+        amount_minor:
+          type: integer
+          format: int64
+          description: Amount in the smallest currency unit. May be negative only where a schema explicitly documents it.
+          examples:
+            - 24500
+        currency:
+          $ref: '#/components/schemas/Currency'
+      examples:
+        - amount_minor: 24500
+          currency: INR
+
+    BasisPoints:
+      type: integer
+      description: Rate in basis points. 5% = 500. Keeps the tax path integer-only.
+      minimum: 0
+      maximum: 10000
+
+    AuditFields:
+      type: object
+      description: |
+        Mandatory columns present on every table (`DB-MAP-column-conventions.md`). Always
+        server-owned and read-only; a client that sends them gets 400.
+      required: [created_at, updated_at]
+      properties:
+        created_at:
+          allOf: [{ $ref: '#/components/schemas/Timestamp' }]
+          readOnly: true
+        updated_at:
+          allOf: [{ $ref: '#/components/schemas/Timestamp' }]
+          readOnly: true
+        created_by:
+          description: Acting user, or null for system-originated rows.
+          readOnly: true
+          oneOf:
+            - $ref: '#/components/schemas/Uuid'
+            - type: 'null'
+        updated_by:
+          readOnly: true
+          oneOf:
+            - $ref: '#/components/schemas/Uuid'
+            - type: 'null'
+
+    OutletScoped:
+      type: object
+      description: |
+        Applied to every operational resource. `outlet_id` is echoed for client convenience; it is
+        derived from the session, and supplying it in a request body is rejected.
+      required: [outlet_id]
+      properties:
+        outlet_id:
+          allOf: [{ $ref: '#/components/schemas/Uuid' }]
+          readOnly: true
+
+    Version:
+      type: integer
+      description: |
+        Optimistic-concurrency version. Increments on every accepted mutation. A mutation carrying a
+        stale version is 409 (`VERSION_MISMATCH`). Also guarantees ordering for channel sync — a stale
+        sync response never overwrites a newer local state (`menu-catalog.md`).
+      minimum: 1
+
+    ReasonCode:
+      type: string
+      description: |
+        Reason code from the outlet's configured list. Mandatory on cancellation, refund and every
+        elevated action. Free text belongs in `reason_note`, not here.
+      minLength: 1
+      maxLength: 64
+
+    PageInfo:
+      type: object
+      description: Cursor pagination envelope metadata. `next_cursor` is null on the last page.
+      required: [next_cursor]
+      additionalProperties: false
+      properties:
+        next_cursor:
+          description: Opaque cursor for the next page, or null when there are no further results.
+          oneOf:
+            - type: string
+            - type: 'null'
+        limit:
+          type: integer
+          description: Page size actually applied.
+
+    CursorPage:
+      type: object
+      description: |
+        Base list envelope. Modules compose it with an `items` array of their own type:
+        `allOf: [ $ref common.yaml#/components/schemas/CursorPage, { properties: { items: ... } } ]`.
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: {}
+        page:
+          $ref: '#/components/schemas/PageInfo'
+
+    ErrorDetail:
+      type: object
+      description: One field-level or rule-level detail. Always an array on the wire, possibly empty.
+      properties:
+        field:
+          type: string
+          description: JSON pointer-ish path into the request body, e.g. `items[2].item_id`.
+        value:
+          description: The offending value. Never contains credentials, tokens, PINs or MFA codes.
+        code:
+          type: string
+          description: Optional per-detail machine code.
+        message:
+          type: string
+
+    Error:
+      type: object
+      description: |
+        The one and only error shape, exactly as specified in `docs/06-api/api-standards.md`.
+        `code` is a stable machine-readable string — clients localize from `code`, never from `message`.
+        `message` is for operators, not end users.
+      required: [error]
+      additionalProperties: false
+      properties:
+        error:
+          type: object
+          required: [code, message, details, correlation_id]
+          additionalProperties: false
+          properties:
+            code:
+              type: string
+              description: Stable machine-readable error code, SCREAMING_SNAKE_CASE.
+              examples:
+                - ORDER_ITEM_UNAVAILABLE
+            message:
+              type: string
+              description: Operator-facing description. Not for display to end customers.
+            details:
+              type: array
+              items:
+                $ref: '#/components/schemas/ErrorDetail'
+            correlation_id:
+              type: string
+              description: Echo of `X-Correlation-Id`, for log correlation.
+      examples:
+        - error:
+            code: ORDER_ITEM_UNAVAILABLE
+            message: Item is not available on this channel
+            details:
+              - field: items[2].item_id
+                value: 8f14e45f-ceea-467a-9b9b-2ba0a5bfe1c1
+            correlation_id: 01J9Z5X8QK4M2N7P
+
+    ApprovalRequiredError:
+      description: |
+        Specialization of `Error` returned with HTTP 403 and `code = APPROVAL_REQUIRED` when the acting
+        user lacks the permission but the action is eligible for elevated-action approval
+        (`auth-access.md`, Elevated Action Approval). This is deliberately NOT a plain 403 denial: the
+        terminal is expected to prompt for an approver credential and retry via
+        `POST /auth/elevated-approvals`. The client can never assert approval itself.
+      allOf:
+        - $ref: '#/components/schemas/Error'
+
+    ElevatedApproval:
+      type: object
+      description: |
+        Attached to a request that requires manager approval. The terminal submits the approver's
+        credential; the server verifies the approver AND that the approver holds the required
+        permission at the SAME outlet as the session. The acting user remains the operator —
+        `approved_by` records the approver. There is no "manager mode" and no approval window.
+      required: [approval_token, reason_code]
+      additionalProperties: false
+      properties:
+        approval_token:
+          type: string
+          description: |
+            Single-use token issued by `POST /auth/elevated-approvals` for exactly one permission,
+            one target record and one operator session. Expires in seconds, not minutes.
+        reason_code:
+          $ref: '#/components/schemas/ReasonCode'
+        reason_note:
+          type: string
+          maxLength: 500
+
+    Channel:
+      type: object
+      description: A sales channel binding. `channel_id` refers to a `channel_accounts` row for external channels.
+      required: [channel_id, channel_type]
+      properties:
+        channel_id:
+          $ref: '#/components/schemas/Uuid'
+        channel_type:
+          $ref: '#/components/schemas/ChannelType'
+
+    # ------------------------------------------------------------------
+    # Enums — values reproduced VERBATIM from DB-OBJECT-CATALOGUE.md.
+    # Never add, rename or reuse a value here without a migration and a
+    # catalogue update. Historical rows silently change meaning otherwise.
+    # ------------------------------------------------------------------
+
+    OrderStatus:
+      type: string
+      description: '`DB-ENUM-01` `order_status`.'
+      enum:
+        - DRAFT
+        - PLACED
+        - CONFIRMED
+        - KOT_CREATED
+        - IN_PREPARATION
+        - READY
+        - ASSIGNED
+        - OUT_FOR_DELIVERY
+        - SERVED
+        - HANDED_OVER
+        - COMPLETED
+        - CANCELLED
+        - FAILED
+
+    OrderType:
+      type: string
+      description: '`DB-ENUM-02` `order_type`.'
+      enum: [DINE_IN, PICKUP, DELIVERY]
+
+    AvailabilityState:
+      type: string
+      description: |
+        `DB-ENUM-03` `availability_state`. Per `(item, channel)`, never global.
+        ON — orderable on all mapped channels.
+        OFF — blocks new orders; existing orders stay valid and fulfillable.
+        PARTIAL — channel-specific configuration divergence: some channels synced, some not.
+        UNSCHEDULED — no active availability schedule rule.
+      enum: [ON, OFF, PARTIAL, UNSCHEDULED]
+
+    KotStatus:
+      type: string
+      description: '`DB-ENUM-04` `kot_status`. Applies to both tickets and ticket items.'
+      enum: [PENDING, PREPARING, DONE, CANCELLED]
+
+    PaymentMethod:
+      type: string
+      description: '`DB-ENUM-05` `payment_method`.'
+      enum: [CASH, CARD, UPI, WALLET, CHANNEL_PREPAID]
+
+    PaymentStatus:
+      type: string
+      description: '`DB-ENUM-06` `payment_status`.'
+      enum: [PENDING, CAPTURED, FAILED, REFUNDED, PARTIALLY_REFUNDED]
+
+    SyncStatus:
+      type: string
+      description: '`DB-ENUM-09` `sync_status`.'
+      enum: [PENDING, SYNCHRONIZED, FAILED]
+
+    ChannelType:
+      type: string
+      description: |
+        `DB-ENUM-12` `channel_type`. The concrete external channel list is a DEC-007 output;
+        `OTHER` is the placeholder until it lands.
+      enum: [POS, SWIGGY, ZOMATO, OTHER]
+
+    AuditAction:
+      type: string
+      description: '`DB-ENUM-11` `audit_action`.'
+      enum: [CREATE, UPDATE, DELETE, APPROVE, OVERRIDE, EXPORT]
+
+  # ---------------------------------------------------------------------------
+  # Reusable responses — one per status code in api-standards.md
+  # ---------------------------------------------------------------------------
+  responses:
+
+    BadRequest:
+      description: |
+        400 — Validation failure. Malformed body, unknown field, wrong type, or a field the client is
+        not permitted to set (notably `outlet_id` in a body).
+      headers:
+        X-Correlation-Id:
+          $ref: '#/components/headers/X-Correlation-Id'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            validation:
+              value:
+                error:
+                  code: VALIDATION_FAILED
+                  message: Request body failed validation
+                  details:
+                    - field: items[0].qty
+                      value: 0
+                      message: must be >= 1
+                  correlation_id: 01J9Z5X8QK4M2N7P
+
+    Unauthenticated:
+      description: |
+        401 — Missing or invalid credentials, or the session row is revoked/expired. Login and reset
+        responses are identical for existing and non-existing accounts (anti-enumeration).
+      headers:
+        X-Correlation-Id:
+          $ref: '#/components/headers/X-Correlation-Id'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    Forbidden:
+      description: |
+        403 — Authenticated but not permitted. Includes wrong outlet (`OUTLET_NOT_PERMITTED`) and
+        unregistered/revoked terminal (`TERMINAL_NOT_TRUSTED`). Every 403 writes a failed-authorization
+        audit row recording user, required permission code, outlet and endpoint.
+
+        If the action is eligible for elevated approval the code is `APPROVAL_REQUIRED` instead of a
+        flat denial — see `ApprovalRequiredError`.
+      headers:
+        X-Correlation-Id:
+          $ref: '#/components/headers/X-Correlation-Id'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_permitted:
+              value:
+                error:
+                  code: PERMISSION_DENIED
+                  message: Missing required permission orders.cancel
+                  details:
+                    - code: orders.cancel
+                  correlation_id: 01J9Z5X8QK4M2N7P
+            approval_required:
+              value:
+                error:
+                  code: APPROVAL_REQUIRED
+                  message: Post-KOT cancellation requires manager approval
+                  details:
+                    - code: orders.cancel
+                  correlation_id: 01J9Z5X8QK4M2N7P
+
+    NotFound:
+      description: 404 — Not found, or found but not visible to this outlet. The two are deliberately indistinguishable.
+      headers:
+        X-Correlation-Id:
+          $ref: '#/components/headers/X-Correlation-Id'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    Conflict:
+      description: |
+        409 — State conflict: illegal status transition, optimistic-concurrency version mismatch, or an
+        `Idempotency-Key` replayed with a different request body.
+      headers:
+        X-Correlation-Id:
+          $ref: '#/components/headers/X-Correlation-Id'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            illegal_transition:
+              value:
+                error:
+                  code: ILLEGAL_STATUS_TRANSITION
+                  message: Cannot move order from COMPLETED to READY
+                  details:
+                    - field: status
+                      value: READY
+                  correlation_id: 01J9Z5X8QK4M2N7P
+            version_mismatch:
+              value:
+                error:
+                  code: VERSION_MISMATCH
+                  message: Resource was modified by another request
+                  details: []
+                  correlation_id: 01J9Z5X8QK4M2N7P
+            idempotency_reuse:
+              value:
+                error:
+                  code: IDEMPOTENCY_KEY_REUSED
+                  message: Idempotency-Key was already used with a different request body
+                  details: []
+                  correlation_id: 01J9Z5X8QK4M2N7P
+
+    UnprocessableEntity:
+      description: |
+        422 — Business rule rejection. The request is well-formed and the caller is permitted, but a
+        domain rule says no (item unavailable on channel, outlet closed, transition guard unsatisfied,
+        refund exceeds captured amount).
+      headers:
+        X-Correlation-Id:
+          $ref: '#/components/headers/X-Correlation-Id'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            guard_failed:
+              value:
+                error:
+                  code: ORDER_ITEM_UNAVAILABLE
+                  message: Item is not available on this channel
+                  details:
+                    - field: items[2].item_id
+                      value: 8f14e45f-ceea-467a-9b9b-2ba0a5bfe1c1
+                  correlation_id: 01J9Z5X8QK4M2N7P
+
+    TooManyRequests:
+      description: 429 — Rate limited. Limits are per user and per IP and are reported in the `RateLimit-*` headers.
+      headers:
+        X-Correlation-Id:
+          $ref: '#/components/headers/X-Correlation-Id'
+        RateLimit-Limit:
+          $ref: '#/components/headers/RateLimit-Limit'
+        RateLimit-Remaining:
+          $ref: '#/components/headers/RateLimit-Remaining'
+        RateLimit-Reset:
+          $ref: '#/components/headers/RateLimit-Reset'
+        Retry-After:
+          $ref: '#/components/headers/Retry-After'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

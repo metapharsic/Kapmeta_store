@@ -1,0 +1,142 @@
+{
+  "organization": {
+    "name": "Hotel Kapila Hospitality Group",
+    "taxNumber": "36AAACH7412K1Z9"
+  },
+  "outlet": {
+    "name": "Hotel Kapila",
+    "code": "NZB-01",
+    "address": "Pragathi Nagar, Central Nizamabad, Telangana 503001",
+    "timezone": "Asia/Kolkata",
+    "currency": "INR",
+    "dayStartTime": "06:00"
+  },
+  "terminals": [
+    {
+      "name": "Main Cashier Counter T-01",
+      "terminalNumber": "T-01"
+    },
+    {
+      "name": "Express Bar Terminal T-02",
+      "terminalNumber": "T-02"
+    }
+  ],
+  "diningTables": [
+    { "tableNumber": "T-01", "capacity": 4, "section": "Indoor AC" },
+    { "tableNumber": "T-02", "capacity": 4, "section": "Indoor AC" },
+    { "tableNumber": "T-03", "capacity": 6, "section": "Indoor AC" },
+    { "tableNumber": "T-04", "capacity": 2, "section": "Indoor AC" },
+    { "tableNumber": "T-05", "capacity": 4, "section": "Terrace Lounge" },
+    { "tableNumber": "T-06", "capacity": 8, "section": "Family Section" }
+  ],
+  "stations": [
+    { "name": "GRILL", "printerIp": "192.168.1.101" },
+    { "name": "FRYER", "printerIp": "192.168.1.102" },
+    { "name": "PANTRY", "printerIp": "192.168.1.103" },
+    { "name": "BAR", "printerIp": "192.168.1.104" }
+  ],
+  "users": [
+    {
+      "email": "admin@hotelkapila.com",
+      "password": "password123",
+      "pin": "1234",
+      "firstName": "Abdul",
+      "lastName": "Mannan",
+      "role": "SUPER_ADMIN"
+    },
+    {
+      "email": "cashier@hotelkapila.com",
+      "password": "password123",
+      "pin": "1234",
+      "firstName": "Kapila",
+      "lastName": "Cashier",
+      "role": "CASHIER"
+    },
+    {
+      "email": "chef@hotelkapila.com",
+      "password": "password123",
+      "pin": "1234",
+      "firstName": "Head",
+      "lastName": "Chef",
+      "role": "KITCHEN_USER"
+    }
+  ],
+  "categories": [
+    { "name": "Biryani (Veg)", "sortOrder": 1 },
+    { "name": "Biryani (Non-Veg)", "sortOrder": 2 },
+    { "name": "Tandoori Starters (Non-Veg)", "sortOrder": 3 },
+    { "name": "Chinese Starters (Veg)", "sortOrder": 4 },
+    { "name": "Curries (Non-Veg)", "sortOrder": 5 },
+    { "name": "Roti & Breads", "sortOrder": 6 },
+    { "name": "Cold Beverage", "sortOrder": 7 },
+    { "name": "MOCKTAILS", "sortOrder": 8 }
+  ],
+  "menuItems": [
+    {
+      "categoryName": "Biryani (Non-Veg)",
+      "name": "Hotel Kapila Special Chicken Biryani (Boneless)",
+      "description": "Nizamabad signature boneless fried chicken masala over dum basmati rice.",
+      "pricePaise": 34000,
+      "isVeg": false,
+      "taxRate": 5.0,
+      "stockQty": 50
+    },
+    {
+      "categoryName": "Biryani (Veg)",
+      "name": "Hyderabadi Paneer Dum Biryani",
+      "description": "Fragrant saffron basmati rice layered with spiced paneer cubes and herbs.",
+      "pricePaise": 28000,
+      "isVeg": true,
+      "taxRate": 5.0,
+      "stockQty": 35
+    },
+    {
+      "categoryName": "Tandoori Starters (Non-Veg)",
+      "name": "Murgh Malai Tikka",
+      "description": "Creamy cashew and cardamom marinated chicken morsels grilled in tandoor.",
+      "pricePaise": 32000,
+      "isVeg": false,
+      "taxRate": 5.0,
+      "stockQty": 40
+    },
+    {
+      "categoryName": "MOCKTAILS",
+      "name": "Kapila Electric Blue Lagoon",
+      "description": "Blue curacao, fresh lime, sprite and crushed ice.",
+      "pricePaise": 16000,
+      "isVeg": true,
+      "taxRate": 5.0,
+      "stockQty": 100
+    }
+  ],
+  "ingredients": [
+    {
+      "name": "Aged Basmati Rice",
+      "unitOfMeasure": "kg",
+      "currentStock": 150.0,
+      "reorderLevel": 30.0,
+      "unitCostPaise": 11000
+    },
+    {
+      "name": "Fresh Chicken (Boneless)",
+      "unitOfMeasure": "kg",
+      "currentStock": 45.0,
+      "reorderLevel": 15.0,
+      "unitCostPaise": 24000
+    },
+    {
+      "name": "Fresh Paneer",
+      "unitOfMeasure": "kg",
+      "currentStock": 20.0,
+      "reorderLevel": 5.0,
+      "unitCostPaise": 32000
+    },
+    {
+      "name": "Pure Desi Ghee",
+      "unitOfMeasure": "l",
+      "currentStock": 25.0,
+      "reorderLevel": 5.0,
+      "unitCostPaise": 65000
+    }
+  ]
+}
