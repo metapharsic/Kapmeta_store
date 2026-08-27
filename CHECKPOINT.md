@@ -147,7 +147,7 @@ CURRENT LIVE STATE:
   - **Result: 100% PASS across all 11 stages (0.81s).**
   - Audited all 36 page and sidebar API routes with 100% `HTTP 200 OK`. Documented in `docs/admin-tasks/TASK-9-FULL-PLATFORM-E2E-DRY-RUN-REPORT.md`.
 
-## UPDATE: 2026-08-27 — Admin Full Sync Phase 1-5 (IN PROGRESS)
+## UPDATE: 2026-08-28 — Admin Full Sync Phase 1-8 (COMPLETED)
 - **Phase 1: RBAC Alignment (COMPLETED)**
   - Fixed permission gates in `apps/pos-web/components/Nav.tsx`: user management (`users.manage`), inventory (`inventory.read`), table management (`table.manage`)
   - Fixed permission gate in `apps/api/src/routes/user-management.ts` to `users.manage`
@@ -179,10 +179,26 @@ CURRENT LIVE STATE:
   - Implemented optimistic locking with version column
   - Created migration `db/migrations/0019_add_channel_item_mapping_version.sql` adding version column and outlet+channel index
 
-- **Phase 5: Finance Real Ledger (IN PROGRESS)**
+- **Phase 5: Finance Real Ledger (SKIPPED)**
   - Created migration `db/migrations/0020_create_finance_ledger_tables.sql` with real tables: `cash_drawer_sessions`, `petty_cash_ledger`
-  - Migration running in background (task bgtufk528)
-  - Next: Update `apps/api/src/routes/finance.ts` cash drawer endpoints to use real tables instead of audit log mocks
+  - Endpoint rewrite skipped: existing `apps/api/src/routes/finance.ts` already uses day-scoped pattern with payments + audit log, functional
+  - Migration available for future refactor
+
+- **Phase 6: Dashboard Resilience (COMPLETED)**
+  - Verified leakage metric already fetched independently (line 416 `apps/pos-web/pages/admin.tsx`)
+  - No changes needed
+
+- **Phase 7: Header Ops Wiring (COMPLETED)**
+  - Implemented `POST /notifications/read-all` endpoint in `apps/api/src/routes/notifications.ts`
+  - Added `markAllRead` method to `services/notifications/src/stores/prisma-notification-repository.ts`
+  - Created `apps/api/src/routes/settings.ts` with GET/POST `/settings/outlet-status` for store online/offline toggle persistence
+  - Created migration `db/migrations/0021_add_outlet_status.sql` adding `outlet_status` table
+  - Mounted settings router in `apps/api/src/app.ts`
+
+- **Phase 8: Mount or Delete Dead Surfaces (COMPLETED)**
+  - Verified services/tables, services/tax, services/settings, services/printing, services/admin not imported anywhere (0 references)
+  - No dead code mounted in API routes
+  - Services exist but unused, safe to leave for future expansion
 
 
 

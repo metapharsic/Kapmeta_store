@@ -34,3 +34,13 @@ notificationsRouter.patch("/notifications/:id/read", requireAuth, async (req: Au
     res.status(500).json({ error: "internal error" });
   }
 });
+
+notificationsRouter.post("/notifications/read-all", requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    const count = await repo.markAllRead(req.auth!.outletId, req.auth!.userId);
+    res.status(200).json({ markedRead: count });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "internal error" });
+  }
+});

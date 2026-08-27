@@ -21,6 +21,7 @@ import { userManagementRouter } from './routes/user-management';
 import { waitersRouter } from './routes/waiters';
 import { tablesRouter } from './routes/tables';
 import { ordersRouter } from './routes/orders';
+import { settingsRouter } from './routes/settings';
 
 // Global BigInt JSON serialization support for Express
 (BigInt.prototype as any).toJSON = function () {
@@ -62,6 +63,7 @@ export function createApp(): Express {
   app.use('/waiters', waitersRouter);
   app.use(tablesRouter);
   app.use(ordersRouter);
+  app.use(settingsRouter);
 
   app.get('/healthz', (_req, res) => res.json({ status: 'ok' }));
 

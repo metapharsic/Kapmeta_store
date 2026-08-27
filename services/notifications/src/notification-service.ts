@@ -36,6 +36,7 @@ export interface NotificationRepository {
   create(input: CreateNotificationInput): Promise<NotificationRecord>;
   listForUser(outletId: string, userId: string): Promise<NotificationRecord[]>;
   markRead(id: string, userId: string): Promise<NotificationRecord | null>;
+  markAllRead(outletId: string, userId: string): Promise<number>;
 }
 
 /**
