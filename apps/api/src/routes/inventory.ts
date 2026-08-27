@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireAuth, requirePermission, type AuthedRequest } from "../middleware/auth";
+import { requireAuth, requirePermission, type AuthedRequest } from "../middleware/require-auth";
 import { prisma } from "../lib/prisma";
 
 export const inventoryRouter = Router();
