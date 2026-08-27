@@ -1,8 +1,9 @@
 import { Router } from "express";
 import { requireAuth, requirePermission, type AuthedRequest } from "../middleware/require-auth";
-import { prisma } from "../lib/prisma";
+import { PrismaClient } from "@prisma/client";
 
 export const inventoryRouter = Router();
+const prisma = new PrismaClient();
 
 // List ingredients for active outlet
 inventoryRouter.get("/ingredients", requireAuth, requirePermission("inventory.read"), async (req: AuthedRequest, res) => {
