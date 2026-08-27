@@ -20,21 +20,32 @@ export interface AuditLogWriter {
   };
 }
 
+function mapToPrismaAction(action: string): "CREATE" | "UPDATE" | "DELETE" | "APPROVE" | "OVERRIDE" | "EXPORT" {
+  const upper = action.toUpperCase();
+  if (upper.includes("OVERRIDE") || upper.includes("VOID")) return "OVERRIDE";
+  if (upper.includes("APPROVE") || upper.includes("CONFIRM")) return "APPROVE";
+  if (upper.includes("DELETE") || upper.includes("CANCEL")) return "DELETE";
+  if (upper.includes("UPDATE") || upper.includes("TOGGLE") || upper.includes("STATUS")) return "UPDATE";
+  if (upper.includes("EXPORT")) return "EXPORT";
+  return "CREATE";
+}
+
 /**
  * Writes one immutable audit_logs row. Call inside the same transaction as the
  * privileged mutation it records (void, discount, refund, override, 86-toggle, etc).
  */
 export async function writeAuditLog(client: AuditLogWriter, input: AuditLogInput): Promise<void> {
+  const actionEnum = mapToPrismaAction(input.action);
   await client.auditLog.create({
     data: {
       outletId: input.outletId,
-      userId: input.userId,
+      actor_id: input.userId,
       approverUserId: input.approverUserId,
-      action: input.action,
+      action: actionEnum,
       entityType: input.entityType,
       entityId: input.entityId,
       beforeState: input.beforeState ?? undefined,
-      afterState: input.afterState ?? undefined,
+      afterState: input.afterState ? { originalAction: input.action, ...(typeof input.afterState === "object" ? (input.afterState as object) : { value: input.afterState }) } : { originalAction: input.action },
       reasonCode: input.reasonCode,
       ipAddress: input.ipAddress,
     },

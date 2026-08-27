@@ -48,13 +48,108 @@ ordersRouter.get("/orders", requireAuth, async (req: AuthedRequest, res) => {
 ordersRouter.post("/orders", requireAuth, async (req: AuthedRequest, res) => {
   try {
     const outletId = req.auth!.outletId;
+    const body = req.body;
+
+    // Normalize lines
+    const rawLines = Array.isArray(body.lines)
+      ? body.lines
+      : Array.isArray(body.items)
+      ? body.items
+      : [];
+
+    const lines = rawLines.map((it: any) => ({
+      menuItemId: it.menuItemId || it.itemId || it.id,
+      quantity: Number(it.quantity || 1),
+      modifierOptionIds: Array.isArray(it.modifierOptionIds) ? it.modifierOptionIds : [],
+      notes: it.notes || undefined,
+      course: it.course || undefined,
+      seatNumber: it.seatNumber || undefined,
+    }));
+
+    if (lines.length === 0) {
+      return res.status(400).json({ error: "Order must have at least one line item" });
+    }
+
+    // Auto-resolve diningTableId if tableNumber is provided but diningTableId is missing
+    let diningTableId = body.diningTableId || undefined;
+    if (!diningTableId && body.tableNumber) {
+      const table = await prisma.diningTable.findFirst({
+        where: {
+          outletId,
+          tableNumber: String(body.tableNumber),
+        },
+      });
+      if (table) {
+        diningTableId = table.id;
+      }
+    }
+
+    const orderType = body.orderType === "PICKUP" ? "TAKEAWAY" : (body.orderType || "DINE_IN");
+    const idempotencyKey = body.idempotencyKey || `ord_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
     const input: CreateOrderInput = {
-      ...req.body,
       outletId,
+      terminalNumber: body.terminalNumber || "POS-01",
+      orderType,
+      idempotencyKey,
+      lines,
+      diningTableId,
+      customerId: body.customerId || undefined,
+      waiterId: body.waiterId || undefined,
     };
 
     const result = await createOrder(input, menuPriceLookup, orderRepo, modifierPriceLookup);
-    res.status(201).json(result);
+
+    // If KOT creation requested (action: "KOT" or status: "ACTIVE" or "KOT_CREATED"):
+    if (body.action === "KOT" || body.status === "ACTIVE" || body.status === "KOT_CREATED") {
+      await transitionOrder(result.id, "CONFIRMED", orderRepo, req.auth!.userId);
+      await transitionOrder(result.id, "KOT_CREATED", orderRepo, req.auth!.userId);
+    }
+    // If Bill / Immediate Settlement requested (action: "BILL" or isPaid: true or status: "COMPLETED"):
+    else if (body.action === "BILL" || body.isPaid || body.status === "COMPLETED") {
+      await transitionOrder(result.id, "CONFIRMED", orderRepo, req.auth!.userId);
+      await transitionOrder(result.id, "KOT_CREATED", orderRepo, req.auth!.userId);
+      await transitionOrder(result.id, "IN_PREPARATION", orderRepo, req.auth!.userId);
+      await transitionOrder(result.id, "READY", orderRepo, req.auth!.userId);
+      await transitionOrder(result.id, "HANDED_OVER", orderRepo, req.auth!.userId);
+      await transitionOrder(result.id, "COMPLETED", orderRepo, req.auth!.userId);
+
+      // Record payment
+      if (body.paymentMethod) {
+        const orderDetail = await getOrderDetail(outletId, result.id, orderRepo);
+        if (orderDetail) {
+          await orderRepo.recordPayment(
+            outletId,
+            result.id,
+            orderDetail.grandTotalMinor,
+            body.paymentMethod,
+            req.auth!.userId
+          );
+        }
+      }
+
+      // Free table if dine-in
+      if (diningTableId) {
+        await prisma.diningTable.update({
+          where: { id: diningTableId },
+          data: { status: "AVAILABLE" },
+        });
+      }
+    }
+
+    const orderDetail = await getOrderDetail(outletId, result.id, orderRepo);
+
+    res.status(201).json({
+      id: result.id,
+      orderNumber: orderDetail?.orderNumber || "NEW",
+      status: orderDetail?.status || result.status,
+      grandTotalMinor: orderDetail ? String(orderDetail.grandTotalMinor) : "0",
+      taxTotalMinor: orderDetail ? String(orderDetail.taxTotalMinor) : "0",
+      subtotalMinor: orderDetail ? String(orderDetail.subtotalMinor) : "0",
+      diningTableId,
+      items: orderDetail?.items || [],
+      ...result,
+    });
   } catch (err: any) {
     console.error("Error creating order:", err);
     if (err.message && err.message.includes("Idempotency conflict")) {
@@ -64,10 +159,36 @@ ordersRouter.post("/orders", requireAuth, async (req: AuthedRequest, res) => {
   }
 });
 
+// GET /orders/live - Get all active/live orders in preparation or on tables
+ordersRouter.get("/orders/live", requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const activeOrders = await prisma.order.findMany({
+      where: {
+        outletId,
+        status: { in: ["DRAFT", "PLACED", "CONFIRMED", "KOT_CREATED", "IN_PREPARATION", "READY", "SERVED"] },
+      },
+      include: {
+        orderItems: true,
+        diningTable: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    res.status(200).json(activeOrders);
+  } catch (err) {
+    console.error("Error fetching live orders:", err);
+    res.status(500).json({ error: "Failed to fetch live orders" });
+  }
+});
+
 // GET /orders/:id - Get order detail
 ordersRouter.get("/orders/:id", requireAuth, async (req: AuthedRequest, res) => {
   try {
     const outletId = req.auth!.outletId;
+    if (req.params.id.length < 30) {
+      return res.status(404).json({ error: "Order not found" });
+    }
     const order = await getOrderDetail(outletId, req.params.id, orderRepo);
     if (!order) {
       return res.status(404).json({ error: "Order not found" });

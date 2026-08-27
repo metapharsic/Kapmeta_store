@@ -7,23 +7,25 @@ const prisma = new PrismaClient();
 
 const router = Router();
 
-// Gated on "menu.category.manage" — there is no dedicated user-management
-// permission seeded in kapmeta/seed.ts yet, and per repo policy (CLAUDE.md
-// no-hardcode-data rule) we must not invent a fake permission action that
-// isn't backed by a real Permission row. "menu.category.manage" is the
-// permission apps/pos-web/lib/auth.ts useAuthGuard already treats as the
-// general "admin surface" grant (it's what redirects a user to /admin), so
-// it's the closest already-seeded action to gate another admin screen on.
-const USER_MANAGEMENT_PERMISSION = "menu.category.manage";
+// Gated on "users.manage" which is now seeded in seed_permissions.sql.
+const USER_MANAGEMENT_PERMISSION = "users.manage";
 
 // GET /users — list users with their current role assignments (+ outlet).
 router.get(
   "/users",
   requireAuth,
   requirePermission(USER_MANAGEMENT_PERMISSION),
-  async (_req: AuthedRequest, res) => {
+  async (req: AuthedRequest, res) => {
     try {
+      const outletId = req.auth!.outletId;
       const users = await prisma.user.findMany({
+        where: {
+          userRoles: {
+            some: {
+              outletId: outletId,
+            },
+          },
+        },
         orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
         include: {
           userRoles: {
@@ -90,12 +92,12 @@ router.get(
   async (_req: AuthedRequest, res) => {
     try {
       const permissions = await prisma.permission.findMany({
-        orderBy: { action: "asc" },
+        orderBy: { code: "asc" },
       });
       res.status(200).json(
         permissions.map((p) => ({
           id: p.id,
-          action: p.action,
+          action: (p as any).code || (p as any).action,
           description: p.description,
         }))
       );

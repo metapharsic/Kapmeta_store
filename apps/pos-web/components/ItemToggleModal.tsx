@@ -53,11 +53,12 @@ export default function ItemToggleModal({ onClose }: ItemToggleModalProps) {
     setTogglingId(item.id);
     const nextStocked = !item.isStocked;
     try {
-      const res = await authedFetch(`/menu/availability/${item.id}`, {
-        method: "PUT",
+      const res = await authedFetch(`/menu/items/${item.id}/availability`, {
+        method: "PATCH",
         body: JSON.stringify({
           isStocked: nextStocked,
           stockQty: nextStocked ? 100 : 0,
+          version: 1,
         }),
       });
       if (res.ok) {

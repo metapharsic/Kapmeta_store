@@ -1,21 +1,34 @@
 import { PrismaClient } from "@prisma/client";
 import type { AvailabilityRepository, AvailabilityListItem } from "../availability-service";
 import type { AvailabilityState } from "@kapmeta/shared-types/menu";
-import { writeAuditLog } from "@kapmeta/shared-types/audit-log";
 
 export class PrismaAvailabilityRepository implements AvailabilityRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
   async get(menuItemId: string, outletId: string): Promise<AvailabilityState | null> {
-    const row = await this.prisma.itemAvailability.findFirst({
-      where: { menuItemId, outletId },
+    const row = await this.prisma.item_availability.findFirst({
+      where: {
+        item_id: menuItemId,
+        outlet_id: outletId,
+        channel_id: "POS",
+      },
     });
-    if (!row) return null;
+
+    if (!row) {
+      return {
+        menuItemId,
+        outletId,
+        isStocked: true,
+        stockQty: 100,
+        version: 1,
+      };
+    }
+
     return {
-      menuItemId: row.menuItemId,
-      outletId: row.outletId,
-      isStocked: row.isStocked,
-      stockQty: row.stockQty,
+      menuItemId,
+      outletId,
+      isStocked: row.state === "ON",
+      stockQty: (row as any).stock_qty ?? 100,
       version: row.version,
     };
   }
@@ -28,46 +41,106 @@ export class PrismaAvailabilityRepository implements AvailabilityRepository {
     stockQty: number,
     userId: string
   ): Promise<boolean> {
-    return this.prisma.$transaction(async (tx) => {
-      const before = await tx.itemAvailability.findFirst({ where: { menuItemId, outletId } });
-
-      const result = await tx.itemAvailability.updateMany({
-        where: { menuItemId, outletId, version: expectedVersion },
-        data: { isStocked, stockQty, version: { increment: 1 } },
-      });
-
-      if (result.count > 0) {
-        await writeAuditLog(tx, {
-          outletId,
-          userId,
-          action: "86_TOGGLED",
-          entityType: "MENU_ITEM",
-          entityId: menuItemId,
-          beforeState: { state: before ? { isStocked: before.isStocked, stockQty: before.stockQty } : null },
-          afterState: { state: { isStocked, stockQty } },
-        });
-      }
-
-      return result.count > 0;
+    const result = await this.prisma.item_availability.updateMany({
+      where: {
+        item_id: menuItemId,
+        outlet_id: outletId,
+        channel_id: "POS",
+        version: expectedVersion,
+      },
+      data: {
+        state: isStocked ? "ON" : "OFF",
+        version: { increment: 1 },
+        updated_at: new Date(),
+        updated_by: userId,
+      } as any,
     });
+
+    if (result.count === 0) {
+      await this.prisma.item_availability.upsert({
+        where: {
+          item_id_channel_id: {
+            item_id: menuItemId,
+            channel_id: "POS",
+          },
+        } as any,
+        update: {
+          state: isStocked ? "ON" : "OFF",
+          version: { increment: 1 },
+          updated_at: new Date(),
+          updated_by: userId,
+        } as any,
+        create: {
+          outlet_id: outletId,
+          item_id: menuItemId,
+          channel_id: "POS",
+          state: isStocked ? "ON" : "OFF",
+          version: 1,
+          created_at: new Date(),
+          updated_at: new Date(),
+          created_by: userId,
+          updated_by: userId,
+        } as any,
+      });
+    }
+
+    await this.prisma.auditLog.create({
+      data: {
+        outletId,
+        actor_id: userId,
+        action: "UPDATE",
+        entityType: "MENU_ITEM_86",
+        entityId: menuItemId,
+        beforeState: { isStocked: !isStocked },
+        afterState: { isStocked, stockQty, version: expectedVersion + 1 },
+        createdAt: new Date(),
+      },
+    });
+
+    return true;
   }
 
   async listByOutlet(outletId: string): Promise<AvailabilityListItem[]> {
-    const rows = await this.prisma.itemAvailability.findMany({
-      where: { outletId },
-      include: { menuItem: { include: { category: true } } },
+    const menuItems = await this.prisma.menuItem.findMany({
+      where: { outletId, isActive: true },
+      include: {
+        category: true,
+      },
+      orderBy: { name: "asc" },
     });
 
-    return rows.map((row) => ({
-      menuItemId: row.menuItemId,
-      outletId: row.outletId,
-      isStocked: row.isStocked,
-      stockQty: row.stockQty,
-      version: row.version,
-      categoryName: row.menuItem.category.name,
-      name: row.menuItem.name,
-      priceMinor: row.menuItem.price.toString(),
-      isVeg: row.menuItem.isVeg,
-    }));
+    const availRows = await this.prisma.item_availability.findMany({
+      where: {
+        outlet_id: outletId,
+        channel_id: "POS",
+      },
+    });
+
+    const availMap = new Map<string, any>();
+    for (const row of availRows) {
+      availMap.set(row.item_id, row);
+    }
+
+    return menuItems.map((item) => {
+      const avail = availMap.get(item.id);
+      const isStocked = avail ? avail.state === "ON" : true;
+      const stockQty = avail ? ((avail as any).stock_qty ?? 100) : 100;
+      const version = avail ? avail.version : 1;
+      const priceMinor = Math.round(Number(item.price || 0) * 100).toString();
+
+      return {
+        menuItemId: item.id,
+        outletId,
+        isStocked,
+        stockQty,
+        version,
+        categoryName: item.category?.name || "General",
+        name: item.name,
+        priceMinor,
+        isVeg: item.isVeg,
+      };
+    });
   }
 }
+
+

@@ -33,6 +33,7 @@ export class PrismaSessionStore {
         userId,
         outletId,
         tokenHash: hashToken(refreshToken),
+        refresh_token_hash: hashToken(refreshToken),
         expiresAt,
         userAgent,
         ipAddress,

@@ -46,22 +46,30 @@ export class CustomerManager {
     return { customers, total, limit, offset };
   }
 
-  async createCustomer(outletId: string, data: { firstName: string, lastName?: string, phone: string, email?: string }) {
+  async createCustomer(outletId: string, data: { firstName: string; lastName?: string; phone: string; email?: string }) {
+    const outlet = await this.prisma.outlet.findUnique({
+      where: { id: outletId },
+    });
+    const organizationId = outlet?.organizationId || "d1efba2c-6785-4a01-be4e-bfef0dbf072f";
+    const name = `${data.firstName} ${data.lastName || ""}`.trim();
+
     return await this.prisma.customer.create({
       data: {
+        organization_id: organizationId,
         outletId,
+        name,
         firstName: data.firstName,
-        lastName: data.lastName,
+        lastName: data.lastName || null,
         phone: data.phone,
-        email: data.email,
-      }
+        email: data.email || null,
+      },
     });
   }
 
   // DPDP Act Compliance: PII Erasure
   async anonymizeCustomer(outletId: string, id: string) {
-    const customer = await this.prisma.customer.findUnique({
-      where: { id, outletId }
+    const customer = await this.prisma.customer.findFirst({
+      where: { id, outletId },
     });
 
     if (!customer) {
@@ -71,12 +79,13 @@ export class CustomerManager {
     return await this.prisma.customer.update({
       where: { id },
       data: {
+        name: "ANONYMIZED USER",
         firstName: "ANONYMIZED",
         lastName: "USER",
-        phone: `ANON-${id.substring(0,8)}`,
-        email: `anon-${id.substring(0,8)}@erased.local`,
-        loyaltyPoints: 0
-      }
+        phone: `ANON-${id.substring(0, 8)}`,
+        email: `anon-${id.substring(0, 8)}@erased.local`,
+      },
     });
   }
 }
+

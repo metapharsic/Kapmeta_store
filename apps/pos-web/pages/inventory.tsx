@@ -87,25 +87,32 @@ interface PurchaseOrderApi {
   }[];
 }
 
-function formatPriceMinor(priceMinor: string): string {
-  const rupees = Number(BigInt(priceMinor)) / 100;
-  return `₹${rupees.toFixed(2)}`;
+function formatPriceMinor(priceMinor?: string | number): string {
+  if (priceMinor === undefined || priceMinor === null || priceMinor === "") return "₹0.00";
+  try {
+    const rupees = Number(priceMinor) / 100;
+    return isNaN(rupees) ? "₹0.00" : `₹${rupees.toFixed(2)}`;
+  } catch {
+    return "₹0.00";
+  }
 }
 
 function mapApiRow(row: AvailabilityApiRow): ItemAvailability {
+  const id = row.menuItemId || (row as any).id || "";
+  const name = row.name || "Dish";
   return {
-    id: row.menuItemId,
-    stockQty: row.stockQty,
-    isStocked: row.isStocked,
-    version: row.version,
-    category: row.categoryName,
+    id,
+    stockQty: typeof row.stockQty === "number" ? row.stockQty : 100,
+    isStocked: typeof row.isStocked === "boolean" ? row.isStocked : true,
+    version: typeof row.version === "number" ? row.version : 1,
+    category: row.categoryName || (row as any).category || "General",
     menuItem: {
-      id: row.menuItemId,
-      name: row.name,
+      id,
+      name,
       description: "",
       icon: row.isVeg ? "🥗" : "🍗",
       priceFormatted: formatPriceMinor(row.priceMinor),
-      isVeg: row.isVeg,
+      isVeg: row.isVeg ?? true,
     },
   };
 }
@@ -175,12 +182,12 @@ export default function InventoryDashboard() {
   const fetchIngredients = async () => {
     setLoadingIng(true);
     try {
-      const res = await authedFetch("/ingredients");
+      const res = await authedFetch("/inventory/ingredients");
       if (res.ok) {
         setIngredients(await res.json());
       }
     } catch (e) {
-      console.error(e);
+      console.error("Error fetching ingredients:", e);
     } finally {
       setLoadingIng(false);
     }
@@ -189,12 +196,12 @@ export default function InventoryDashboard() {
   const fetchRecipes = async () => {
     setLoadingRec(true);
     try {
-      const res = await authedFetch("/recipes");
+      const res = await authedFetch("/inventory/recipes");
       if (res.ok) {
         setRecipes(await res.json());
       }
     } catch (e) {
-      console.error(e);
+      console.error("Error fetching recipes:", e);
     } finally {
       setLoadingRec(false);
     }
@@ -203,13 +210,13 @@ export default function InventoryDashboard() {
   const fetchVendorsAndPOs = async () => {
     try {
       const [vRes, poRes] = await Promise.all([
-        authedFetch("/vendors"),
-        authedFetch("/purchase-orders"),
+        authedFetch("/inventory/vendors"),
+        authedFetch("/inventory/purchase-orders"),
       ]);
       if (vRes.ok) setVendors(await vRes.json());
       if (poRes.ok) setPurchaseOrders(await poRes.json());
     } catch (e) {
-      console.error(e);
+      console.error("Error fetching vendors and POs:", e);
     }
   };
 
@@ -227,6 +234,11 @@ export default function InventoryDashboard() {
   }, [items]);
 
   const patchAvailability = async (id: string, isStocked: boolean, stockQty: number, expectedVersion: number) => {
+    // Optimistically update local state immediately
+    setItems((prev) =>
+      prev.map((it) => (it.id === id ? { ...it, isStocked, stockQty, version: expectedVersion + 1 } : it))
+    );
+
     try {
       const res = await authedFetch(`/menu/items/${id}/availability`, {
         method: "PATCH",
@@ -239,11 +251,14 @@ export default function InventoryDashboard() {
         return;
       }
       if (!res.ok) throw new Error("HTTP error " + res.status);
-      const data: AvailabilityApiRow = await res.json();
-      setItems((prev) =>
-        prev.map((it) => (it.id === id ? mapApiRow(data) : it))
-      );
-    } catch {
+      const data = await res.json();
+      if (data && typeof data.newVersion === "number") {
+        setItems((prev) =>
+          prev.map((it) => (it.id === id ? { ...it, isStocked, stockQty, version: data.newVersion } : it))
+        );
+      }
+    } catch (err) {
+      console.error("Error patching availability:", err);
       fetchAvailability();
     }
   };
@@ -252,7 +267,7 @@ export default function InventoryDashboard() {
     e.preventDefault();
     if (!newIngName.trim()) return;
     try {
-      const res = await authedFetch("/ingredients", {
+      const res = await authedFetch("/inventory/ingredients", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -265,7 +280,12 @@ export default function InventoryDashboard() {
       if (res.ok) {
         setShowAddIngModal(false);
         setNewIngName("");
-        fetchIngredients();
+        setNewIngReorder("500");
+        setNewIngUnitCost("10");
+        await fetchIngredients();
+      } else {
+        const err = await res.json();
+        alert(err.error || "Failed to create ingredient");
       }
     } catch (e) {
       alert("Failed to create ingredient");
@@ -284,7 +304,7 @@ export default function InventoryDashboard() {
       return;
     }
     try {
-      const res = await authedFetch("/recipes", {
+      const res = await authedFetch("/inventory/recipes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -294,8 +314,13 @@ export default function InventoryDashboard() {
       });
       if (res.ok) {
         setShowAddRecipeModal(false);
-        fetchRecipes();
+        setSelectedMenuItemId("");
+        setRecipeLines([{ ingredientId: "", quantity: 100, yieldPercent: 100 }]);
+        await fetchRecipes();
         alert("Recipe BOM linked successfully!");
+      } else {
+        const err = await res.json();
+        alert(err.error || "Failed to link recipe BOM");
       }
     } catch (e) {
       alert("Failed to link recipe BOM");
@@ -306,7 +331,7 @@ export default function InventoryDashboard() {
     e.preventDefault();
     if (!newVendorName.trim() || !newVendorPhone.trim()) return;
     try {
-      const res = await authedFetch("/vendors", {
+      const res = await authedFetch("/inventory/vendors", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -320,7 +345,10 @@ export default function InventoryDashboard() {
         setNewVendorName("");
         setNewVendorPhone("");
         setNewVendorEmail("");
-        fetchVendorsAndPOs();
+        await fetchVendorsAndPOs();
+      } else {
+        const err = await res.json();
+        alert(err.error || "Failed to create vendor");
       }
     } catch (e) {
       alert("Failed to create vendor");

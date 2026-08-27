@@ -9,8 +9,17 @@ import type {
   ChannelBreakdownRow,
   TableTurnaroundAverage,
   LeakageReport,
+  TaxBreakdown,
+  TaxComponentBreakdown,
 } from "@kapmeta/shared-types/reporting";
 import type { OrderStatus } from "@kapmeta/shared-types/orders";
+
+export interface TaxOrderRow {
+  subtotalMinor: bigint;
+  taxTotalMinor: bigint;
+  grandTotalMinor: bigint;
+  orderType: string;
+}
 
 export interface OrderAggregateRow {
   status: OrderStatus;
@@ -74,6 +83,7 @@ export interface ReportingRepository {
   listKotStatusEventsInRange(outletId: string, range: DateRange): Promise<KotLeakageEventRow[]>;
   listInvoiceLeakageInRange(outletId: string, range: DateRange): Promise<InvoiceLeakageRow[]>;
   listKotsNotBilledInRange(outletId: string, range: DateRange): Promise<UnbilledKotRow[]>;
+  listTaxOrdersInRange(outletId: string, range: DateRange): Promise<TaxOrderRow[]>;
 }
 
 export function computeSalesSummary(
@@ -343,3 +353,73 @@ export async function getLeakageReport(
   ]);
   return computeLeakageReport(outletId, range, kotEvents, invoices, unbilledKots);
 }
+
+export function computeTaxBreakdown(
+  outletId: string,
+  range: DateRange,
+  orders: TaxOrderRow[]
+): TaxBreakdown {
+  const orderCount = orders.length;
+  const totalTaxableSalesMinor = orders.reduce((sum, o) => sum + o.subtotalMinor, 0n);
+  const totalTaxCollectedMinor = orders.reduce((sum, o) => sum + o.taxTotalMinor, 0n);
+
+  const halfTax = totalTaxCollectedMinor / 2n;
+  const otherHalf = totalTaxCollectedMinor - halfTax;
+
+  const cgstCollected = halfTax;
+  const sgstCollected = otherHalf;
+  const igstCollected = 0n;
+
+  const totalNum = Number(totalTaxCollectedMinor);
+  const cgstShare = totalNum > 0 ? (Number(cgstCollected) / totalNum) * 100 : 50;
+  const sgstShare = totalNum > 0 ? (Number(sgstCollected) / totalNum) * 100 : 50;
+
+  const components: TaxComponentBreakdown[] = [
+    {
+      componentName: "CGST",
+      ratePercent: 2.5,
+      taxableAmountMinor: totalTaxableSalesMinor,
+      taxCollectedMinor: cgstCollected,
+      percentageShare: cgstShare,
+    },
+    {
+      componentName: "SGST",
+      ratePercent: 2.5,
+      taxableAmountMinor: totalTaxableSalesMinor,
+      taxCollectedMinor: sgstCollected,
+      percentageShare: sgstShare,
+    },
+    {
+      componentName: "IGST",
+      ratePercent: 5.0,
+      taxableAmountMinor: 0n,
+      taxCollectedMinor: igstCollected,
+      percentageShare: 0,
+    },
+  ];
+
+  const taxableNum = Number(totalTaxableSalesMinor);
+  const effectiveTaxRatePercent = taxableNum > 0 ? (totalNum / taxableNum) * 100 : 5.0;
+
+  return {
+    outletId,
+    fromDate: range.fromDate,
+    toDate: range.toDate,
+    formulaVersion: KPI_FORMULA_VERSION,
+    totalTaxableSalesMinor,
+    totalTaxCollectedMinor,
+    effectiveTaxRatePercent: Number(effectiveTaxRatePercent.toFixed(2)),
+    orderCount,
+    components,
+  };
+}
+
+export async function getTaxBreakdown(
+  outletId: string,
+  range: DateRange,
+  repo: ReportingRepository
+): Promise<TaxBreakdown> {
+  const orders = await repo.listTaxOrdersInRange(outletId, range);
+  return computeTaxBreakdown(outletId, range, orders);
+}
+

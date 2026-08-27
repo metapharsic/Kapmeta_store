@@ -21,7 +21,9 @@ export default function MoveKotModal({ tables, onClose, onSuccess }: MoveKotModa
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const occupiedTables = tables.filter((t) => t.status !== "VACANT");
+  // Source tables can be any occupied table, or any table with active orders, or fallback to all tables
+  const occupiedTables = tables.filter((t) => t.status === "OCCUPIED" || t.status === "RESERVED" || t.status !== "VACANT");
+  const availableSourceTables = occupiedTables.length > 0 ? occupiedTables : tables;
   const vacantTables = tables.filter((t) => t.id !== sourceTableId);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -34,7 +36,7 @@ export default function MoveKotModal({ tables, onClose, onSuccess }: MoveKotModa
     setLoading(true);
     setError(null);
     try {
-      const res = await authedFetch(`/orders/tables/transfer`, {
+      const res = await authedFetch(`/tables/transfer`, {
         method: "POST",
         body: JSON.stringify({
           sourceTableId,
@@ -45,7 +47,7 @@ export default function MoveKotModal({ tables, onClose, onSuccess }: MoveKotModa
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || "Failed to transfer table/KOT");
+        throw new Error(err.error || err.message || "Failed to transfer table/KOT");
       }
 
       onSuccess();
@@ -106,7 +108,7 @@ export default function MoveKotModal({ tables, onClose, onSuccess }: MoveKotModa
               required
             >
               <option value="">Select source table...</option>
-              {occupiedTables.map((t) => (
+              {availableSourceTables.map((t) => (
                 <option key={t.id} value={t.id}>
                   Table {t.tableNumber} ({t.section || "General"}) - {t.status}
                 </option>

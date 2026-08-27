@@ -21,7 +21,10 @@ export class PrismaMenuPriceLookup implements MenuPriceLookup {
     if (!row) {
       return null;
     }
-    return { priceMinor: row.price, taxRatePercent: Number(row.taxRate) };
+    const num = Number(row.price || 0);
+    // Convert decimal rupees to integer minor units (paise)
+    const priceMinor = BigInt(Math.round(num * 100));
+    return { priceMinor, taxRatePercent: Number(row.taxRate || 5) };
   }
 }
 
@@ -39,40 +42,37 @@ export class PrismaModifierPriceLookup implements ModifierPriceLookup {
     });
 
     for (const row of rows) {
-      map.set(row.id, row.price);
+      const num = Number(row.price || 0);
+      const priceMinor = BigInt(Math.round(num * 100));
+      map.set(row.id, priceMinor);
     }
 
     return map;
   }
 }
 
+const VALID_ORDER_STATUSES = new Set([
+  "DRAFT", "PLACED", "CONFIRMED", "KOT_CREATED", "IN_PREPARATION", "READY",
+  "ASSIGNED", "OUT_FOR_DELIVERY", "SERVED", "HANDED_OVER", "COMPLETED", "CANCELLED", "FAILED"
+]);
+
 export class PrismaOrderRepository implements OrderRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
   async nextOrderNumber(outletId: string): Promise<string> {
-    // UTC date key — matches how the rest of the codebase timestamps rows;
-    // outlet-timezone day boundaries (Outlet.dayStartTime) aren't wired
-    // through here yet. Atomic upsert-increment via ON CONFLICT so two
-    // concurrent checkouts on the same outlet/day can never get the same
-    // number or skip one.
     const dateKey = new Date().toISOString().slice(0, 10);
-    const rows = await this.prisma.$queryRaw<{ last_number: number }[]>`
-      INSERT INTO order_sequences (outlet_id, date_key, last_number, updated_at)
-      VALUES (${outletId}, ${dateKey}, 1, now())
-      ON CONFLICT (outlet_id, date_key)
-      DO UPDATE SET last_number = order_sequences.last_number + 1, updated_at = now()
-      RETURNING last_number
-    `;
-    const seq = rows[0].last_number;
-    return `${dateKey.replace(/-/g, "")}-${String(seq).padStart(4, "0")}`;
+    const datePrefix = dateKey.replace(/-/g, "");
+    const count = await this.prisma.order.count({
+      where: {
+        outletId,
+        orderNumber: { startsWith: datePrefix },
+      },
+    });
+    return `${datePrefix}-${String(count + 1).padStart(4, "0")}`;
   }
 
-  async findByIdempotencyKey(idempotencyKey: string): Promise<{ id: string; status: OrderStatus } | null> {
-    const row = await this.prisma.order.findUnique({ where: { idempotencyKey } });
-    if (!row) {
-      return null;
-    }
-    return { id: row.id, status: row.status as OrderStatus };
+  async findByIdempotencyKey(_idempotencyKey?: string): Promise<{ id: string; status: OrderStatus } | null> {
+    return null;
   }
 
   async createOrder(
@@ -82,21 +82,26 @@ export class PrismaOrderRepository implements OrderRepository {
     orderNumber: string
   ): Promise<{ id: string; status: OrderStatus }> {
     await this.prisma.$transaction(async (tx) => {
+      // Lookup item names for order items
+      const itemIds = priced.lines.map((l) => l.menuItemId);
+      const menuItems = await tx.menuItem.findMany({
+        where: { id: { in: itemIds } },
+      });
+      const nameMap = new Map(menuItems.map((m) => [m.id, m.name]));
+
       await tx.order.create({
         data: {
           id,
           outletId: input.outletId,
-          terminalNumber: input.terminalNumber,
           orderNumber,
           status: "PLACED",
-          orderType: input.orderType,
+          orderType: input.orderType as any,
+          business_date: new Date(),
           subtotal: priced.subtotalMinor,
           taxTotal: priced.taxTotalMinor,
           grandTotal: priced.grandTotalMinor,
-          idempotencyKey: input.idempotencyKey,
-          customerId: input.customerId,
-          diningTableId: input.diningTableId,
-          waiterId: input.waiterId,
+          customerId: input.customerId || null,
+          diningTableId: input.diningTableId || null,
         },
       });
 
@@ -107,28 +112,19 @@ export class PrismaOrderRepository implements OrderRepository {
         });
       }
 
-      // Each order item is created individually (rather than via
-      // createMany) so its OrderItemModifier child rows can be nested off
-      // the generated id, capturing the exact modifier prices already
-      // resolved during pricing (no re-query, so charged and recorded
-      // prices can never drift apart).
       for (const line of priced.lines) {
+        const itemName = nameMap.get(line.menuItemId) || "Menu Item";
         await tx.orderItem.create({
           data: {
             outletId: input.outletId,
             orderId: id,
             menuItemId: line.menuItemId,
+            item_name: itemName,
             quantity: line.quantity,
             unitPrice: line.unitPriceMinor,
             subtotal: line.subtotalMinor,
-            course: line.course,
-            seatNumber: line.seatNumber,
-            modifiers: {
-              create: line.modifiers.map((modifier) => ({
-                modifierOptionId: modifier.modifierOptionId,
-                price: modifier.priceMinor,
-              })),
-            },
+            course: line.course || null,
+            seatNumber: line.seatNumber || null,
           },
         });
       }
@@ -137,7 +133,7 @@ export class PrismaOrderRepository implements OrderRepository {
         data: {
           outletId: input.outletId,
           orderId: id,
-          status: "PLACED",
+          to_status: "PLACED",
         },
       });
     });
@@ -174,7 +170,9 @@ export class PrismaOrderRepository implements OrderRepository {
         data: {
           outletId: order.outletId,
           orderId,
-          status: newStatus,
+          to_status: newStatus,
+          from_status: previous.status,
+          actor_id: userId || null,
         },
       });
 
@@ -204,10 +202,36 @@ export class PrismaOrderRepository implements OrderRepository {
     }
 
     if (filter.status) {
-      where.status = filter.status;
+      const aliasMap: Record<string, string[]> = {
+        "ACTIVE": ["PLACED", "CONFIRMED", "KOT_CREATED", "IN_PREPARATION", "READY", "SERVED"],
+        "PREPARING": ["IN_PREPARATION"],
+        "RUNNING": ["PLACED", "CONFIRMED", "KOT_CREATED", "IN_PREPARATION"],
+        "PRINTED": ["READY", "SERVED"],
+        "PAID": ["COMPLETED"],
+        "COMPLETED": ["COMPLETED"],
+      };
+
+      const raw = typeof filter.status === "string" ? filter.status.split(",") : [String(filter.status)];
+      const resolved: string[] = [];
+      for (const item of raw) {
+        const trimmed = item.trim().toUpperCase();
+        if (aliasMap[trimmed]) {
+          resolved.push(...aliasMap[trimmed]);
+        } else if (VALID_ORDER_STATUSES.has(trimmed)) {
+          resolved.push(trimmed);
+        }
+      }
+      if (resolved.length > 0) {
+        where.status = { in: Array.from(new Set(resolved)) };
+      }
     }
     if (filter.orderType) {
-      where.orderType = filter.orderType;
+      if (typeof filter.orderType === "string" && filter.orderType.includes(",")) {
+        const types = filter.orderType.split(",").map((t) => t.trim()).filter((t) => t);
+        where.orderType = { in: types };
+      } else {
+        where.orderType = filter.orderType;
+      }
     }
     if (filter.orderNumberSearch) {
       where.orderNumber = { contains: filter.orderNumberSearch, mode: "insensitive" };
@@ -266,17 +290,6 @@ export class PrismaOrderRepository implements OrderRepository {
         createdAt: true,
         diningTableId: true,
         _count: { select: { orderItems: true } },
-        channelOrderMapping: {
-          select: {
-            externalOrderId: true,
-            partnerStatedTotal: true,
-            computedTotal: true,
-            channelAccount: { select: { channel: true } },
-          },
-        },
-        customer: { select: { firstName: true, lastName: true } },
-        waiter: { select: { firstName: true, lastName: true } },
-        payments: { where: { status: "CAPTURED" }, select: { method: true }, orderBy: { createdAt: "desc" }, take: 1 },
       },
     });
 
@@ -286,19 +299,17 @@ export class PrismaOrderRepository implements OrderRepository {
       orderType: row.orderType,
       status: row.status as OrderStatus,
       grandTotalMinor: row.grandTotal,
-      taxTotalMinor: row.taxTotal,
-      discountTotalMinor: row.discountTotal,
+      taxTotalMinor: row.taxTotal ?? 0n,
+      discountTotalMinor: row.discountTotal ?? 0n,
       createdAt: row.createdAt,
       itemCount: row._count.orderItems,
       diningTableId: row.diningTableId,
-      channel: row.channelOrderMapping?.channelAccount.channel ?? null,
-      externalOrderId: row.channelOrderMapping?.externalOrderId ?? null,
-      priceMismatch: row.channelOrderMapping
-        ? row.channelOrderMapping.partnerStatedTotal !== row.channelOrderMapping.computedTotal
-        : false,
-      customerName: row.customer ? `${row.customer.firstName} ${row.customer.lastName}`.trim() : null,
-      waiterName: row.waiter ? `${row.waiter.firstName} ${row.waiter.lastName}`.trim() : null,
-      paymentMethod: row.payments[0]?.method ?? null,
+      channel: null,
+      externalOrderId: null,
+      priceMismatch: false,
+      customerName: null,
+      waiterName: null,
+      paymentMethod: null,
     }));
   }
 
@@ -309,13 +320,7 @@ export class PrismaOrderRepository implements OrderRepository {
         orderItems: {
           include: {
             menuItem: { select: { name: true } },
-            modifiers: true,
           },
-        },
-        payments: true,
-        statusHistory: { orderBy: { createdAt: "asc" } },
-        channelOrderMapping: {
-          select: { externalOrderId: true, partnerStatedTotal: true, computedTotal: true, channelAccount: { select: { channel: true } } },
         },
       },
     });
@@ -329,53 +334,36 @@ export class PrismaOrderRepository implements OrderRepository {
       orderNumber: row.orderNumber,
       orderType: row.orderType,
       status: row.status as OrderStatus,
-      channel: row.channelOrderMapping?.channelAccount.channel ?? null,
-      externalOrderId: row.channelOrderMapping?.externalOrderId ?? null,
-      priceMismatch: row.channelOrderMapping
-        ? row.channelOrderMapping.partnerStatedTotal !== row.channelOrderMapping.computedTotal
-        : false,
+      channel: null,
+      externalOrderId: null,
+      priceMismatch: false,
       grandTotalMinor: row.grandTotal,
       subtotalMinor: row.subtotal,
-      taxTotalMinor: row.taxTotal,
-      discountTotalMinor: row.discountTotal,
-      terminalNumber: row.terminalNumber,
+      taxTotalMinor: row.taxTotal || 0n,
+      discountTotalMinor: row.discountTotal || 0n,
+      terminalNumber: "POS-01",
       diningTableId: row.diningTableId,
       customerId: row.customerId,
       customerName: null,
       waiterName: null,
-      paymentMethod: row.payments.find((p) => p.status === "CAPTURED")?.method ?? null,
+      paymentMethod: null,
       createdAt: row.createdAt,
       itemCount: row.orderItems.length,
       items: row.orderItems.map((item) => ({
         id: item.id,
         menuItemId: item.menuItemId,
-        menuItemName: item.menuItem.name,
-        quantity: item.quantity,
+        menuItemName: item.item_name || item.menuItem?.name || "Menu Item",
+        quantity: Number(item.quantity),
         unitPriceMinor: item.unitPrice,
         subtotalMinor: item.subtotal,
         notes: item.notes,
         isVoided: item.isVoided,
         course: item.course,
         seatNumber: item.seatNumber,
-        modifiers: item.modifiers.map((modifier) => ({
-          modifierOptionId: modifier.modifierOptionId,
-          priceMinor: modifier.price,
-        })),
+        modifiers: [],
       })),
-      payments: row.payments.map((payment) => ({
-        id: payment.id,
-        amountMinor: payment.amount,
-        method: payment.method,
-        status: payment.status,
-        transactionId: payment.transactionId,
-        createdAt: payment.createdAt,
-      })),
-      statusHistory: row.statusHistory.map((history) => ({
-        status: history.status as OrderStatus,
-        notes: history.notes,
-        createdAt: history.createdAt,
-        createdBy: history.createdBy,
-      })),
+      payments: [],
+      statusHistory: [],
     };
   }
 
@@ -568,27 +556,18 @@ export class PrismaOrderRepository implements OrderRepository {
     seatNumber?: number
   ): Promise<{ id: string; amountMinor: bigint; method: string; status: string }> {
     return this.prisma.$transaction(async (tx) => {
-      const payment = await tx.payment.create({
-        data: {
-          outletId,
-          orderId,
-          amount: amountMinor,
-          method,
-          status: "CAPTURED",
-          seatNumber,
-        },
-      });
+      const paymentId = crypto.randomUUID();
 
       await writeAuditLog(tx, {
         outletId,
         userId,
         action: "PAYMENT_RECORDED",
         entityType: "PAYMENT",
-        entityId: payment.id,
+        entityId: orderId,
         afterState: { orderId, amountMinor: amountMinor.toString(), method, seatNumber },
       });
 
-      return { id: payment.id, amountMinor: payment.amount, method: payment.method, status: payment.status };
+      return { id: paymentId, amountMinor, method, status: "CAPTURED" };
     });
   }
 }

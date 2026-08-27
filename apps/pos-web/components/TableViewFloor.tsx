@@ -153,7 +153,13 @@ export default function TableViewFloor({
   const sections = useMemo(() => {
     const map = new Map<string, TableItem[]>();
     tables.forEach((t) => {
-      if (statusFilter && t.status !== statusFilter) return;
+      if (statusFilter) {
+        if (statusFilter === "RUNNING") {
+          if (t.status !== "RUNNING" && t.status !== "RUNNING_KOT") return;
+        } else if (t.status !== statusFilter) {
+          return;
+        }
+      }
       const sec = t.section || "Non AC";
       if (!map.has(sec)) map.set(sec, []);
       map.get(sec)!.push(t);

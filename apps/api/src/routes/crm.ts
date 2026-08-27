@@ -10,9 +10,19 @@ const loyaltyEngine = new LoyaltyEngine(prisma);
 
 // Create Customer
 crmRouter.post("/customers", requireAuth, requirePermission("crm.write"), async (req: AuthedRequest, res) => {
-  const { firstName, lastName, phone, email } = req.body;
+  let firstName = req.body.firstName;
+  let lastName = req.body.lastName;
+  const phone = req.body.phone;
+  const email = req.body.email;
+
+  if (!firstName && req.body.name) {
+    const parts = String(req.body.name).trim().split(" ");
+    firstName = parts[0];
+    lastName = parts.slice(1).join(" ") || undefined;
+  }
+
   if (!firstName || !phone) {
-    return res.status(400).json({ error: "Missing required fields: firstName, phone" });
+    return res.status(400).json({ error: "Missing required fields: firstName/name, phone" });
   }
 
   try {

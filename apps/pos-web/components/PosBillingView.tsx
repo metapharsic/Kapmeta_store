@@ -27,6 +27,16 @@ interface CartItem {
   checked?: boolean;
 }
 
+interface RunningOrderItem {
+  id: string;
+  menuItemName: string;
+  quantity: number;
+  unitPriceMinor: number;
+  subtotalMinor: number;
+  status?: string;
+  notes?: string;
+}
+
 interface PosBillingViewProps {
   initialTable?: string;
   initialTableId?: string;
@@ -57,16 +67,25 @@ export default function PosBillingView({
   const [waiterName, setWaiterName] = useState("Captain 1");
   const [cart, setCart] = useState<CartItem[]>([]);
 
+  // Active Running Order from Table
+  const [activeOrder, setActiveOrder] = useState<any | null>(null);
+  const [runningItems, setRunningItems] = useState<RunningOrderItem[]>([]);
+
   // Payment & Settlement
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "CARD" | "DUE" | "OTHER">("CASH");
   const [isPaidChecked, setIsPaidChecked] = useState(false);
   const [isSplitModalOpen, setIsSplitModalOpen] = useState(false);
   const [processingOrder, setProcessingOrder] = useState(false);
 
-  // Load Menu Catalog
+  // Modals & Feedback
+  const [receiptModal, setReceiptModal] = useState<any | null>(null);
+  const [kotFeedback, setKotFeedback] = useState<{ orderNumber: string; items: string[] } | null>(null);
+
+  // Load Menu & Running Table Order
   useEffect(() => {
     loadMenu();
-  }, []);
+    loadActiveTableOrder();
+  }, [initialTableId, initialTable]);
 
   const loadMenu = async () => {
     try {
@@ -75,14 +94,14 @@ export default function PosBillingView({
       if (res.ok) {
         const data = await res.json();
         const items: MenuItem[] = (data || []).map((it: any) => ({
-          id: it.id,
+          id: it.menuItemId || it.id,
           name: it.name,
           category: it.categoryName || it.category?.name || "General",
           description: it.description || "",
           priceMinor: Number(it.priceMinor || 0),
           isVeg: it.isVeg ?? true,
-          isStocked: it.availability ? it.availability.isStocked : true,
-          stockQty: it.availability ? it.availability.stockQty : 100,
+          isStocked: typeof it.isStocked === "boolean" ? it.isStocked : (it.availability ? it.availability.isStocked : true),
+          stockQty: typeof it.stockQty === "number" ? it.stockQty : (it.availability ? it.availability.stockQty : 100),
         }));
 
         setCatalog(items);
@@ -97,6 +116,43 @@ export default function PosBillingView({
       console.error("Failed to load catalog", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadActiveTableOrder = async () => {
+    if (!initialTableId && !initialTable) return;
+    try {
+      const res = await authedFetch("/tables");
+      if (res.ok) {
+        const allTables = await res.json();
+        const matched = allTables.find((t: any) => t.id === initialTableId || t.tableNumber === initialTable);
+        if (matched) {
+          setTableNumber(matched.tableNumber);
+          setTableSection(matched.section || "Main Dining");
+          if (matched.activeOrderId) {
+            const ordRes = await authedFetch(`/orders/${matched.activeOrderId}`);
+            if (ordRes.ok) {
+              const ord = await ordRes.json();
+              setActiveOrder(ord);
+              if (ord.items && Array.isArray(ord.items)) {
+                setRunningItems(
+                  ord.items.map((it: any) => ({
+                    id: it.id,
+                    menuItemName: it.menuItemName || it.item_name || it.name,
+                    quantity: it.quantity,
+                    unitPriceMinor: Number(it.unitPriceMinor || it.unitPrice || 0),
+                    subtotalMinor: Number(it.subtotalMinor || it.subtotal || (it.quantity * it.unitPriceMinor) || 0),
+                    status: it.status || "KOT_SENT",
+                    notes: it.notes,
+                  }))
+                );
+              }
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load active table order", err);
     }
   };
 
@@ -156,15 +212,21 @@ export default function PosBillingView({
     );
   };
 
-  const subtotalMinor = useMemo(
+  // Grand Totals Calculation (Running KOT Items + Draft Cart Items)
+  const runningSubtotalMinor = useMemo(
+    () => runningItems.reduce((sum, it) => sum + it.subtotalMinor, 0),
+    [runningItems]
+  );
+  const cartSubtotalMinor = useMemo(
     () => cart.reduce((sum, it) => sum + it.itemTotalMinor, 0),
     [cart]
   );
-  const taxMinor = useMemo(() => Math.round(subtotalMinor * 0.05), [subtotalMinor]); // 5% GST
-  const grandTotalMinor = subtotalMinor + taxMinor;
+  const totalSubtotalMinor = runningSubtotalMinor + cartSubtotalMinor;
+  const taxMinor = useMemo(() => Math.round(totalSubtotalMinor * 0.05), [totalSubtotalMinor]); // 5% GST
+  const grandTotalMinor = totalSubtotalMinor + taxMinor;
 
   const handleHoldCart = () => {
-    if (cart.length === 0) {
+    if (cart.length === 0 && runningItems.length === 0) {
       alert("Cart is empty.");
       return;
     }
@@ -172,7 +234,7 @@ export default function PosBillingView({
       id: `hold_${Date.now()}`,
       tableNumber,
       orderType: orderMode,
-      itemCount: cart.reduce((s, c) => s + c.quantity, 0),
+      itemCount: cart.reduce((s, c) => s + c.quantity, 0) + runningItems.reduce((s, r) => s + r.quantity, 0),
       totalMinor: grandTotalMinor,
       heldAt: new Date().toISOString(),
       cart,
@@ -190,24 +252,32 @@ export default function PosBillingView({
 
   const handleKotAndPrint = async () => {
     if (cart.length === 0) {
-      alert("Please select items to create KOT.");
+      if (runningItems.length > 0) {
+        setKotFeedback({
+          orderNumber: activeOrder?.orderNumber || "KOT",
+          items: runningItems.map((r) => `${r.quantity}x ${r.menuItemName}`),
+        });
+        return;
+      }
+      alert("Please select items from the menu grid to create a KOT ticket.");
       return;
     }
     setProcessingOrder(true);
     try {
       const payload = {
+        action: "KOT",
         orderType: orderMode,
         tableNumber,
-        diningTableId: initialTableId || null,
+        diningTableId: initialTableId || undefined,
         covers: coversCount,
         waiterName,
-        items: cart.map((c) => ({
+        lines: cart.map((c) => ({
           menuItemId: c.item.id,
           quantity: c.quantity,
           unitPriceMinor: c.item.priceMinor,
-          notes: c.notes || null,
+          notes: c.notes || undefined,
         })),
-        status: "ACTIVE",
+        status: "KOT_CREATED",
       };
 
       const res = await authedFetch("/orders", {
@@ -215,10 +285,21 @@ export default function PosBillingView({
         body: JSON.stringify(payload),
       });
 
-      if (!res.ok) throw new Error("Failed to send KOT");
-      const data = await res.json();
-      alert(`KOT Ticket sent to Kitchen for Table ${tableNumber}!`);
-      if (onBackToTables) onBackToTables();
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || "Failed to send KOT");
+      }
+
+      const resData = await res.json();
+      const dispatchedList = cart.map((c) => `${c.quantity}x ${c.item.name}`);
+
+      setKotFeedback({
+        orderNumber: resData.orderNumber || "KOT-NEW",
+        items: dispatchedList,
+      });
+
+      setCart([]);
+      await loadActiveTableOrder();
     } catch (err: any) {
       alert(err.message || "Failed to create KOT");
     } finally {
@@ -227,26 +308,36 @@ export default function PosBillingView({
   };
 
   const handlePrintAndEBill = async () => {
-    if (cart.length === 0) {
-      alert("Please select items to print bill.");
+    if (cart.length === 0 && runningItems.length === 0) {
+      alert("Please select items or open a running table to print bill.");
       return;
     }
     setProcessingOrder(true);
     try {
-      const payload = {
-        orderType: orderMode,
-        tableNumber,
-        diningTableId: initialTableId || null,
-        covers: coversCount,
-        waiterName,
-        paymentMethod,
-        isPaid: isPaidChecked,
-        items: cart.map((c) => ({
+      const allLines = [
+        ...runningItems.map((r) => ({
+          menuItemId: r.id,
+          quantity: r.quantity,
+          unitPriceMinor: r.unitPriceMinor,
+        })),
+        ...cart.map((c) => ({
           menuItemId: c.item.id,
           quantity: c.quantity,
           unitPriceMinor: c.item.priceMinor,
         })),
-        subtotalMinor,
+      ];
+
+      const payload = {
+        action: "BILL",
+        orderType: orderMode,
+        tableNumber,
+        diningTableId: initialTableId || undefined,
+        covers: coversCount,
+        waiterName,
+        paymentMethod,
+        isPaid: true,
+        lines: allLines,
+        subtotalMinor: totalSubtotalMinor,
         taxTotalMinor: taxMinor,
         grandTotalMinor,
       };
@@ -256,10 +347,30 @@ export default function PosBillingView({
         body: JSON.stringify(payload),
       });
 
-      if (!res.ok) throw new Error("Failed to generate bill");
-      alert(`Tax Invoice & E-Bill generated for Table ${tableNumber}! Print job dispatched.`);
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || "Failed to generate bill");
+      }
+
+      const resData = await res.json();
+
+      setReceiptModal({
+        orderNumber: resData.orderNumber || activeOrder?.orderNumber || "INV-001",
+        tableNumber,
+        paymentMethod,
+        totalSubtotalMinor,
+        taxMinor,
+        grandTotalMinor,
+        items: [
+          ...runningItems.map((r) => ({ name: r.menuItemName, qty: r.quantity, price: r.subtotalMinor })),
+          ...cart.map((c) => ({ name: c.item.name, qty: c.quantity, price: c.itemTotalMinor })),
+        ],
+        createdAt: new Date().toISOString(),
+      });
+
       setCart([]);
-      if (onBackToTables) onBackToTables();
+      setRunningItems([]);
+      setActiveOrder(null);
     } catch (err: any) {
       alert(err.message || "Failed to print bill");
     } finally {
@@ -307,11 +418,11 @@ export default function PosBillingView({
         !searchQuery ||
         item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         item.category.toLowerCase().includes(searchQuery.toLowerCase());
-      
+
       let matchDiet = true;
       if (dietaryFilter === "VEG_ONLY") matchDiet = item.isVeg === true;
       else if (dietaryFilter === "NON_VEG_ONLY") matchDiet = item.isVeg === false;
-      else if (dietaryFilter === "BESTSELLERS_ONLY") matchDiet = (item.priceMinor > 8000 && item.priceMinor < 20000);
+      else if (dietaryFilter === "BESTSELLERS_ONLY") matchDiet = item.priceMinor > 8000 && item.priceMinor < 30000;
 
       return matchCat && matchSearch && matchDiet;
     });
@@ -391,7 +502,7 @@ export default function PosBillingView({
                       key={item.id}
                       item={{
                         ...item,
-                        isBestseller: item.priceMinor > 8000 && item.priceMinor < 20000,
+                        isBestseller: item.priceMinor > 8000 && item.priceMinor < 30000,
                       }}
                       cartQuantity={cartQuantity}
                       onAdd={(it) => addToCart(item)}
@@ -419,6 +530,9 @@ export default function PosBillingView({
               <span className="table-tag-icon">T</span>
               <span className="table-name-label">{tableNumber}</span>
               <span className="section-badge">{tableSection}</span>
+              {runningItems.length > 0 && (
+                <span className="live-running-badge">● Running Order</span>
+              )}
             </div>
 
             <div className="covers-waiter-group">
@@ -443,14 +557,14 @@ export default function PosBillingView({
           {/* Cart Table Headers */}
           <div className="cart-table-headers">
             <span className="col-item">ITEMS</span>
-            <span className="col-check">CHECK ITEMS</span>
+            <span className="col-check">CHECK</span>
             <span className="col-qty">QTY</span>
             <span className="col-price">PRICE</span>
           </div>
 
           {/* Cart Items List */}
           <div className="cart-items-scroll">
-            {cart.length === 0 ? (
+            {runningItems.length === 0 && cart.length === 0 ? (
               <div className="empty-cart-state">
                 <div style={{ fontSize: "2.5rem", color: "#cbd5e1" }}>🍽️</div>
                 <div style={{ fontWeight: 700, color: "#64748b", marginTop: "8px" }}>No Item Selected</div>
@@ -459,48 +573,88 @@ export default function PosBillingView({
                 </div>
               </div>
             ) : (
-              cart.map((cartItem) => (
-                <div key={cartItem.cartItemId} className="cart-row">
-                  <div className="cart-col-item">
-                    <span className={`veg-dot ${cartItem.item.isVeg ? "veg" : "non-veg"}`}>●</span>
-                    <span className="cart-item-name">{cartItem.item.name}</span>
+              <>
+                {/* 1. Already Dispatched Running KOT Items */}
+                {runningItems.length > 0 && (
+                  <div className="running-section-group">
+                    <div className="running-section-header">
+                      <span>🍳 RUNNING KOT ITEMS (Dispatched)</span>
+                      <span>₹{(runningSubtotalMinor / 100).toFixed(2)}</span>
+                    </div>
+                    {runningItems.map((rItem) => (
+                      <div key={rItem.id} className="cart-row running-row">
+                        <div className="cart-col-item">
+                          <span className="kot-tag">KOT</span>
+                          <span className="cart-item-name">{rItem.menuItemName}</span>
+                        </div>
+                        <div className="cart-col-check">
+                          <span style={{ color: "#16a34a", fontSize: "0.75rem" }}>✓ Sent</span>
+                        </div>
+                        <div className="cart-col-qty">
+                          <span className="qty-val" style={{ fontWeight: 700 }}>{rItem.quantity}</span>
+                        </div>
+                        <div className="cart-col-price">
+                          ₹{(rItem.subtotalMinor / 100).toFixed(2)}
+                        </div>
+                      </div>
+                    ))}
                   </div>
+                )}
 
-                  <div className="cart-col-check">
-                    <input
-                      type="checkbox"
-                      checked={cartItem.checked}
-                      onChange={() => toggleCheckItem(cartItem.cartItemId)}
-                    />
-                  </div>
+                {/* 2. Newly Added Cart Items to Send */}
+                {cart.length > 0 && (
+                  <div className="new-section-group">
+                    {runningItems.length > 0 && (
+                      <div className="new-section-header">
+                        <span>➕ NEW ITEMS (To Dispatch)</span>
+                        <span>₹{(cartSubtotalMinor / 100).toFixed(2)}</span>
+                      </div>
+                    )}
+                    {cart.map((cartItem) => (
+                      <div key={cartItem.cartItemId} className="cart-row new-row">
+                        <div className="cart-col-item">
+                          <span className={`veg-dot ${cartItem.item.isVeg ? "veg" : "non-veg"}`}>●</span>
+                          <span className="cart-item-name">{cartItem.item.name}</span>
+                        </div>
 
-                  <div className="cart-col-qty">
-                    <button
-                      type="button"
-                      className="qty-btn"
-                      onClick={() => updateCartItemQty(cartItem.cartItemId, -1)}
-                    >
-                      -
-                    </button>
-                    <span className="qty-val">{cartItem.quantity}</span>
-                    <button
-                      type="button"
-                      className="qty-btn"
-                      onClick={() => updateCartItemQty(cartItem.cartItemId, 1)}
-                    >
-                      +
-                    </button>
-                  </div>
+                        <div className="cart-col-check">
+                          <input
+                            type="checkbox"
+                            checked={cartItem.checked}
+                            onChange={() => toggleCheckItem(cartItem.cartItemId)}
+                          />
+                        </div>
 
-                  <div className="cart-col-price">
-                    ₹{(cartItem.itemTotalMinor / 100).toFixed(2)}
+                        <div className="cart-col-qty">
+                          <button
+                            type="button"
+                            className="qty-btn"
+                            onClick={() => updateCartItemQty(cartItem.cartItemId, -1)}
+                          >
+                            -
+                          </button>
+                          <span className="qty-val">{cartItem.quantity}</span>
+                          <button
+                            type="button"
+                            className="qty-btn"
+                            onClick={() => updateCartItemQty(cartItem.cartItemId, 1)}
+                          >
+                            +
+                          </button>
+                        </div>
+
+                        <div className="cart-col-price">
+                          ₹{(cartItem.itemTotalMinor / 100).toFixed(2)}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                </div>
-              ))
+                )}
+              </>
             )}
           </div>
 
-          {/* Cart Summary & Rapid Settlement */}
+          {/* Cart Summary & Rapid Settlement Footer (Sticky at Bottom) */}
           <div className="cart-settlement-footer">
             {/* Split & Tender Modes */}
             <div className="tender-action-bar">
@@ -573,7 +727,7 @@ export default function PosBillingView({
               </div>
             </div>
 
-            {/* Bottom Primary CTAs */}
+            {/* Bottom Primary CTAs (Sticky & Always Visible) */}
             <div className="cart-cta-buttons">
               <button
                 type="button"
@@ -588,18 +742,18 @@ export default function PosBillingView({
                 type="button"
                 className="btn-print-ebill"
                 onClick={handlePrintAndEBill}
-                disabled={processingOrder}
+                disabled={processingOrder || (cart.length === 0 && runningItems.length === 0)}
               >
-                Print & E-Bill
+                {processingOrder ? "Printing..." : "Print & E-Bill"}
               </button>
 
               <button
                 type="button"
                 className="btn-kot-print"
                 onClick={handleKotAndPrint}
-                disabled={processingOrder}
+                disabled={processingOrder || (cart.length === 0 && runningItems.length === 0)}
               >
-                KOT & Print
+                {processingOrder ? "Sending..." : "KOT & Print"}
               </button>
             </div>
           </div>
@@ -609,43 +763,172 @@ export default function PosBillingView({
       {/* Bill Split Modal */}
       {isSplitModalOpen && (
         <BillSplitModal
-          cart={cart}
           totalMinor={grandTotalMinor}
+          cart={cart}
           onClose={() => setIsSplitModalOpen(false)}
-          onConfirmSplit={(details) => {
-            alert(`Bill configured for ${details.numGuests} guests (₹${(details.perGuestMinor / 100).toFixed(2)} each).`);
+          onConfirmSplit={(splits) => {
+            alert(`Bill Split into ${splits.length} parts. Total: ₹${(grandTotalMinor / 100).toFixed(2)}`);
+            setIsSplitModalOpen(false);
           }}
         />
       )}
 
-      {/* Item Customizer Modal */}
-      <MenuCustomizerModal
-        isOpen={!!customizingItem}
-        item={customizingItem}
-        onClose={() => setCustomizingItem(null)}
-        onConfirm={(item, custom) => {
-          addCustomizedToCart(item, custom);
-          setCustomizingItem(null);
-        }}
-      />
+      {/* Menu Customizer Modal */}
+      {customizingItem && (
+        <MenuCustomizerModal
+          item={customizingItem}
+          onClose={() => setCustomizingItem(null)}
+          onAddToCart={addCustomizedToCart}
+        />
+      )}
+
+      {/* KOT Dispatched Success Dialog */}
+      {kotFeedback && (
+        <div className="modal-backdrop" onClick={() => setKotFeedback(null)}>
+          <div className="modal-dialog-card" onClick={(e) => e.stopPropagation()}>
+            <div className="dialog-header success-header">
+              <span style={{ fontSize: "1.5rem" }}>🍳</span>
+              <h3 style={{ margin: 0, fontSize: "1.125rem", fontWeight: 800 }}>KOT Ticket Dispatched!</h3>
+            </div>
+            <div className="dialog-body">
+              <p style={{ margin: "0 0 12px", color: "#334155", fontWeight: 600 }}>
+                KOT #{kotFeedback.orderNumber} sent to Kitchen KDS for <strong>Table {tableNumber}</strong>:
+              </p>
+              <ul className="dispatched-items-list">
+                {kotFeedback.items.map((it, idx) => (
+                  <li key={idx} style={{ padding: "4px 0", borderBottom: "1px dashed #e2e8f0" }}>{it}</li>
+                ))}
+              </ul>
+            </div>
+            <div className="dialog-footer">
+              <button
+                type="button"
+                className="btn-dialog-primary"
+                onClick={() => setKotFeedback(null)}
+              >
+                Continue Ordering
+              </button>
+              {onBackToTables && (
+                <button
+                  type="button"
+                  className="btn-dialog-secondary"
+                  onClick={() => {
+                    setKotFeedback(null);
+                    onBackToTables();
+                  }}
+                >
+                  Return to Floor View →
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* POS Thermal Receipt Modal */}
+      {receiptModal && (
+        <div className="modal-backdrop" onClick={() => setReceiptModal(null)}>
+          <div className="modal-dialog-card receipt-card" onClick={(e) => e.stopPropagation()}>
+            <div className="receipt-paper">
+              <div className="receipt-header">
+                <h3 style={{ margin: 0, fontWeight: 900 }}>HOTEL KAPILA</h3>
+                <div style={{ fontSize: "0.75rem", color: "#64748b" }}>GSTIN: 27AAAAA0000A1Z5</div>
+                <div style={{ fontSize: "0.75rem", color: "#64748b" }}>Main Branch, Pune</div>
+                <div className="receipt-divider">================================</div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem", fontWeight: 700 }}>
+                  <span>Table: {receiptModal.tableNumber}</span>
+                  <span>Inv #{receiptModal.orderNumber}</span>
+                </div>
+                <div style={{ fontSize: "0.75rem", color: "#64748b", textAlign: "left", marginTop: "2px" }}>
+                  Date: {new Date(receiptModal.createdAt).toLocaleString()}
+                </div>
+                <div className="receipt-divider">--------------------------------</div>
+              </div>
+
+              <div className="receipt-items-list">
+                {receiptModal.items.map((it: any, idx: number) => (
+                  <div key={idx} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem", padding: "3px 0" }}>
+                    <span>{it.qty}x {it.name}</span>
+                    <span style={{ fontWeight: 700 }}>₹{(it.price / 100).toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="receipt-divider">--------------------------------</div>
+
+              <div className="receipt-totals">
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem" }}>
+                  <span>Subtotal:</span>
+                  <span>₹{(receiptModal.totalSubtotalMinor / 100).toFixed(2)}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "#64748b" }}>
+                  <span>CGST (2.5%):</span>
+                  <span>₹{((receiptModal.taxMinor / 2) / 100).toFixed(2)}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "#64748b" }}>
+                  <span>SGST (2.5%):</span>
+                  <span>₹{((receiptModal.taxMinor / 2) / 100).toFixed(2)}</span>
+                </div>
+                <div className="receipt-divider">================================</div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "1.125rem", fontWeight: 900 }}>
+                  <span>GRAND TOTAL:</span>
+                  <span>₹{(receiptModal.grandTotalMinor / 100).toFixed(2)}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem", color: "#16a34a", fontWeight: 700, marginTop: "4px" }}>
+                  <span>Paid via {receiptModal.paymentMethod}:</span>
+                  <span>₹{(receiptModal.grandTotalMinor / 100).toFixed(2)}</span>
+                </div>
+              </div>
+
+              <div className="receipt-footer" style={{ textAlign: "center", marginTop: "16px", fontSize: "0.75rem", color: "#64748b" }}>
+                <div>*** THANK YOU FOR DINING WITH US ***</div>
+                <div>Visit Again Soon!</div>
+              </div>
+            </div>
+
+            <div className="receipt-actions">
+              <button
+                type="button"
+                className="btn-print-duplicate"
+                onClick={() => {
+                  window.print();
+                }}
+              >
+                🖨️ Print Receipt
+              </button>
+              <button
+                type="button"
+                className="btn-close-receipt"
+                onClick={() => {
+                  setReceiptModal(null);
+                  if (onBackToTables) onBackToTables();
+                }}
+              >
+                Done / Back to Floor
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style jsx>{`
         .pos-billing-container {
           display: flex;
           flex-direction: column;
-          height: calc(100vh - 48px);
+          height: calc(100vh - 56px);
+          max-height: calc(100vh - 56px);
           background: #f8fafc;
-          font-family: inherit;
+          overflow: hidden;
         }
 
         .pos-mode-bar {
-          height: 38px;
-          background: #ffffff;
-          border-bottom: 1px solid #e2e8f0;
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 0 16px;
+          padding: 6px 14px;
+          background: #ffffff;
+          border-bottom: 1px solid #e2e8f0;
+          flex-shrink: 0;
         }
         .mode-tabs {
           display: flex;
@@ -669,17 +952,23 @@ export default function PosBillingView({
         .btn-back-tables {
           background: transparent;
           border: 1px solid #cbd5e1;
-          padding: 3px 10px;
+          padding: 4px 12px;
           border-radius: 4px;
           font-size: 0.75rem;
+          font-weight: 700;
           color: #475569;
           cursor: pointer;
+        }
+        .btn-back-tables:hover {
+          background: #f1f5f9;
+          color: #0f172a;
         }
 
         .pos-main-grid {
           display: grid;
-          grid-template-columns: 180px 1fr 380px;
+          grid-template-columns: 180px 1fr 390px;
           flex: 1;
+          min-height: 0;
           overflow: hidden;
         }
 
@@ -689,42 +978,9 @@ export default function PosBillingView({
           border-right: 1px solid #e2e8f0;
           display: flex;
           flex-direction: column;
-        }
-        .cat-sidebar-header {
-          padding: 10px 14px;
-          font-size: 0.75rem;
-          font-weight: 800;
-          color: #94a3b8;
-          text-transform: uppercase;
-          border-bottom: 1px solid #f1f5f9;
-        }
-        .categories-scroll-list {
-          flex: 1;
-          overflow-y: auto;
-          display: flex;
-          flex-direction: column;
-        }
-        .category-item-btn {
-          padding: 10px 14px;
-          text-align: left;
-          background: transparent;
-          border: none;
-          border-bottom: 1px solid #f8fafc;
-          font-size: 0.8125rem;
-          font-weight: 600;
-          color: #334155;
-          cursor: pointer;
-          transition: all 0.1s;
-        }
-        .category-item-btn:hover {
-          background: #f8fafc;
-          color: #0f172a;
-        }
-        .category-item-btn.active {
-          background: #f1f5f9;
-          color: #dc2626;
-          border-left: 3px solid #dc2626;
-          font-weight: 700;
+          height: 100%;
+          min-height: 0;
+          overflow: hidden;
         }
 
         /* Column 2: Item Grid */
@@ -733,31 +989,13 @@ export default function PosBillingView({
           flex-direction: column;
           background: #f8fafc;
           border-right: 1px solid #e2e8f0;
+          height: 100%;
+          min-height: 0;
+          overflow: hidden;
         }
-        .item-search-bar {
-          display: flex;
-          align-items: center;
-          padding: 8px 12px;
-          background: #ffffff;
-          border-bottom: 1px solid #e2e8f0;
-          gap: 8px;
-        }
-        .search-input {
-          flex: 1;
-          border: none;
-          outline: none;
-          font-size: 0.8125rem;
-          background: transparent;
-        }
-        .clear-search-btn {
-          background: transparent;
-          border: none;
-          color: #94a3b8;
-          cursor: pointer;
-        }
-
         .items-matrix-scroll {
           flex: 1;
+          min-height: 0;
           overflow-y: auto;
           padding: 12px;
         }
@@ -766,66 +1004,15 @@ export default function PosBillingView({
           grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
           gap: 12px;
         }
-        .menu-item-tile {
-          background: #ffffff;
-          border: 1px solid #cbd5e1;
-          border-radius: 6px;
-          padding: 10px;
-          display: flex;
-          flex-direction: column;
-          justify-content: space-between;
-          min-height: 80px;
-          cursor: pointer;
-          transition: transform 0.1s, box-shadow 0.1s;
-        }
-        .menu-item-tile:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 4px 6px -1px rgba(0,0,0,0.06);
-          border-color: #94a3b8;
-        }
-        .menu-item-tile.is-disabled {
-          opacity: 0.5;
-          pointer-events: none;
-          background: #f1f5f9;
-        }
-        .tile-top-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-        }
-        .veg-dot {
-          font-size: 0.75rem;
-        }
-        .veg-dot.veg { color: #16a34a; }
-        .veg-dot.non-veg { color: #dc2626; }
-        .item-price {
-          font-size: 0.75rem;
-          font-weight: 700;
-          color: #16a34a;
-        }
-        .tile-item-name {
-          font-size: 0.8125rem;
-          font-weight: 700;
-          color: #0f172a;
-          line-height: 1.2;
-          margin-top: 6px;
-        }
-        .out-of-stock-tag {
-          font-size: 0.625rem;
-          font-weight: 800;
-          color: #dc2626;
-          background: #fee2e2;
-          padding: 2px 4px;
-          border-radius: 3px;
-          text-align: center;
-          margin-top: 4px;
-        }
 
-        /* Column 3: Cart */
+        /* Column 3: Cart & Settlement (Strict Vertical Flex Layout) */
         .pos-cart-panel {
           display: flex;
           flex-direction: column;
           background: #ffffff;
+          height: 100%;
+          min-height: 0;
+          overflow: hidden;
         }
         .cart-table-meta-bar {
           display: flex;
@@ -834,6 +1021,7 @@ export default function PosBillingView({
           padding: 8px 12px;
           border-bottom: 1px solid #e2e8f0;
           background: #f8fafc;
+          flex-shrink: 0;
         }
         .table-badge-group {
           display: flex;
@@ -858,6 +1046,15 @@ export default function PosBillingView({
           color: #475569;
           padding: 1px 6px;
           border-radius: 3px;
+        }
+        .live-running-badge {
+          font-size: 0.6875rem;
+          background: #fef3c7;
+          color: #92400e;
+          font-weight: 800;
+          padding: 1px 6px;
+          border-radius: 3px;
+          border: 1px solid #fde68a;
         }
         .covers-waiter-group {
           display: flex;
@@ -888,19 +1085,21 @@ export default function PosBillingView({
 
         .cart-table-headers {
           display: grid;
-          grid-template-columns: 1.5fr 70px 70px 60px;
+          grid-template-columns: 1.5fr 60px 65px 70px;
           padding: 6px 12px;
           background: #f1f5f9;
           font-size: 0.6875rem;
           font-weight: 800;
           color: #64748b;
           border-bottom: 1px solid #e2e8f0;
+          flex-shrink: 0;
         }
         .col-price { text-align: right; }
         .col-qty, .col-check { text-align: center; }
 
         .cart-items-scroll {
-          flex: 1;
+          flex: 1 1 0;
+          min-height: 0;
           overflow-y: auto;
           display: flex;
           flex-direction: column;
@@ -914,13 +1113,51 @@ export default function PosBillingView({
           padding: 32px;
           text-align: center;
         }
+
+        .running-section-group {
+          background: #fffbeb;
+          border-bottom: 2px solid #fef08a;
+        }
+        .running-section-header {
+          display: flex;
+          justify-content: space-between;
+          padding: 4px 12px;
+          font-size: 0.6875rem;
+          font-weight: 800;
+          color: #92400e;
+          background: #fef9c3;
+        }
+        .new-section-group {
+          background: #ffffff;
+        }
+        .new-section-header {
+          display: flex;
+          justify-content: space-between;
+          padding: 4px 12px;
+          font-size: 0.6875rem;
+          font-weight: 800;
+          color: #1e40af;
+          background: #eff6ff;
+        }
+
         .cart-row {
           display: grid;
-          grid-template-columns: 1.5fr 70px 70px 60px;
+          grid-template-columns: 1.5fr 60px 65px 70px;
           align-items: center;
           padding: 8px 12px;
           border-bottom: 1px solid #f1f5f9;
           font-size: 0.8125rem;
+        }
+        .running-row {
+          background: #fffdf5;
+        }
+        .kot-tag {
+          font-size: 0.625rem;
+          font-weight: 900;
+          background: #f59e0b;
+          color: #ffffff;
+          padding: 1px 4px;
+          border-radius: 2px;
         }
         .cart-col-item {
           display: flex;
@@ -928,6 +1165,11 @@ export default function PosBillingView({
           gap: 6px;
           overflow: hidden;
         }
+        .veg-dot {
+          font-size: 0.75rem;
+        }
+        .veg-dot.veg { color: #16a34a; }
+        .veg-dot.non-veg { color: #dc2626; }
         .cart-item-name {
           white-space: nowrap;
           overflow: hidden;
@@ -966,14 +1208,16 @@ export default function PosBillingView({
           color: #16a34a;
         }
 
-        /* Settlement Footer */
+        /* Settlement Footer (Strictly Pinned at Bottom) */
         .cart-settlement-footer {
+          flex-shrink: 0;
           border-top: 1px solid #e2e8f0;
           background: #ffffff;
           padding: 10px 12px;
           display: flex;
           flex-direction: column;
           gap: 8px;
+          box-shadow: 0 -2px 6px rgba(0,0,0,0.04);
         }
         .tender-action-bar {
           display: flex;
@@ -1003,6 +1247,8 @@ export default function PosBillingView({
           font-size: 0.6875rem;
           font-weight: 600;
           cursor: pointer;
+          padding: 2px 4px;
+          border-radius: 4px;
         }
         .payment-pill input {
           margin: 0;
@@ -1027,45 +1273,188 @@ export default function PosBillingView({
           color: #64748b;
         }
         .total-value {
-          font-size: 1rem;
+          font-size: 1.125rem;
           font-weight: 900;
           color: #0f172a;
         }
 
         .cart-cta-buttons {
-          display: flex;
+          display: grid;
+          grid-template-columns: 80px 1fr 1fr;
           gap: 8px;
         }
         .btn-hold-cart {
           background: #fef3c7;
           color: #92400e;
           border: 1px solid #fde68a;
-          padding: 8px 12px;
-          border-radius: 4px;
+          padding: 10px 6px;
+          border-radius: 6px;
+          font-size: 0.8125rem;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        .btn-hold-cart:hover {
+          background: #fde68a;
+        }
+        .btn-print-ebill {
+          background: #dc2626;
+          color: #ffffff;
+          border: none;
+          padding: 10px 12px;
+          border-radius: 6px;
+          font-size: 0.875rem;
+          font-weight: 800;
+          cursor: pointer;
+          transition: background 0.15s;
+        }
+        .btn-print-ebill:hover:not(:disabled) {
+          background: #b91c1c;
+        }
+        .btn-print-ebill:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+        .btn-kot-print {
+          background: #2563eb;
+          color: #ffffff;
+          border: none;
+          padding: 10px 12px;
+          border-radius: 6px;
+          font-size: 0.875rem;
+          font-weight: 800;
+          cursor: pointer;
+          transition: background 0.15s;
+        }
+        .btn-kot-print:hover:not(:disabled) {
+          background: #1d4ed8;
+        }
+        .btn-kot-print:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        /* Modal Dialogs */
+        .modal-backdrop {
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100vw;
+          height: 100vh;
+          background: rgba(15, 23, 42, 0.6);
+          backdrop-filter: blur(2px);
+          z-index: 200;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .modal-dialog-card {
+          background: #ffffff;
+          border-radius: 10px;
+          width: 90%;
+          max-width: 440px;
+          box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+        }
+        .dialog-header {
+          padding: 16px 20px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          color: #ffffff;
+        }
+        .success-header {
+          background: #16a34a;
+        }
+        .dialog-body {
+          padding: 20px;
+          max-height: 350px;
+          overflow-y: auto;
+        }
+        .dispatched-items-list {
+          list-style: none;
+          padding: 0;
+          margin: 0;
+          font-size: 0.875rem;
+        }
+        .dialog-footer {
+          padding: 12px 20px;
+          background: #f8fafc;
+          border-top: 1px solid #e2e8f0;
+          display: flex;
+          justify-content: flex-end;
+          gap: 8px;
+        }
+        .btn-dialog-primary {
+          background: #16a34a;
+          color: #ffffff;
+          border: none;
+          padding: 8px 16px;
+          border-radius: 6px;
+          font-weight: 700;
+          font-size: 0.875rem;
+          cursor: pointer;
+        }
+        .btn-dialog-secondary {
+          background: #ffffff;
+          color: #334155;
+          border: 1px solid #cbd5e1;
+          padding: 8px 16px;
+          border-radius: 6px;
+          font-weight: 700;
+          font-size: 0.875rem;
+          cursor: pointer;
+        }
+
+        /* Thermal Receipt Dialog */
+        .receipt-card {
+          max-width: 380px;
+          background: #f8fafc;
+        }
+        .receipt-paper {
+          background: #ffffff;
+          padding: 20px;
+          margin: 16px;
+          border: 1px dashed #cbd5e1;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+          font-family: 'Courier New', Courier, monospace;
+        }
+        .receipt-header {
+          text-align: center;
+        }
+        .receipt-divider {
+          color: #94a3b8;
+          font-size: 0.75rem;
+          margin: 4px 0;
+          text-align: center;
+        }
+        .receipt-actions {
+          padding: 12px 16px;
+          background: #f1f5f9;
+          border-top: 1px solid #e2e8f0;
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 8px;
+        }
+        .btn-print-duplicate {
+          background: #0f172a;
+          color: #ffffff;
+          border: none;
+          padding: 8px;
+          border-radius: 6px;
           font-weight: 700;
           font-size: 0.8125rem;
           cursor: pointer;
         }
-        .btn-print-ebill {
-          flex: 1;
+        .btn-close-receipt {
           background: #dc2626;
           color: #ffffff;
           border: none;
-          padding: 10px;
-          border-radius: 4px;
+          padding: 8px;
+          border-radius: 6px;
           font-weight: 700;
-          font-size: 0.875rem;
-          cursor: pointer;
-        }
-        .btn-kot-print {
-          flex: 1;
-          background: #3b82f6;
-          color: #ffffff;
-          border: none;
-          padding: 10px;
-          border-radius: 4px;
-          font-weight: 700;
-          font-size: 0.875rem;
+          font-size: 0.8125rem;
           cursor: pointer;
         }
       `}</style>

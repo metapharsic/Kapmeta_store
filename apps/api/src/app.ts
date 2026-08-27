@@ -50,11 +50,16 @@ export function createApp(): Express {
   // /users, /waiters/...), so they're mounted at root rather than under an
   // extra prefix.
   app.use(integrationRouter);
+  app.use('/integration', integrationRouter);
+  app.use('/integrations', integrationRouter);
   app.use(notificationsRouter);
   app.use(publicOrderRouter);
   app.use(purchaseRouter);
+  app.use(inventoryRouter);
   app.use(userManagementRouter);
+  app.use('/user-management', userManagementRouter);
   app.use(waitersRouter);
+  app.use('/waiters', waitersRouter);
   app.use(tablesRouter);
   app.use(ordersRouter);
 

@@ -28,14 +28,14 @@ const NAV_LINKS: NavLinkDef[] = [
   { href: "/orders?tab=all", permission: "order.read", topbarLabel: "All Orders", pillLabel: "📋 All Orders" },
   { href: "/orders?tab=online", permission: "order.read", topbarLabel: "Online Orders", pillLabel: "🌐 Online Orders" },
   { href: "/kitchen", permission: "kot.read", topbarLabel: "KDS Kitchen Board", pillLabel: "🍳 Kitchen KDS" },
-  { href: "/inventory", permission: "menu.read", topbarLabel: "Stock & 86-List", pillLabel: "📦 Stock Control" },
+  { href: "/inventory", permission: "inventory.read", topbarLabel: "Stock & 86-List", pillLabel: "📦 Stock Control" },
   { href: "/menu", permission: "menu.category.manage", topbarLabel: "Menu Management", pillLabel: "🍽️ Menu Management" },
   { href: "/channel-availability", permission: "integration.manage", topbarLabel: "Online Item Status", pillLabel: "📡 Online Status" },
   { href: "/admin", permission: "report.read", topbarLabel: "Sales Analytics", pillLabel: "📊 Sales Reports" },
   { href: "/finance", permission: "finance.report", topbarLabel: "Finance & Z-Report", pillLabel: "💰 Finance" },
   { href: "/crm", permission: "crm.read", topbarLabel: "Customers & Loyalty", pillLabel: "🎁 Customers" },
   { href: "/marketing", permission: "crm.write", topbarLabel: "Marketing Campaigns", pillLabel: "📣 Marketing" },
-  { href: "/user-management", permission: "menu.category.manage", topbarLabel: "User & Role Management", pillLabel: "🧑‍💼 Users & Roles" },
+  { href: "/user-management", permission: "users.manage", topbarLabel: "User & Role Management", pillLabel: "🧑‍💼 Users & Roles" },
 ];
 
 export type NavVariant = "topbar" | "pill" | "sidebar";
@@ -69,7 +69,7 @@ const SIDEBAR_GROUPS: SidebarGroupDef[] = [
     header: "Menu",
     links: [{ href: "/menu", permission: "menu.category.manage", label: "Menu Management" }],
   },
-  { header: null, links: [{ href: "/inventory", permission: "menu.read", label: "Inventory" }] },
+  { header: null, links: [{ href: "/inventory", permission: "inventory.read", label: "Inventory" }] },
   {
     header: null,
     badge: "New",
@@ -91,8 +91,8 @@ const SIDEBAR_GROUPS: SidebarGroupDef[] = [
   {
     header: "Management",
     links: [
-      { href: "/user-management", permission: "menu.category.manage", label: "User & Role Management" },
-      { href: "/table-management", permission: "menu.category.manage", label: "Table Management" },
+      { href: "/user-management", permission: "users.manage", label: "User & Role Management" },
+      { href: "/table-management", permission: "table.manage", label: "Table Management" },
     ],
   },
   { header: null, links: [{ href: "/crm", permission: "crm.read", label: "CRM" }] },
@@ -292,7 +292,7 @@ export default function Nav({ variant = "pill" }: NavProps): JSX.Element | null 
 
         <div className="sidebar-group">
           <div className="sidebar-group-header">Quick Links</div>
-          <div style={{ padding: "4px 16px" }}>
+          <div style={{ padding: "4px 8px" }}>
             <QuickLinks />
           </div>
         </div>

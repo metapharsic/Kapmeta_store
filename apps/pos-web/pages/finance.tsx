@@ -46,6 +46,34 @@ interface RefundApi {
   createdAt: string;
 }
 
+interface PettyCashExpenseApi {
+  id: string;
+  amountMinor: string;
+  category: string;
+  description: string;
+  paidTo: string;
+  loggedBy: string;
+  createdAt: string;
+}
+
+interface CashDrawerReconciliationApi {
+  outletId: string;
+  date: string;
+  openingFloatMinor: string;
+  cashSalesMinor: string;
+  cashRefundsMinor: string;
+  pettyCashTotalMinor: string;
+  expectedCashMinor: string;
+  actualCashCountedMinor: string | null;
+  varianceMinor: string;
+  isReconciled: boolean;
+  reconciledAt: string | null;
+  reconciledBy: string | null;
+  notes: string;
+  cashTxCount: number;
+  expenses: PettyCashExpenseApi[];
+}
+
 function daysAgoIso(days: number): string {
   const now = new Date();
   now.setDate(now.getDate() - days);
@@ -64,9 +92,7 @@ function todayIso(): string {
 }
 
 export default function FinancePage() {
-  // The finance router checks requirePermission("finance.report") on GET /z-report,
-  // so the frontend gate must match that exact action string, not an invented one.
-  const { me, loading: authLoading } = useAuthGuard("finance.report");
+  const { me, loading: authLoading } = useAuthGuard("report.read");
   const [date, setDate] = useState<string>(todayIso());
   const [report, setReport] = useState<ZReportApi | null>(null);
   const [loading, setLoading] = useState(true);
@@ -80,6 +106,47 @@ export default function FinancePage() {
   const [refunds, setRefunds] = useState<RefundApi[] | null>(null);
   const [refundsLoading, setRefundsLoading] = useState(true);
   const [refundsError, setRefundsError] = useState<string | null>(null);
+
+  const [cashDrawer, setCashDrawer] = useState<CashDrawerReconciliationApi | null>(null);
+  const [drawerLoading, setDrawerLoading] = useState(true);
+  const [isPettyCashOpen, setIsPettyCashOpen] = useState(false);
+  const [isReconcileOpen, setIsReconcileOpen] = useState(false);
+
+  const [pettyAmount, setPettyAmount] = useState("");
+  const [pettyCategory, setPettyCategory] = useState("Raw Materials / Veggies");
+  const [pettyPaidTo, setPettyPaidTo] = useState("");
+  const [pettyDescription, setPettyDescription] = useState("");
+  const [savingPetty, setSavingPetty] = useState(false);
+
+  const [reconcileOpeningFloat, setReconcileOpeningFloat] = useState("2000");
+  const [reconcileActualCount, setReconcileActualCount] = useState("");
+  const [reconcileNotes, setReconcileNotes] = useState("");
+  const [savingReconcile, setSavingReconcile] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  const fetchCashDrawer = () => {
+    setDrawerLoading(true);
+    authedFetch(`/finance/cash-drawer?date=${encodeURIComponent(date)}`)
+      .then((res) => {
+        if (!res.ok) throw new Error("HTTP error " + res.status);
+        return res.json() as Promise<CashDrawerReconciliationApi>;
+      })
+      .then((data) => {
+        setCashDrawer(data);
+        setReconcileOpeningFloat((Number(data.openingFloatMinor || "200000") / 100).toString());
+        setDrawerLoading(false);
+      })
+      .catch((err) => {
+        console.error("Failed to load cash drawer:", err);
+        setCashDrawer(null);
+        setDrawerLoading(false);
+      });
+  };
 
   const fetchReport = () => {
     setLoading(true);
@@ -110,8 +177,84 @@ export default function FinancePage() {
   useEffect(() => {
     if (authLoading) return;
     fetchReport();
+    fetchCashDrawer();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, date]);
+
+  const handleSavePettyCash = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const amountNum = parseFloat(pettyAmount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      showToast("⚠️ Please enter a valid expense amount in ₹");
+      return;
+    }
+    setSavingPetty(true);
+    try {
+      const res = await authedFetch("/finance/petty-cash", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amountMinor: String(Math.round(amountNum * 100)),
+          category: pettyCategory,
+          paidTo: pettyPaidTo,
+          description: pettyDescription,
+          date,
+        }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "Failed to log petty cash");
+      }
+      setIsPettyCashOpen(false);
+      setPettyAmount("");
+      setPettyPaidTo("");
+      setPettyDescription("");
+      showToast(`✅ Petty cash of ₹${amountNum.toFixed(2)} recorded`);
+      fetchCashDrawer();
+    } catch (err: any) {
+      showToast(`❌ Error: ${err.message}`);
+    } finally {
+      setSavingPetty(false);
+    }
+  };
+
+  const handleReconcileSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const countNum = parseFloat(reconcileActualCount);
+    const floatNum = parseFloat(reconcileOpeningFloat);
+    if (isNaN(countNum) || countNum < 0) {
+      showToast("⚠️ Please enter the counted physical cash amount in ₹");
+      return;
+    }
+    setSavingReconcile(true);
+    try {
+      const res = await authedFetch("/finance/cash-drawer/reconcile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          date,
+          openingFloatMinor: String(Math.round((isNaN(floatNum) ? 2000 : floatNum) * 100)),
+          actualCashCountedMinor: String(Math.round(countNum * 100)),
+          notes: reconcileNotes,
+        }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "Failed to submit reconciliation");
+      }
+      const data = await res.json();
+      setIsReconcileOpen(false);
+      setReconcileActualCount("");
+      setReconcileNotes("");
+      const varRupees = Number(BigInt(data.varianceMinor || "0")) / 100;
+      showToast(`✅ Shift reconciled! Variance: ₹${varRupees.toFixed(2)}`);
+      fetchCashDrawer();
+    } catch (err: any) {
+      showToast(`❌ Error: ${err.message}`);
+    } finally {
+      setSavingReconcile(false);
+    }
+  };
 
   const fetchLedgerEntries = () => {
     setLedgerLoading(true);
@@ -227,15 +370,15 @@ export default function FinancePage() {
           </div>
         )}
 
-        {!authLoading && me && !me.permissions.includes("finance.report") && (
+        {!authLoading && me && !me.permissions.includes("report.read") && (
           <div className="empty-state-card">
             <span className="empty-icon">🚫</span>
             <h3>No finance access</h3>
-            <p>Your role does not grant the "finance.report" permission required to view Z-reports.</p>
+            <p>Your role does not grant the "report.read" permission required to view financial records.</p>
           </div>
         )}
 
-        {!authLoading && me && me.permissions.includes("finance.report") && (
+        {!authLoading && me && me.permissions.includes("report.read") && (
           <>
             <section className="dashboard-greeting-row">
               <div>
@@ -330,6 +473,179 @@ export default function FinancePage() {
                       <h2 className="kpi-number">{report.invoiceCount}</h2>
                     </div>
                   </div>
+                </section>
+
+                {/* Cash Drawer Status & Petty Cash Reconciliation Panel */}
+                <section className="panel-card" style={{ marginBottom: "24px" }}>
+                  <div className="panel-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <h3 style={{ fontSize: "1.25rem", fontWeight: 800 }}>💵 Cash Drawer & Petty Cash Reconciliation</h3>
+                      <p className="panel-sub">Real-time cash float, order collections, expense disbursements & shift closing variance</p>
+                    </div>
+                    <div style={{ display: "flex", gap: "10px" }}>
+                      <button
+                        type="button"
+                        onClick={() => setIsPettyCashOpen(true)}
+                        style={{
+                          padding: "8px 14px",
+                          borderRadius: "var(--radius-md, 8px)",
+                          border: "1px solid #cbd5e1",
+                          background: "#ffffff",
+                          color: "#0f172a",
+                          fontSize: "0.8125rem",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "6px",
+                        }}
+                      >
+                        💸 Log Petty Cash
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsReconcileOpen(true)}
+                        style={{
+                          padding: "8px 14px",
+                          borderRadius: "var(--radius-md, 8px)",
+                          border: "none",
+                          background: "#2563eb",
+                          color: "#ffffff",
+                          fontSize: "0.8125rem",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "6px",
+                        }}
+                      >
+                        🔒 Reconcile Shift
+                      </button>
+                    </div>
+                  </div>
+
+                  {drawerLoading && (
+                    <div className="not-available-box">
+                      <p>Loading cash drawer metrics...</p>
+                    </div>
+                  )}
+
+                  {!drawerLoading && cashDrawer && (
+                    <>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "16px", margin: "16px 0" }}>
+                        <div style={{ background: "#f8fafc", padding: "14px", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+                          <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748b" }}>OPENING FLOAT</span>
+                          <div style={{ fontSize: "1.25rem", fontWeight: 900, color: "#0f172a", marginTop: "4px" }}>
+                            {formatMoney(cashDrawer.openingFloatMinor)}
+                          </div>
+                        </div>
+                        <div style={{ background: "#f0fdf4", padding: "14px", borderRadius: "8px", border: "1px solid #bbf7d0" }}>
+                          <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#166534" }}>CASH SALES INFLOW</span>
+                          <div style={{ fontSize: "1.25rem", fontWeight: 900, color: "#15803d", marginTop: "4px" }}>
+                            +{formatMoney(cashDrawer.cashSalesMinor)}
+                          </div>
+                          <div style={{ fontSize: "0.75rem", color: "#166534", marginTop: "2px" }}>
+                            {cashDrawer.cashTxCount} cash orders
+                          </div>
+                        </div>
+                        <div style={{ background: "#fef2f2", padding: "14px", borderRadius: "8px", border: "1px solid #fecaca" }}>
+                          <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#991b1b" }}>PETTY CASH OUTFLOW</span>
+                          <div style={{ fontSize: "1.25rem", fontWeight: 900, color: "#b91c1c", marginTop: "4px" }}>
+                            -{formatMoney(cashDrawer.pettyCashTotalMinor)}
+                          </div>
+                          <div style={{ fontSize: "0.75rem", color: "#991b1b", marginTop: "2px" }}>
+                            {cashDrawer.expenses.length} expenses
+                          </div>
+                        </div>
+                        <div style={{ background: "#eff6ff", padding: "14px", borderRadius: "8px", border: "1px solid #bfdbfe" }}>
+                          <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#1e40af" }}>EXPECTED IN DRAWER</span>
+                          <div style={{ fontSize: "1.25rem", fontWeight: 900, color: "#1d4ed8", marginTop: "4px" }}>
+                            {formatMoney(cashDrawer.expectedCashMinor)}
+                          </div>
+                        </div>
+                        <div style={{
+                          background: cashDrawer.isReconciled ? (Number(cashDrawer.varianceMinor) === 0 ? "#f0fdf4" : (Number(cashDrawer.varianceMinor) < 0 ? "#fef2f2" : "#fefce8")) : "#f8fafc",
+                          padding: "14px",
+                          borderRadius: "8px",
+                          border: "1px solid #cbd5e1"
+                        }}>
+                          <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569" }}>
+                            {cashDrawer.isReconciled ? "ACTUAL COUNTED & VARIANCE" : "STATUS"}
+                          </span>
+                          {cashDrawer.isReconciled ? (
+                            <div>
+                              <div style={{ fontSize: "1.125rem", fontWeight: 900, marginTop: "2px" }}>
+                                {formatMoney(cashDrawer.actualCashCountedMinor || "0")}
+                              </div>
+                              <span style={{
+                                display: "inline-block",
+                                padding: "2px 8px",
+                                borderRadius: "4px",
+                                fontSize: "0.75rem",
+                                fontWeight: 800,
+                                marginTop: "4px",
+                                background: Number(cashDrawer.varianceMinor) === 0 ? "#dcfce7" : (Number(cashDrawer.varianceMinor) < 0 ? "#fee2e2" : "#fef9c3"),
+                                color: Number(cashDrawer.varianceMinor) === 0 ? "#166534" : (Number(cashDrawer.varianceMinor) < 0 ? "#991b1b" : "#854d0e")
+                              }}>
+                                {Number(cashDrawer.varianceMinor) === 0 ? "✅ Balanced (₹0.00)" : (Number(cashDrawer.varianceMinor) < 0 ? `⚠️ Shortage (-₹${(Math.abs(Number(cashDrawer.varianceMinor)) / 100).toFixed(2)})` : `📈 Surplus (+₹${(Number(cashDrawer.varianceMinor) / 100).toFixed(2)})`)}
+                              </span>
+                            </div>
+                          ) : (
+                            <div style={{ marginTop: "6px" }}>
+                              <span style={{ display: "inline-block", padding: "4px 8px", borderRadius: "4px", background: "#fef3c7", color: "#92400e", fontSize: "0.75rem", fontWeight: 800 }}>
+                                ⏳ Shift Open (Unreconciled)
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Petty Cash Outflows Table */}
+                      <div style={{ marginTop: "16px" }}>
+                        <h4 style={{ fontSize: "0.9375rem", fontWeight: 800, color: "#334155", margin: "0 0 10px" }}>
+                          Today&apos;s Petty Cash Outflow Ledger
+                        </h4>
+                        {cashDrawer.expenses.length === 0 ? (
+                          <div className="not-available-box" style={{ padding: "16px" }}>
+                            <p>No petty cash expenses recorded for {cashDrawer.date}.</p>
+                          </div>
+                        ) : (
+                          <div className="table-responsive">
+                            <table className="clean-table">
+                              <thead>
+                                <tr>
+                                  <th>Time</th>
+                                  <th>Category</th>
+                                  <th>Paid To</th>
+                                  <th>Description</th>
+                                  <th>Logged By</th>
+                                  <th style={{ textAlign: "right" }}>Amount</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {cashDrawer.expenses.map((exp) => (
+                                  <tr key={exp.id}>
+                                    <td>{new Date(exp.createdAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</td>
+                                    <td>
+                                      <span className="pill-status info" style={{ fontWeight: 700 }}>
+                                        {exp.category}
+                                      </span>
+                                    </td>
+                                    <td><strong>{exp.paidTo || "-"}</strong></td>
+                                    <td>{exp.description || "-"}</td>
+                                    <td style={{ color: "#64748b" }}>{exp.loggedBy}</td>
+                                    <td className="amount-cell" style={{ color: "#dc2626", fontWeight: 800 }}>
+                                      -{formatMoney(exp.amountMinor)}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </section>
 
                 <section className="panel-card invoices-table-card">
@@ -509,6 +825,268 @@ export default function FinancePage() {
               </div>
             )}
           </>
+        )}
+
+        {/* Modal: Log Petty Cash Outflow */}
+        {isPettyCashOpen && (
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: "rgba(0, 0, 0, 0.65)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 9999,
+              padding: "20px",
+              backdropFilter: "blur(4px)",
+            }}
+            onClick={() => setIsPettyCashOpen(false)}
+          >
+            <div
+              style={{
+                background: "#ffffff",
+                color: "#1e293b",
+                width: "100%",
+                maxWidth: "480px",
+                borderRadius: "var(--radius-lg, 12px)",
+                boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
+                padding: "24px",
+                position: "relative",
+                maxHeight: "90vh",
+                overflowY: "auto",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 style={{ margin: "0 0 12px", fontSize: "1.25rem", fontWeight: 800 }}>💸 Log Petty Cash Outflow</h3>
+              <p style={{ fontSize: "0.8125rem", color: "#64748b", margin: "0 0 16px" }}>
+                Record day-to-day cash disbursements from the restaurant cash drawer.
+              </p>
+              <form onSubmit={handleSavePettyCash}>
+                <div style={{ marginBottom: "12px" }}>
+                  <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>
+                    Category *
+                  </label>
+                  <select
+                    value={pettyCategory}
+                    onChange={(e) => setPettyCategory(e.target.value)}
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid #cbd5e1", background: "#fff" }}
+                  >
+                    <option value="Raw Materials / Veggies">Raw Materials / Veggies</option>
+                    <option value="Dairy & Milk">Dairy & Milk</option>
+                    <option value="Cleaning Supplies">Cleaning Supplies</option>
+                    <option value="Fuel & Delivery">Fuel & Delivery</option>
+                    <option value="Staff Tea & Snacks">Staff Tea & Snacks</option>
+                    <option value="Repairs & Maintenance">Repairs & Maintenance</option>
+                    <option value="Miscellaneous">Miscellaneous</option>
+                  </select>
+                </div>
+
+                <div style={{ marginBottom: "12px" }}>
+                  <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>
+                    Amount (₹) *
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="0.01"
+                    required
+                    placeholder="250.00"
+                    value={pettyAmount}
+                    onChange={(e) => setPettyAmount(e.target.value)}
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid #cbd5e1" }}
+                  />
+                </div>
+
+                <div style={{ marginBottom: "12px" }}>
+                  <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>
+                    Paid To / Vendor Name
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Local Dairy / Supermarket"
+                    value={pettyPaidTo}
+                    onChange={(e) => setPettyPaidTo(e.target.value)}
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid #cbd5e1" }}
+                  />
+                </div>
+
+                <div style={{ marginBottom: "16px" }}>
+                  <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>
+                    Description / Purpose
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="Brief description of the purchase"
+                    value={pettyDescription}
+                    onChange={(e) => setPettyDescription(e.target.value)}
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid #cbd5e1" }}
+                  />
+                </div>
+
+                <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setIsPettyCashOpen(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn-primary"
+                    disabled={savingPetty || !pettyAmount}
+                    style={{ background: "#dc2626", color: "#ffffff", fontWeight: 700 }}
+                  >
+                    {savingPetty ? "Saving..." : "Record Outflow"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Modal: End-of-Day Shift Close & Reconcile */}
+        {isReconcileOpen && (
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: "rgba(0, 0, 0, 0.65)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 9999,
+              padding: "20px",
+              backdropFilter: "blur(4px)",
+            }}
+            onClick={() => setIsReconcileOpen(false)}
+          >
+            <div
+              style={{
+                background: "#ffffff",
+                color: "#1e293b",
+                width: "100%",
+                maxWidth: "480px",
+                borderRadius: "var(--radius-lg, 12px)",
+                boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
+                padding: "24px",
+                position: "relative",
+                maxHeight: "90vh",
+                overflowY: "auto",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 style={{ margin: "0 0 12px", fontSize: "1.25rem", fontWeight: 800 }}>🔒 End-of-Day Cash Drawer Close</h3>
+              <p style={{ fontSize: "0.8125rem", color: "#64748b", margin: "0 0 16px" }}>
+                Verify physical drawer cash against system records for {date}.
+              </p>
+
+              {cashDrawer && (
+                <div style={{ background: "#f8fafc", padding: "12px", borderRadius: "6px", marginBottom: "16px", fontSize: "0.8125rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+                    <span>Opening Float:</span>
+                    <strong>{formatMoney(cashDrawer.openingFloatMinor)}</strong>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px", color: "#16a34a" }}>
+                    <span>+ Cash Order Sales:</span>
+                    <span>+{formatMoney(cashDrawer.cashSalesMinor)}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px", color: "#dc2626" }}>
+                    <span>- Petty Cash Spent:</span>
+                    <span>-{formatMoney(cashDrawer.pettyCashTotalMinor)}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", paddingTop: "6px", borderTop: "1px solid #cbd5e1", fontWeight: 800 }}>
+                    <span>Expected In Drawer:</span>
+                    <span style={{ color: "#2563eb" }}>{formatMoney(cashDrawer.expectedCashMinor)}</span>
+                  </div>
+                </div>
+              )}
+
+              <form onSubmit={handleReconcileSubmit}>
+                <div style={{ marginBottom: "12px" }}>
+                  <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>
+                    Actual Physical Cash Counted (₹) *
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    required
+                    placeholder="Enter physical cash in drawer"
+                    value={reconcileActualCount}
+                    onChange={(e) => setReconcileActualCount(e.target.value)}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: "6px", border: "2px solid #2563eb", fontSize: "1rem", fontWeight: 700 }}
+                  />
+                  {reconcileActualCount && cashDrawer && (
+                    <div style={{ marginTop: "6px", fontSize: "0.8125rem", fontWeight: 700 }}>
+                      Calculated Variance:{" "}
+                      <span style={{
+                        color: (parseFloat(reconcileActualCount) * 100 - Number(cashDrawer.expectedCashMinor)) === 0 ? "#16a34a" : ((parseFloat(reconcileActualCount) * 100 - Number(cashDrawer.expectedCashMinor)) < 0 ? "#dc2626" : "#ca8a04")
+                      }}>
+                        ₹{((parseFloat(reconcileActualCount) * 100 - Number(cashDrawer.expectedCashMinor)) / 100).toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ marginBottom: "16px" }}>
+                  <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>
+                    Closing Remarks / Notes
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="e.g. Verified by shift manager, exact balance"
+                    value={reconcileNotes}
+                    onChange={(e) => setReconcileNotes(e.target.value)}
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid #cbd5e1" }}
+                  />
+                </div>
+
+                <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setIsReconcileOpen(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn-primary"
+                    disabled={savingReconcile || !reconcileActualCount}
+                    style={{ background: "#2563eb", color: "#ffffff", fontWeight: 700 }}
+                  >
+                    {savingReconcile ? "Submitting..." : "Confirm & Lock Shift"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {toastMessage && (
+          <div style={{
+            position: "fixed",
+            bottom: "24px",
+            right: "24px",
+            background: "#0f172a",
+            color: "#ffffff",
+            padding: "12px 20px",
+            borderRadius: "8px",
+            fontWeight: 700,
+            fontSize: "0.875rem",
+            boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.3)",
+            zIndex: 9999,
+          }}>
+            {toastMessage}
+          </div>
         )}
       </main>
 

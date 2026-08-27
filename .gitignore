@@ -40,3 +40,7 @@ infra/terraform/.terraform/
 .running_pids.json
 *.tsbuildinfo
 
+# Agent skills and temporary files
+.agents/skills/
+skills-lock.json
+packages/shared-types/*.js

@@ -33,7 +33,8 @@ export class PrismaRbacChecker {
     for (const userRole of userRoles) {
       roleNames.add(userRole.role.name);
       for (const rolePermission of userRole.role.rolePermissions) {
-        actions.add(rolePermission.permission.action);
+        const act = (rolePermission.permission as any)?.code || (rolePermission.permission as any)?.action;
+        if (act) actions.add(act);
       }
     }
 
@@ -62,9 +63,10 @@ export class PrismaRbacChecker {
     });
 
     const allowed = userRoles.some((userRole) =>
-      userRole.role.rolePermissions.some(
-        (rolePermission) => rolePermission.permission.action === check.action
-      )
+      userRole.role.rolePermissions.some((rolePermission) => {
+        const act = (rolePermission.permission as any)?.code || (rolePermission.permission as any)?.action;
+        return act === check.action;
+      })
     );
 
     if (allowed) {

@@ -1,6 +1,19 @@
 {
   "name": "@kapmeta/shared-types",
   "version": "1.0.0",
-  "main": "index.js",
-  "private": true
+  "main": "index.ts",
+  "private": true,
+  "exports": {
+    ".": "./index.ts",
+    "./auth": "./auth.ts",
+    "./audit-log": "./audit-log.ts",
+    "./channel": "./channel.ts",
+    "./finance": "./finance.ts",
+    "./inventory": "./inventory.ts",
+    "./kitchen": "./kitchen.ts",
+    "./menu": "./menu.ts",
+    "./orders": "./orders.ts",
+    "./purchase": "./purchase.ts",
+    "./reporting": "./reporting.ts"
+  }
 }

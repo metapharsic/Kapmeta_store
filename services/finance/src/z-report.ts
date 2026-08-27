@@ -13,47 +13,53 @@ export class ZReportGenerator {
     const endOfDay = new Date(date);
     endOfDay.setHours(23, 59, 59, 999);
 
-    const invoices = await this.prisma.invoice.findMany({
+    const orders = await this.prisma.order.findMany({
       where: {
         outletId,
+        status: "COMPLETED",
         createdAt: {
           gte: startOfDay,
-          lte: endOfDay
-        }
+          lte: endOfDay,
+        },
       },
-      include: {
-        order: {
-          include: {
-            payments: true
-          }
-        }
-      }
+    });
+
+    const payments = await this.prisma.payment.findMany({
+      where: {
+        outletId,
+        status: "CAPTURED",
+        createdAt: {
+          gte: startOfDay,
+          lte: endOfDay,
+        },
+      },
     });
 
     let totalSales = 0n;
     let totalTax = 0n;
     const paymentModes: Record<string, bigint> = {};
 
-    for (const inv of invoices) {
-      totalSales += inv.amount - inv.taxAmount;
-      totalTax += inv.taxAmount;
+    for (const ord of orders) {
+      totalSales += ord.subtotalMinor;
+      totalTax += ord.taxTotalMinor;
+    }
 
-      for (const p of inv.order.payments) {
-        if (!paymentModes[p.method]) {
-          paymentModes[p.method] = 0n;
-        }
-        paymentModes[p.method] += p.amount;
+    for (const p of payments) {
+      if (!paymentModes[p.method]) {
+        paymentModes[p.method] = 0n;
       }
+      paymentModes[p.method] += p.amount;
     }
 
     return {
       outletId,
-      date: startOfDay.toISOString().split('T')[0],
+      date: startOfDay.toISOString().split("T")[0],
       totalSales,
       totalTax,
       grandTotal: totalSales + totalTax,
       paymentModes,
-      invoiceCount: invoices.length
+      invoiceCount: orders.length,
     };
   }
 }
+

@@ -61,6 +61,18 @@ export default function MenuManagement() {
   const [newItemTaxRate, setNewItemTaxRate] = useState("5");
   const [savingItem, setSavingItem] = useState(false);
 
+  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
+  const [bulkCsvText, setBulkCsvText] = useState("");
+  const [isImporting, setIsImporting] = useState(false);
+  const [bulkImportResult, setBulkImportResult] = useState<{
+    success?: boolean;
+    totalProcessed: number;
+    categoriesCreated: number;
+    itemsCreated: number;
+    itemsUpdated: number;
+    errors: string[];
+  } | null>(null);
+
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
@@ -194,6 +206,64 @@ export default function MenuManagement() {
     }
   };
 
+  const downloadSampleCsv = () => {
+    const sample = `category,name,price,is_veg,tax_rate,description,code
+Starters,Paneer Tikka,249,true,5,Charcoal grilled cottage cheese,SKU-001
+Starters,Chicken Malai Tikka,299,false,5,Creamy cardamom infused chicken,SKU-002
+Main Course,Dal Makhani,220,true,5,Slow cooked black lentils,SKU-003
+Main Course,Butter Chicken,360,false,5,Tandoori chicken in makhani gravy,SKU-004
+Breads,Butter Naan,55,true,5,Tandoor baked refined flour bread,SKU-005
+Desserts,Gulab Jamun,90,true,5,Fried milk dumplings in rose syrup,SKU-006`;
+    const blob = new Blob([sample], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", "menu_import_sample_template.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      setBulkCsvText(content || "");
+      setBulkImportResult(null);
+    };
+    reader.readAsText(file);
+  };
+
+  const handleBulkImportSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!bulkCsvText.trim()) {
+      showToast("⚠️ Please paste or upload CSV data first");
+      return;
+    }
+    setIsImporting(true);
+    setBulkImportResult(null);
+    try {
+      const res = await authedFetch("/menu/items/bulk-upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ csvText: bulkCsvText }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Bulk upload failed");
+      }
+      setBulkImportResult(data);
+      showToast(`✅ Bulk import complete: ${data.totalProcessed} processed!`);
+      fetchCategoriesAndItems();
+    } catch (err: any) {
+      showToast(`❌ Error: ${err.message}`);
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   return (
     <div className="menu-app">
       <Head>
@@ -254,6 +324,17 @@ export default function MenuManagement() {
             <section className="toolbar">
               <h2>Categories & Items</h2>
               <div className="toolbar-actions">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+                  onClick={() => {
+                    setIsBulkImportOpen(true);
+                    setBulkImportResult(null);
+                  }}
+                >
+                  📥 Bulk Import (CSV)
+                </button>
                 <button type="button" className="btn-secondary" onClick={() => setIsAddCategoryOpen(true)}>
                   + Add Category
                 </button>
@@ -472,6 +553,126 @@ export default function MenuManagement() {
                 </button>
                 <button type="submit" className="btn-primary" disabled={savingItem}>
                   {savingItem ? "Saving..." : "Save Item"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk CSV Menu Importer Modal */}
+      {isBulkImportOpen && (
+        <div className="modal-overlay" onClick={() => setIsBulkImportOpen(false)}>
+          <div className="modal" style={{ maxWidth: "600px", width: "90%" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+              <h3 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 800 }}>📥 Bulk Import Menu (CSV / Excel)</h3>
+              <button
+                type="button"
+                onClick={downloadSampleCsv}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "var(--radius-sm, 6px)",
+                  border: "1px solid #cbd5e1",
+                  background: "#f1f5f9",
+                  color: "#0f172a",
+                  fontSize: "0.75rem",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                📥 Download Sample CSV
+              </button>
+            </div>
+
+            <p style={{ fontSize: "0.8125rem", color: "#64748b", margin: "0 0 16px" }}>
+              Upload a <code>.csv</code> file or paste rows copied directly from Excel / Google Sheets. Categories will be automatically created if they don&apos;t already exist.
+            </p>
+
+            <form onSubmit={handleBulkImportSubmit}>
+              <div style={{ marginBottom: "12px" }}>
+                <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>
+                  Option 1: Pick a .CSV File from Computer
+                </label>
+                <input
+                  type="file"
+                  accept=".csv,.txt"
+                  onChange={handleFileUpload}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    fontSize: "0.8125rem",
+                    padding: "8px",
+                    border: "1px dashed #cbd5e1",
+                    borderRadius: "6px",
+                    background: "#f8fafc",
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: "16px" }}>
+                <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>
+                  Option 2: Paste CSV Text / Excel Rows Below
+                </label>
+                <textarea
+                  rows={8}
+                  value={bulkCsvText}
+                  onChange={(e) => setBulkCsvText(e.target.value)}
+                  placeholder={`category,name,price,is_veg,tax_rate,description,code\nStarters,Paneer Tikka,249,true,5,Grilled cottage cheese,SKU-001\nMain Course,Butter Chicken,360,false,5,Makhani gravy,SKU-002`}
+                  style={{
+                    width: "100%",
+                    fontFamily: "monospace",
+                    fontSize: "0.75rem",
+                    padding: "10px",
+                    borderRadius: "6px",
+                    border: "1px solid #cbd5e1",
+                    background: "#ffffff",
+                    resize: "vertical",
+                  }}
+                />
+              </div>
+
+              {bulkImportResult && (
+                <div style={{
+                  padding: "12px 16px",
+                  borderRadius: "6px",
+                  background: bulkImportResult.errors.length === 0 ? "#f0fdf4" : "#fffbeb",
+                  border: `1px solid ${bulkImportResult.errors.length === 0 ? "#86efac" : "#fde68a"}`,
+                  marginBottom: "16px",
+                  fontSize: "0.8125rem",
+                }}>
+                  <div style={{ fontWeight: 800, color: "#166534", marginBottom: "4px" }}>
+                    🎉 Import Summary:
+                  </div>
+                  <div>• Processed: <strong>{bulkImportResult.totalProcessed}</strong> items</div>
+                  <div>• Categories Created: <strong>{bulkImportResult.categoriesCreated}</strong></div>
+                  <div>• Items Created: <strong>{bulkImportResult.itemsCreated}</strong></div>
+                  <div>• Items Updated: <strong>{bulkImportResult.itemsUpdated}</strong></div>
+                  {bulkImportResult.errors.length > 0 && (
+                    <div style={{ color: "#b45309", marginTop: "6px" }}>
+                      ⚠️ Warnings / Skipped:
+                      <ul style={{ margin: "4px 0 0", paddingLeft: "16px" }}>
+                        {bulkImportResult.errors.map((err, i) => <li key={i}>{err}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="modal-actions" style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setIsBulkImportOpen(false)}
+                >
+                  Close
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  disabled={isImporting || !bulkCsvText.trim()}
+                  style={{ background: "#2563eb", color: "#ffffff", fontWeight: 700 }}
+                >
+                  {isImporting ? "Importing..." : "Commit Bulk Import"}
                 </button>
               </div>
             </form>

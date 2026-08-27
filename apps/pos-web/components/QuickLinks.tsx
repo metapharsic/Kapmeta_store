@@ -153,82 +153,119 @@ export default function QuickLinks() {
       <style jsx>{`
         .quick-links {
           position: relative;
+          width: 100%;
         }
         .quick-links-trigger {
           display: flex;
           align-items: center;
-          gap: 4px;
-          background: none;
-          border: none;
+          gap: 6px;
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
           cursor: pointer;
-          font-size: 0.85rem;
-          padding: 6px 8px;
+          font-size: 0.82rem;
+          font-weight: 600;
+          color: #334155;
+          padding: 8px 12px;
+          border-radius: 8px;
+          transition: all 0.15s ease;
+          width: 100%;
+          box-sizing: border-box;
+        }
+        .quick-links-trigger:hover {
+          background: #f1f5f9;
+          border-color: #cbd5e1;
         }
         .quick-links-dropdown {
           position: absolute;
+          left: 0;
           right: 0;
-          top: calc(100% + 8px);
-          width: 280px;
-          max-height: 400px;
+          bottom: calc(100% + 6px);
+          width: 100%;
+          max-height: 280px;
           overflow-y: auto;
-          background: #fff;
-          color: #1a1a1a;
+          background: #ffffff;
+          color: #0f172a;
+          border: 1px solid #e2e8f0;
           border-radius: 10px;
-          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
-          z-index: 100;
+          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+          z-index: 9999;
+          box-sizing: border-box;
         }
         .quick-links-dropdown-header {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 10px 14px;
+          padding: 8px 12px;
           font-weight: 700;
-          border-bottom: 1px solid #eee;
+          font-size: 0.8rem;
+          background: #f8fafc;
+          border-bottom: 1px solid #e2e8f0;
+          border-radius: 9px 9px 0 0;
         }
         .quick-links-add-btn {
-          background: #1a73e8;
+          background: #2563eb;
           color: #fff;
           border: none;
-          border-radius: 6px;
-          padding: 4px 8px;
-          font-size: 0.75rem;
+          border-radius: 5px;
+          padding: 3px 8px;
+          font-size: 0.72rem;
+          font-weight: 700;
           cursor: pointer;
+          flex-shrink: 0;
+          transition: background 0.15s ease;
+        }
+        .quick-links-add-btn:hover:not(:disabled) {
+          background: #1d4ed8;
         }
         .quick-links-add-btn:disabled {
           opacity: 0.6;
           cursor: default;
         }
         .quick-links-empty {
-          padding: 16px;
-          color: #888;
-          font-size: 0.85rem;
+          padding: 14px 10px;
+          color: #64748b;
+          font-size: 0.78rem;
+          text-align: center;
         }
         .quick-links-item {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 8px 14px;
-          border-bottom: 1px solid #f2f2f2;
+          padding: 8px 12px;
+          border-bottom: 1px solid #f1f5f9;
+          gap: 6px;
+        }
+        .quick-links-item:last-child {
+          border-bottom: none;
         }
         .quick-links-item-link {
-          font-size: 0.85rem;
-          color: #1a1a1a;
+          font-size: 0.8rem;
+          font-weight: 500;
+          color: #1e293b;
           text-decoration: none;
+          flex: 1;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
         .quick-links-item-link:hover {
+          color: #2563eb;
           text-decoration: underline;
         }
         .quick-links-remove-btn {
           background: none;
           border: none;
-          color: #999;
+          color: #94a3b8;
           cursor: pointer;
           font-size: 1rem;
           line-height: 1;
-          padding: 2px 6px;
+          padding: 2px 4px;
+          border-radius: 4px;
+          flex-shrink: 0;
         }
         .quick-links-remove-btn:hover {
-          color: #e53935;
+          color: #ef4444;
+          background: #fee2e2;
         }
       `}</style>
     </div>
