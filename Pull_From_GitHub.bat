@@ -10,7 +10,9 @@ echo =======================================================================
 echo.
 
 :: 1. Ensure log directory exists
-if not exist logs\git mkdir logs\git
+if not exist "logs\git" (
+    mkdir "logs\git"
+)
 
 :: 2. Verify Git Installation
 where git >nul 2>&1
@@ -24,7 +26,7 @@ if %errorlevel% neq 0 (
 )
 
 :: 3. Display Remote & Branch Configuration
-for /f "tokens=*" %%i in ('git branch --show-current') do set CURRENT_BRANCH=%%i
+for /f "tokens=*" %%i in ('git rev-parse --abbrev-ref HEAD 2^>nul') do set CURRENT_BRANCH=%%i
 if "%CURRENT_BRANCH%"=="" set CURRENT_BRANCH=main
 
 for /f "tokens=2" %%i in ('git remote get-url origin 2^>nul') do set REMOTE_URL=%%i
@@ -39,10 +41,8 @@ echo =======================================================================
 echo.
 
 :: 4. Select Target Branch to Pull
-echo [STEP 1/2] Select branch to pull:
-echo Press ENTER to pull from [!CURRENT_BRANCH!] or type another branch name:
-set /p TARGET_BRANCH="> "
-if "!TARGET_BRANCH!"=="" set TARGET_BRANCH=!CURRENT_BRANCH!
+set TARGET_BRANCH=!CURRENT_BRANCH!
+echo [STEP 1/2] Branch to pull: [!TARGET_BRANCH!]
 echo.
 
 :: 5. Execute Verbose Pull & Capture Logs
@@ -51,10 +51,11 @@ echo [STEP 2/2] FETCHING AND PULLING LATEST COMMITS FROM GITHUB
 echo =======================================================================
 echo.
 
-for /f "tokens=2 delims==" %%I in ('wmic os get localdatetime /value') do set dt=%%I
-set LOG_FILE=logs\git\pull_!dt:~0,8!_!dt:~8,6!.log
+for /f "tokens=*" %%I in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss"') do set dt=%%I
+for /f "tokens=*" %%I in ('powershell -NoProfile -Command "Get-Date -Format 'yyyy-MM-dd HH:mm:ss'"') do set HUMAN_TS=%%I
+set LOG_FILE=logs\git\pull_!dt!.log
 
-echo Execution Timestamp : !dt:~0,4!-!dt:~4,2!-!dt:~6,2! !dt:~8,2!:!dt:~10,2!:!dt:~12,2!
+echo Execution Timestamp : !HUMAN_TS!
 echo Log File Location   : !LOG_FILE!
 echo.
 

@@ -1,5 +1,6 @@
 @echo off
 setlocal EnableDelayedExpansion
+cd /d "%~dp0"
 title Kapmeta Platform - Push to GitHub Wizard
 color 0B
 
@@ -59,8 +60,8 @@ if "%HAS_UNCOMMITTED%"=="yes" (
     set /p COMMIT_MSG="[Commit Message / Press ENTER]: "
     
     if "!COMMIT_MSG!"=="" (
-        for /f "tokens=2 delims==" %%I in ('wmic os get localdatetime /value') do set datetime=%%I
-        set COMMIT_MSG=sync: kapmeta platform updates (!datetime:~0,4!-!datetime:~4,2!-!datetime:~6,2! !datetime:~8,2!:!datetime:~10,2!)
+        for /f "tokens=*" %%I in ('powershell -NoProfile -Command "Get-Date -Format 'yyyy-MM-dd HH:mm'"') do set ts=%%I
+        set COMMIT_MSG=sync: kapmeta platform updates (!ts!)
     )
     
     echo.
@@ -119,10 +120,11 @@ echo [STEP 4/4] PUSHING DATA TO GITHUB WITH COMPLETE LOGS
 echo =======================================================================
 echo.
 
-for /f "tokens=2 delims==" %%I in ('wmic os get localdatetime /value') do set dt=%%I
-set LOG_FILE=logs\git\push_!dt:~0,8!_!dt:~8,6!.log
+for /f "tokens=*" %%I in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss"') do set dt=%%I
+for /f "tokens=*" %%I in ('powershell -NoProfile -Command "Get-Date -Format 'yyyy-MM-dd HH:mm:ss'"') do set HUMAN_TS=%%I
+set LOG_FILE=logs\git\push_!dt!.log
 
-echo Execution Timestamp : !dt:~0,4!-!dt:~4,2!-!dt:~6,2! !dt:~8,2!:!dt:~10,2!:!dt:~12,2!
+echo Execution Timestamp : !HUMAN_TS!
 echo Log File Location   : !LOG_FILE!
 echo.
 
