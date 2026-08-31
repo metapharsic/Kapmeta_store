@@ -81,7 +81,7 @@ function checkHttp(host: string, port: number, urlPath = '/', timeoutMs = 3500):
 
 async function runStatusCheck() {
   console.log('\n=======================================================================');
-  console.log('       KAPMETA / PETPOOJA POS PLATFORM — LIVE STATUS DASHBOARD          ');
+  console.log('                 KAPMETA POS PLATFORM — LIVE STATUS DASHBOARD          ');
   console.log('=======================================================================\n');
 
   // 1. Check Infrastructure & Core Services

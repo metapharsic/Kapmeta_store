@@ -59,18 +59,18 @@ export class PrismaMenuCatalogRepository {
       include: { availabilities: true, category: true },
       orderBy: { name: "asc" },
     });
-    return rows.map((row) => ({
+    return rows.map((row: any) => ({
       id: row.id,
       outletId: row.outletId,
       categoryId: row.categoryId,
-      categoryName: row.category.name,
+      categoryName: row.category?.name || "General",
       name: row.name,
       description: row.description,
-      priceMinor: row.price,
-      isVeg: row.isVeg,
-      taxRate: row.taxRate.toString(),
-      isActive: row.isActive,
-      availability: row.availabilities[0]
+      priceMinor: BigInt(row.priceMinor || row.price || 0),
+      isVeg: Boolean(row.isVeg),
+      taxRate: (row.taxRate ?? 5.0).toString(),
+      isActive: row.isActive !== false,
+      availability: row.availabilities && row.availabilities[0]
         ? {
             isStocked: row.availabilities[0].isStocked,
             stockQty: row.availabilities[0].stockQty,

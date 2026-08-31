@@ -21,6 +21,7 @@ import { userManagementRouter } from './routes/user-management';
 import { waitersRouter } from './routes/waiters';
 import { tablesRouter } from './routes/tables';
 import { ordersRouter } from './routes/orders';
+import { mapDomainError } from './errors';
 
 // Global BigInt JSON serialization support for Express
 (BigInt.prototype as any).toJSON = function () {
@@ -58,6 +59,7 @@ export function createApp(): Express {
   app.use(tablesRouter);
   app.use(ordersRouter);
 
+  app.get('/health', (_req, res) => res.json({ status: 'ok' }));
   app.get('/healthz', (_req, res) => res.json({ status: 'ok' }));
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars

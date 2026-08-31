@@ -275,6 +275,9 @@ export async function authedFetch(url: string, options: RequestInit = {}): Promi
   if (session) {
     headers.set("Authorization", `Bearer ${session.accessToken}`);
   }
+  if (options.body && typeof options.body === "string" && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
 
   const base = getApiBase();
   const finalUrl = url.startsWith("http://") || url.startsWith("https://") ? url : `${base}${url.startsWith("/") ? "" : "/"}${url}`;

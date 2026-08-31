@@ -127,8 +127,8 @@ export default function LoginPage() {
   return (
     <div className="login-app">
       <Head>
-        <title>Kapmeta POS — Sign In</title>
-        <meta name="description" content="Sign in to the Kapmeta POS console." />
+        <title>KapMeta POS — Sign In</title>
+        <meta name="description" content="Sign in to the KapMeta POS console." />
       </Head>
 
       <div className="login-card">

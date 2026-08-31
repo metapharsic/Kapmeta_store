@@ -1,3 +1,9 @@
+import path from 'path';
+import dotenv from 'dotenv';
+
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+dotenv.config();
+
 import http from 'http';
 import { createApp } from './app';
 import { setupWebSockets } from './websockets';

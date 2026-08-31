@@ -1,15 +1,13 @@
 import { Router } from "express";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../db";
 import { createKot, transitionKot, recallKot, PrismaKotRepository, RECALL_GRACE_WINDOW_MS } from "@kapmeta/kitchen";
 import { requireAuth, requirePermission, checkPermissionDirect, type AuthedRequest } from "../middleware/require-auth";
-
-const prisma = new PrismaClient();
 
 const router = Router();
 
 // Stations for the KDS station-filter tabs — only ones with a live ticket
 // count so the board doesn't show empty tabs for unused stations.
-router.get("/stations", requireAuth, requirePermission("kot.read"), async (req: AuthedRequest, res) => {
+router.get("/stations", requireAuth, requirePermission("kot.read", "kitchen.kds.view"), async (req: AuthedRequest, res) => {
   try {
     const stations = await prisma.station.findMany({
       where: { outletId: req.auth!.outletId },
@@ -64,20 +62,51 @@ router.patch("/stations/:stationId", requireAuth, requirePermission("menu.catego
   }
 });
 
-// Open tickets for the KDS board — QUEUED/PREPARING/READY, oldest first.
-router.get("/kot", requireAuth, requirePermission("kot.read"), async (req: AuthedRequest, res) => {
+// Open tickets for the KDS board — QUEUED/PREPARING/READY, oldest first, or filtered by ticket search query.
+router.get("/kot", requireAuth, requirePermission("kot.read", "kitchen.kds.view"), async (req: AuthedRequest, res) => {
   try {
-    const { stationId } = req.query;
-    // Live tickets, plus anything SERVED within the recall grace window so
-    // the board can offer an "Undo" on an accidental last tap.
-    const recallCutoff = new Date(Date.now() - RECALL_GRACE_WINDOW_MS);
-    const whereClause: any = {
-      outletId: req.auth!.outletId,
-      OR: [
-        { status: { in: ["QUEUED", "PREPARING", "READY"] } },
-        { status: "SERVED", servedAt: { gt: recallCutoff } },
-      ],
-    };
+    const { stationId, ticketNumber, search, kotId, kotNumber, orderNumber } = req.query;
+    const queryStr = String(ticketNumber || search || kotId || kotNumber || orderNumber || "").trim();
+
+    let whereClause: any;
+
+    if (queryStr) {
+      const rawQuery = queryStr;
+      const cleanedTicketNumber = rawQuery.replace(/^(KOT\s*#?\s*|#\s*)/i, "").trim();
+      const suffixNumber = cleanedTicketNumber.replace(/^KOT-/i, "").trim();
+
+      const searchConditions: any[] = [];
+      if (cleanedTicketNumber) {
+        searchConditions.push({ ticketNumber: { contains: cleanedTicketNumber, mode: "insensitive" } });
+        searchConditions.push({ id: { contains: cleanedTicketNumber, mode: "insensitive" } });
+      }
+      if (rawQuery && rawQuery !== cleanedTicketNumber) {
+        searchConditions.push({ ticketNumber: { contains: rawQuery, mode: "insensitive" } });
+        searchConditions.push({ id: { contains: rawQuery, mode: "insensitive" } });
+      }
+      if (suffixNumber && suffixNumber !== cleanedTicketNumber && suffixNumber.length >= 2) {
+        searchConditions.push({ ticketNumber: { contains: suffixNumber, mode: "insensitive" } });
+      }
+      searchConditions.push({ order: { orderNumber: { contains: rawQuery, mode: "insensitive" } } });
+      searchConditions.push({ order: { diningTable: { tableNumber: { contains: rawQuery, mode: "insensitive" } } } });
+
+      whereClause = {
+        outletId: req.auth!.outletId,
+        OR: searchConditions,
+      };
+    } else {
+      // Live tickets, plus anything SERVED within the recall grace window so
+      // the board can offer an "Undo" on an accidental last tap.
+      const recallCutoff = new Date(Date.now() - RECALL_GRACE_WINDOW_MS);
+      whereClause = {
+        outletId: req.auth!.outletId,
+        OR: [
+          { status: { in: ["QUEUED", "PREPARING", "READY"] } },
+          { status: "SERVED", servedAt: { gt: recallCutoff } },
+        ],
+      };
+    }
+
     if (typeof stationId === "string") {
       whereClause.stationId = stationId;
     }
@@ -89,7 +118,7 @@ router.get("/kot", requireAuth, requirePermission("kot.read"), async (req: Authe
         station: { select: { name: true, slaWarningSeconds: true, slaBreachSeconds: true } },
         order: { select: { orderType: true, diningTable: { select: { tableNumber: true } } } },
       },
-      orderBy: { createdAt: "asc" },
+      orderBy: { createdAt: queryStr ? "desc" : "asc" },
     });
 
     res.status(200).json(
@@ -180,7 +209,7 @@ router.patch("/kot/:kotTicketId/status", requireAuth, async (req: AuthedRequest,
   }
 });
 
-router.post("/kot/:kotTicketId/recall", requireAuth, requirePermission("kot.status.update"), async (req: AuthedRequest, res) => {
+router.post("/kot/:kotTicketId/recall", requireAuth, requirePermission("kot.status.update", "kitchen.kot.status"), async (req: AuthedRequest, res) => {
   try {
     const { kotTicketId } = req.params;
     const repository = new PrismaKotRepository(prisma);
@@ -280,7 +309,7 @@ router.get("/analytics", requireAuth, requirePermission("report.read"), async (r
       const stationKey = t.stationId ?? "unassigned";
       const stationEntry = byStation.get(stationKey) ?? {
         name: t.station?.name ?? "Unassigned",
-        durations: [],
+        durations: [] as number[],
         slaWarningSeconds: t.station?.slaWarningSeconds ?? 600,
         slaBreachSeconds: t.station?.slaBreachSeconds ?? 900,
       };
@@ -288,7 +317,7 @@ router.get("/analytics", requireAuth, requirePermission("report.read"), async (r
       byStation.set(stationKey, stationEntry);
 
       for (const ki of t.kotItems) {
-        const itemEntry = byItem.get(ki.menuItemId) ?? { name: ki.menuItem.name, durations: [] };
+        const itemEntry = byItem.get(ki.menuItemId) ?? { name: ki.menuItem.name, durations: [] as number[] };
         itemEntry.durations.push(durationMs);
         byItem.set(ki.menuItemId, itemEntry);
       }

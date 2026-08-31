@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableDelayedExpansion
 cd /d "%~dp0"
-title Kapmeta POS - PetPooja Application Launcher
+title Kapmeta POS - KapMeta Application Launcher
 color 0A
 
 echo =======================================================================

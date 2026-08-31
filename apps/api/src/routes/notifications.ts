@@ -1,9 +1,8 @@
 import { Router } from "express";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../db";
 import { PrismaNotificationRepository } from "@kapmeta/notifications";
 import { requireAuth, type AuthedRequest } from "../middleware/require-auth";
 
-const prisma = new PrismaClient();
 const repo = new PrismaNotificationRepository(prisma);
 
 export const notificationsRouter = Router();

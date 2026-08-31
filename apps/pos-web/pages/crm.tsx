@@ -183,7 +183,7 @@ export default function CrmPage() {
   return (
     <div className="admin-app">
       <Head>
-        <title>Kapmeta POS - Customers & Loyalty</title>
+        <title>KapMeta POS - Customers & Loyalty</title>
         <meta name="description" content="Customer lookup, creation, and loyalty point redemption." />
       </Head>
 
@@ -194,7 +194,7 @@ export default function CrmPage() {
         <div className="topbar-left">
           <div className="brand-badge">
             <span className="brand-icon">⚡</span>
-            <span className="brand-name">Kapmeta CRM</span>
+            <span className="brand-name">KapMeta CRM</span>
           </div>
         </div>
 

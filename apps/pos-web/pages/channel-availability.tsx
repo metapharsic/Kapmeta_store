@@ -199,7 +199,7 @@ export default function ChannelAvailabilityPage() {
   return (
     <div className="channel-app">
       <Head>
-        <title>Kapmeta POS — Online Item Status</title>
+        <title>KapMeta POS — Online Item Status</title>
         <meta name="description" content="Per-channel (Swiggy/Zomato) item availability sync console." />
       </Head>
 
@@ -210,7 +210,7 @@ export default function ChannelAvailabilityPage() {
         <div className="topbar-left">
           <div className="brand-badge">
             <span className="brand-icon">📡</span>
-            <span className="brand-name">Kapmeta POS</span>
+            <span className="brand-name">KapMeta POS</span>
           </div>
           <div className="outlet-pill">
             <span className="outlet-dot"></span>

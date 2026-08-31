@@ -4,9 +4,10 @@ import { authedFetch } from "../lib/auth";
 interface AddTableModalProps {
   onClose: () => void;
   onTableCreated: () => void;
+  existingTables?: string[];
 }
 
-export default function AddTableModal({ onClose, onTableCreated }: AddTableModalProps) {
+export default function AddTableModal({ onClose, onTableCreated, existingTables = [] }: AddTableModalProps) {
   const [tableNumber, setTableNumber] = useState("");
   const [section, setSection] = useState("Non AC");
   const [capacity, setCapacity] = useState(4);
@@ -15,27 +16,58 @@ export default function AddTableModal({ onClose, onTableCreated }: AddTableModal
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!tableNumber.trim()) {
+    const trimmedNum = tableNumber.trim();
+    if (!trimmedNum) {
       setError("Table number is required.");
+      return;
+    }
+
+    if (existingTables.some((t) => t.trim().toLowerCase() === trimmedNum.toLowerCase())) {
+      setError(`Table "${trimmedNum}" already exists. Please enter a unique table number.`);
       return;
     }
 
     setLoading(true);
     setError(null);
     try {
+      const payload = {
+        tableNumber: trimmedNum,
+        section: section.trim() || "Non AC",
+        capacity: Number(capacity) || 4,
+        isActive: true,
+      };
+
       const res = await authedFetch(`/tables`, {
         method: "POST",
-        body: JSON.stringify({
-          tableNumber: tableNumber.trim(),
-          section: section.trim() || null,
-          capacity: Number(capacity) || 4,
-          isActive: true,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || "Failed to create table");
+        throw new Error(err.error || err.message || "Failed to create table");
+      }
+
+      // Persist to local custom table registry
+      if (typeof window !== "undefined") {
+        try {
+          const raw = localStorage.getItem("kapmeta_custom_tables") || "[]";
+          const parsed = JSON.parse(raw);
+          const newTable = {
+            id: `tbl_${Date.now()}`,
+            tableNumber: trimmedNum,
+            capacity: Number(capacity) || 4,
+            section: section.trim() || "Non AC",
+            status: "VACANT",
+            totalMinor: 0,
+            elapsedMinutes: 0,
+            itemCount: 0,
+          };
+          if (!parsed.some((t: any) => t.tableNumber.toLowerCase() === trimmedNum.toLowerCase())) {
+            parsed.push(newTable);
+            localStorage.setItem("kapmeta_custom_tables", JSON.stringify(parsed));
+          }
+        } catch {}
       }
 
       onTableCreated();

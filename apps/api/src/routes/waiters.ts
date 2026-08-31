@@ -1,9 +1,8 @@
 import { Router } from "express";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../db";
 import { TERMINAL_ORDER_STATUSES } from "@kapmeta/orders";
 import { requireAuth, requirePermission, type AuthedRequest } from "../middleware/require-auth";
 
-const prisma = new PrismaClient();
 const router = Router();
 
 // Called periodically by the waiter app while a waiter is on the floor —
@@ -44,7 +43,8 @@ router.get("/waiters/active", requireAuth, requirePermission("report.read"), asy
     const byUser = new Map<string, { userId: string; name: string; lastSeenAt: Date }>();
     for (const s of sessions) {
       if (!byUser.has(s.userId)) {
-        byUser.set(s.userId, { userId: s.userId, name: `${s.user.firstName} ${s.user.lastName}`, lastSeenAt: s.lastSeenAt! });
+        const uName = s.user ? `${s.user.firstName || ''} ${s.user.lastName || ''}`.trim() : `Captain (${s.userId.slice(-4)})`;
+        byUser.set(s.userId, { userId: s.userId, name: uName, lastSeenAt: s.lastSeenAt || new Date() });
       }
     }
 

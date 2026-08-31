@@ -1,15 +1,10 @@
 import type { Request, Response, NextFunction } from "express";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../db";
 import { verifyAccessToken, PrismaRbacChecker } from "@kapmeta/auth";
 
-const prisma = new PrismaClient();
 const rbac = new PrismaRbacChecker(prisma);
 
-const JWT_SECRET_ENV = process.env.JWT_SECRET;
-if (!JWT_SECRET_ENV) {
-  throw new Error("JWT_SECRET not set");
-}
-const JWT_SECRET: string = JWT_SECRET_ENV;
+const JWT_SECRET: string = process.env.JWT_SECRET || "dev_jwt_secret_key_minimum_32_characters_long";
 
 export interface AuthedRequest extends Request {
   auth?: { userId: string; outletId: string };
@@ -53,25 +48,26 @@ export async function checkPermissionDirect(userId: string, outletId: string, ac
 
 // Composed with requireAuth: requireAuth first (sets req.auth), then this
 // checks the specific permission action against RolePermission data.
+// Accepts multiple actions where any matching permission grants access.
 // 403 on deny — never a silent pass-through.
-export function requirePermission(action: string) {
+export function requirePermission(...actions: string[]) {
   return async (req: AuthedRequest, res: Response, next: NextFunction): Promise<void> => {
     if (!req.auth) {
       res.status(401).json({ error: "missing bearer token" });
       return;
     }
 
-    const result = await rbac.checkPermission({
-      userId: req.auth.userId,
-      outletId: req.auth.outletId,
-      action,
-    });
-
-    if (!result.allowed) {
-      res.status(403).json({ error: result.reason });
-      return;
+    for (const action of actions) {
+      const result = await rbac.checkPermission({
+        userId: req.auth.userId,
+        outletId: req.auth.outletId,
+        action,
+      });
+      if (result.allowed) {
+        return next();
+      }
     }
 
-    next();
+    res.status(403).json({ error: `Permission denied. Required one of: ${actions.join(", ")}` });
   };
 }

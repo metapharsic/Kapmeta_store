@@ -1,5 +1,5 @@
 # ==============================================================================
-# KAPMETA / PETPOOJA POS PLATFORM - SHUTDOWN RUNNER AND PROCESS TERMINATOR
+# KAPMETA POS PLATFORM - SHUTDOWN RUNNER AND PROCESS TERMINATOR
 # ==============================================================================
 
 # 0. Anchor to Project Root Directory
@@ -99,7 +99,7 @@ if (Test-Path (Join-Path $rootDir "logs\app")) {
 Write-Host ""
 if ($allClean) {
     Write-Host "=======================================================================" -ForegroundColor Green
-    Write-Host "  [SUCCESS] All PetPooja POS Platform Services Successfully Stopped!   " -ForegroundColor Green
+    Write-Host "  [SUCCESS] All KapMeta POS Platform Services Successfully Stopped!   " -ForegroundColor Green
     Write-Host "=======================================================================" -ForegroundColor Green
 } else {
     Write-Host "=======================================================================" -ForegroundColor Yellow

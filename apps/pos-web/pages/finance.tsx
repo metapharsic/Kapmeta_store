@@ -193,7 +193,7 @@ export default function FinancePage() {
   return (
     <div className="admin-app">
       <Head>
-        <title>Kapmeta POS - Finance & Z-Report</title>
+        <title>KapMeta POS - Finance & Z-Report</title>
         <meta name="description" content="Daily reconciliation / Z-report for the outlet." />
       </Head>
 
@@ -204,7 +204,7 @@ export default function FinancePage() {
         <div className="topbar-left">
           <div className="brand-badge">
             <span className="brand-icon">⚡</span>
-            <span className="brand-name">Kapmeta Finance</span>
+            <span className="brand-name">KapMeta Finance</span>
           </div>
         </div>
 

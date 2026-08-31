@@ -189,7 +189,7 @@ export default function KitchenAnalytics() {
   return (
     <div style={{ minHeight: "100vh", display: "flex", background: "var(--bg-base, #f8fafc)" }}>
       <Head>
-        <title>Kapmeta POS - Kitchen Prep Times</title>
+        <title>KapMeta POS - Kitchen Prep Times</title>
       </Head>
       <Nav variant="sidebar" />
       <div style={{ flex: 1, padding: 24, maxWidth: 900, margin: "0 auto", width: "100%" }}>

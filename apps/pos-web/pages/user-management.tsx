@@ -375,7 +375,7 @@ export default function UserManagement() {
   return (
     <div className="admin-app">
       <Head>
-        <title>Kapmeta POS - User & Role Management</title>
+        <title>KapMeta POS - User & Role Management</title>
         <meta name="description" content="Assign and revoke roles for users across outlets." />
       </Head>
 
@@ -386,7 +386,7 @@ export default function UserManagement() {
         <div className="topbar-left">
           <div className="brand-badge">
             <span className="brand-icon">⚡</span>
-            <span className="brand-name">Kapmeta Analytics</span>
+            <span className="brand-name">KapMeta Analytics</span>
           </div>
         </div>
 

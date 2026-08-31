@@ -38,7 +38,7 @@ export default function WaiterMonitor() {
   return (
     <div style={{ minHeight: "100vh", display: "flex", background: "var(--bg-base, #f8fafc)" }}>
       <Head>
-        <title>Kapmeta POS - Floor Monitor</title>
+        <title>KapMeta POS - Floor Monitor</title>
       </Head>
       <Nav variant="sidebar" />
       <div style={{ flex: 1, padding: 24, maxWidth: 900, margin: "0 auto", width: "100%" }}>

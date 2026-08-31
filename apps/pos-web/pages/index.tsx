@@ -16,7 +16,7 @@ export default function POSIndexPage() {
 
   // Check router query to see if we should display billing or floor
   const [viewMode, setViewMode] = useState<"FLOOR" | "BILLING">("FLOOR");
-  const [selectedTable, setSelectedTable] = useState<string>("B6");
+  const [selectedTable, setSelectedTable] = useState<string>("A1");
   const [selectedTableId, setSelectedTableId] = useState<string>("");
   const [selectedOrderMode, setSelectedOrderMode] = useState<"DINE_IN" | "DELIVERY" | "PICKUP">("DINE_IN");
 
@@ -51,7 +51,7 @@ export default function POSIndexPage() {
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f8fafc" }}>
         <div style={{ textAlign: "center", color: "#64748b" }}>
           <div style={{ fontSize: "2rem", marginBottom: "8px" }}>⏳</div>
-          <div>Loading PetPooja POS Register...</div>
+          <div>Loading kapMeta POS Register...</div>
         </div>
       </div>
     );
@@ -60,7 +60,7 @@ export default function POSIndexPage() {
   return (
     <div className="petpooja-app-root">
       <Head>
-        <title>{outletName} - PetPooja POS Management Platform</title>
+        <title>{outletName} - KapMeta POS Management Platform</title>
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
       </Head>
 

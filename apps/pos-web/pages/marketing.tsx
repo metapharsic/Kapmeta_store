@@ -203,7 +203,7 @@ export default function MarketingPage() {
   return (
     <div className="admin-app">
       <Head>
-        <title>Kapmeta POS - Marketing Campaigns</title>
+        <title>KapMeta POS - Marketing Campaigns</title>
         <meta name="description" content="Create and queue customer marketing campaigns." />
       </Head>
 
@@ -214,7 +214,7 @@ export default function MarketingPage() {
         <div className="topbar-left">
           <div className="brand-badge">
             <span className="brand-icon">⚡</span>
-            <span className="brand-name">Kapmeta Marketing</span>
+            <span className="brand-name">KapMeta Marketing</span>
           </div>
         </div>
 

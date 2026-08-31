@@ -1,5 +1,5 @@
 # ==============================================================================
-# KAPMETA / PETPOOJA POS PLATFORM — LIVE STATUS DASHBOARD
+# KAPMETA POS PLATFORM — LIVE STATUS DASHBOARD
 # ==============================================================================
 
 $rootDir = (Split-Path -Parent $PSScriptRoot)

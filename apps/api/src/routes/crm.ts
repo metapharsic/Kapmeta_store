@@ -1,10 +1,9 @@
 import { Router } from "express";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../db";
 import { requireAuth, requirePermission, AuthedRequest } from "../middleware/require-auth";
 import { CustomerManager, LoyaltyEngine } from "@kapmeta/crm";
 
 export const crmRouter = Router();
-const prisma = new PrismaClient();
 const customerManager = new CustomerManager(prisma);
 const loyaltyEngine = new LoyaltyEngine(prisma);
 

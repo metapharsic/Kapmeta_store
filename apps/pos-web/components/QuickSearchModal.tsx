@@ -13,6 +13,7 @@ export default function QuickSearchModal({ type, onClose }: QuickSearchModalProp
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<any[]>([]);
+  const [hasSearched, setHasSearched] = useState(false);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,17 +21,63 @@ export default function QuickSearchModal({ type, onClose }: QuickSearchModalProp
 
     setLoading(true);
     setError(null);
+    setHasSearched(true);
     try {
       if (type === "BILL") {
-        const res = await authedFetch(`/orders?orderNumber=${encodeURIComponent(query.trim())}`);
+        const cleanQuery = query.trim().replace(/^(bill\s*#?\s*|ord\s*#?\s*|order\s*#?\s*|#\s*)/i, "").trim();
+        const res = await authedFetch(`/orders?orderNumber=${encodeURIComponent(cleanQuery || query.trim())}&search=${encodeURIComponent(cleanQuery || query.trim())}`);
         if (!res.ok) throw new Error("Search failed");
         const data = await res.json();
-        setResults(data.orders || (Array.isArray(data) ? data : []));
+        const rawList = data.orders || (Array.isArray(data) ? data : [data]);
+
+        const qLower = query.trim().toLowerCase();
+        const qClean = cleanQuery.toLowerCase();
+
+        const filtered = rawList.filter((item: any) => {
+          const num = String(item.orderNumber || item.id || "").toLowerCase();
+          const tbl = String(item.diningTableId || item.tableNumber || "").toLowerCase();
+          const cust = String(item.customerName || "").toLowerCase();
+          return (
+            num.includes(qLower) ||
+            (qClean && num.includes(qClean)) ||
+            (tbl && tbl.includes(qClean || qLower)) ||
+            (cust && cust.includes(qClean || qLower))
+          );
+        });
+
+        setResults(filtered);
       } else {
-        const res = await authedFetch(`/kitchen/kot?ticketNumber=${encodeURIComponent(query.trim())}`);
+        const rawTrim = query.trim();
+        const cleanQuery = rawTrim.replace(/^(kot\s*#?\s*|#\s*)/i, "").trim();
+        const suffixNumber = cleanQuery.replace(/^kot-/i, "").trim();
+
+        const res = await authedFetch(`/kitchen/kot?ticketNumber=${encodeURIComponent(cleanQuery || rawTrim)}`);
         if (!res.ok) throw new Error("KOT Search failed");
         const data = await res.json();
-        setResults(Array.isArray(data) ? data : [data]);
+        const rawList = Array.isArray(data) ? data : [data];
+
+        const qLower = rawTrim.toLowerCase();
+        const qClean = cleanQuery.toLowerCase();
+        const qSuffix = suffixNumber.toLowerCase();
+
+        const filtered = rawList.filter((res: any) => {
+          const tNum = String(res.ticketNumber || "").toLowerCase();
+          const tId = String(res.id || "").toLowerCase();
+          const tbl = String(res.tableNumber || res.diningTableId || "").toLowerCase();
+          const ordNum = String(res.orderNumber || res.orderId || "").toLowerCase();
+
+          return (
+            (tNum && tNum === qClean) ||
+            (tNum && tNum.includes(qClean)) ||
+            (qSuffix && qSuffix.length >= 2 && tNum && tNum.includes(qSuffix)) ||
+            (tNum && tNum.includes(qLower)) ||
+            (tId && (tId === qClean || tId.includes(qClean))) ||
+            (tbl && (tbl === qClean || tbl === qLower)) ||
+            (ordNum && (ordNum.includes(qClean) || ordNum.includes(qLower)))
+          );
+        });
+
+        setResults(filtered);
       }
     } catch (err: any) {
       setError(err.message || "Failed to find matching records");
@@ -67,7 +114,9 @@ export default function QuickSearchModal({ type, onClose }: QuickSearchModalProp
 
         <div className="search-results-container">
           {results.length === 0 && !loading && (
-            <div className="empty-results">Type a number and press search to locate orders/KOTs.</div>
+            <div className="empty-results">
+              {hasSearched ? `No matching ${type === "BILL" ? "orders" : "KOT tickets"} found.` : "Type a number and press search to locate orders/KOTs."}
+            </div>
           )}
 
           {results.map((res, i) => (
@@ -79,7 +128,8 @@ export default function QuickSearchModal({ type, onClose }: QuickSearchModalProp
                 if (type === "BILL") {
                   router.push(`/orders?id=${res.id}`);
                 } else {
-                  router.push(`/kitchen?kotId=${res.id}`);
+                  const kotParam = res.ticketNumber || res.id;
+                  router.push(`/kitchen?kot=${encodeURIComponent(kotParam)}&kotId=${res.id}`);
                 }
               }}
             >

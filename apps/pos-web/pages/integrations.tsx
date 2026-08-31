@@ -107,7 +107,7 @@ export default function Integrations() {
   return (
     <div style={{ minHeight: "100vh", display: "flex", background: "var(--bg-base, #f8fafc)" }}>
       <Head>
-        <title>Kapmeta POS - Connect Delivery Apps</title>
+        <title>KapMeta POS - Connect Delivery Apps</title>
       </Head>
       <Nav variant="sidebar" />
       <div style={{ flex: 1, padding: 24, maxWidth: 760, margin: "0 auto", width: "100%" }}>

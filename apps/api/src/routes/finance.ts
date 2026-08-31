@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../db";
 import { requireAuth, requirePermission, AuthedRequest } from "../middleware/require-auth";
 import {
   SettlementEngine,
@@ -13,7 +13,6 @@ import type { RefundStatus } from "@kapmeta/shared-types/finance";
 import { writeAuditLog } from "@kapmeta/shared-types/audit-log";
 
 export const financeRouter = Router();
-const prisma = new PrismaClient();
 const settlementEngine = new SettlementEngine(prisma);
 const zReportGenerator = new ZReportGenerator(prisma);
 const financeRepository = new PrismaFinanceRepository(prisma);

@@ -174,12 +174,12 @@ async function pollServices() {
 
 function showDashboard() {
   console.log('\n\x1b[32m=======================================================================\x1b[0m');
-  console.log('\x1b[32m   KAPMETA / PETPOOJA POS PLATFORM — LIVE CONTROL DASHBOARD (ONLINE)   \x1b[0m');
+  console.log('\x1b[32m   KAPMETA POS PLATFORM — LIVE CONTROL DASHBOARD (ONLINE)   \x1b[0m');
   console.log('\x1b[32m=======================================================================\x1b[0m\n');
   console.log('\x1b[36m  [SERVICES STATUS]\x1b[0m');
   console.log('  - POS Web UI       : http://localhost:4444          [\x1b[32m🟢 READY\x1b[0m]');
   console.log('  - API Gateway      : http://localhost:4001/health   [\x1b[32m🟢 READY\x1b[0m]');
-  console.log('  - PostgreSQL DB    : localhost:5432 (petpooja)      [\x1b[32m🟢 CONNECTED\x1b[0m]\n');
+  console.log('  - PostgreSQL DB    : localhost:5432 (kapmeta)      [\x1b[32m🟢 CONNECTED\x1b[0m]\n');
   console.log('\x1b[36m  [LOG FILES]\x1b[0m');
   console.log(`  - App Events       : logs/app/app-${currentDate}.log`);
   console.log(`  - API Gateway Log  : logs/api/api-${currentDate}.log`);
@@ -193,7 +193,7 @@ function showDashboard() {
   console.log('    [R] Restart All Services');
   console.log('    \x1b[31m[Q] Stop All Services and Exit\x1b[0m');
   console.log('\x1b[32m=======================================================================\x1b[0m');
-  console.log('\x1b[32m  PetPooja POS is actively serving requests. Press a key above to interact.\x1b[0m\n');
+  console.log('\x1b[32m  KapMeta POS is actively serving requests. Press a key above to interact.\x1b[0m\n');
 }
 
 function cleanupAndExit() {

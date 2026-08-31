@@ -19,6 +19,7 @@
     "build": "npm run build --workspaces --if-present",
     "test": "npm test --workspaces --if-present",
     "test:unit": "vitest run",
+    "test:e2e": "playwright test",
     "typecheck": "node scripts/typecheck.js",
     "lint": "eslint apps packages services --max-warnings=-1",
     "contracts:validate": "redocly lint --config=redocly.yaml",
@@ -32,6 +33,7 @@
     "pg": "^8.13.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@redocly/cli": "^2.46.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20.0.0",

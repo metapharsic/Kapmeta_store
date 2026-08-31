@@ -369,7 +369,7 @@ export default function AdminDashboard() {
   return (
     <div className="admin-app">
       <Head>
-        <title>Kapmeta POS - Executive Sales & Operations Analytics</title>
+        <title>KapMeta POS - Executive Sales & Operations Analytics</title>
         <meta
           name="description"
           content="Executive financial analytics, settled orders, and revenue breakdowns."
@@ -384,7 +384,7 @@ export default function AdminDashboard() {
         <div className="topbar-left">
           <div className="brand-badge">
             <span className="brand-icon">⚡</span>
-            <span className="brand-name">Kapmeta Analytics</span>
+            <span className="brand-name">KapMeta Analytics</span>
           </div>
         </div>
 
