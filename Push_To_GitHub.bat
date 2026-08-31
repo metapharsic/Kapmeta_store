@@ -29,13 +29,12 @@ if "%CURRENT_BRANCH%"=="" set CURRENT_BRANCH=main
 echo Current active local branch: [%CURRENT_BRANCH%]
 echo.
 
-:: 3. Check Working Tree Status
+:: 3. Stage and Commit if changes exist
 echo [1/3] Checking working directory status...
 git status --short
 echo.
 
-:: 4. Stage and Commit if changes exist
-set /p HAS_CHANGES=
+set HAS_CHANGES=no
 for /f "tokens=*" %%i in ('git status --porcelain') do set HAS_CHANGES=yes
 
 if "%HAS_CHANGES%"=="yes" (
@@ -53,16 +52,12 @@ if "%HAS_CHANGES%"=="yes" (
     
     echo Committing: "!COMMIT_MSG!"
     git commit -m "!COMMIT_MSG!"
-    if %errorlevel% neq 0 (
-        color 0E
-        echo [WARNING] Commit returned non-zero or no changes to commit.
-    )
 ) else (
     echo [2/3] Working tree is clean. Ready to push existing commits.
 )
 echo.
 
-:: 5. Select Target Branch
+:: 4. Select Target Branch
 echo [3/3] Target branch to push:
 echo Press ENTER to push to [!CURRENT_BRANCH!] or type another branch name:
 set /p TARGET_BRANCH="> "
@@ -70,12 +65,11 @@ if "!TARGET_BRANCH!"=="" set TARGET_BRANCH=!CURRENT_BRANCH!
 
 echo.
 echo =======================================================================
-echo  Target Remote : origin (https://github.com/metapharsic/Kapmeta_store.git)
+echo  Target Remote : origin (git@github.com:metapharsic/Kapmeta_store.git)
 echo  Target Branch : !TARGET_BRANCH!
 echo =======================================================================
 echo.
 echo Pushing commits to GitHub... Please wait...
-echo (If prompted by Windows / Git Credential Manager, complete your sign-in)
 echo.
 
 git push -u origin !TARGET_BRANCH! --progress
@@ -85,18 +79,18 @@ if %errorlevel% equ 0 (
     echo.
     echo =======================================================================
     echo [SUCCESS] Successfully pushed all data to GitHub:
-    echo           https://github.com/metapharsic/Kapmeta_store.git (Branch: !TARGET_BRANCH!)
+    echo           git@github.com:metapharsic/Kapmeta_store.git (Branch: !TARGET_BRANCH!)
     echo =======================================================================
 ) else (
     color 0C
     echo.
     echo =======================================================================
-    echo [FAILED] Push failed with error code %errorlevel%.
+    echo [FAILED] Push failed (error code %errorlevel%).
     echo.
-    echo Troubleshooting tips:
-    echo  1. Ensure you have push permissions for https://github.com/metapharsic/Kapmeta_store.git
-    echo  2. If the remote has changes you do not have, run Pull_From_GitHub.bat first.
-    echo  3. Ensure your GitHub Personal Access Token (PAT) or GCM login is active.
+    echo If you see "Permission denied (publickey)":
+    echo 1. Copy your SSH public key from: C:\Users\Dell\.ssh\id_ed25519.pub
+    echo 2. Go to: https://github.com/settings/ssh/new
+    echo 3. Paste the key and save it.
     echo =======================================================================
 )
 

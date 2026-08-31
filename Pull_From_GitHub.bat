@@ -37,7 +37,7 @@ if "!TARGET_BRANCH!"=="" set TARGET_BRANCH=!CURRENT_BRANCH!
 
 echo.
 echo =======================================================================
-echo  Target Remote : origin (https://github.com/metapharsic/Kapmeta_store.git)
+echo  Target Remote : origin (git@github.com:metapharsic/Kapmeta_store.git)
 echo  Source Branch : !TARGET_BRANCH!
 echo =======================================================================
 echo.
@@ -51,7 +51,7 @@ if %errorlevel% equ 0 (
     echo.
     echo =======================================================================
     echo [SUCCESS] Successfully pulled latest data from GitHub:
-    echo           https://github.com/metapharsic/Kapmeta_store.git (Branch: !TARGET_BRANCH!)
+    echo           git@github.com:metapharsic/Kapmeta_store.git (Branch: !TARGET_BRANCH!)
     echo =======================================================================
 ) else (
     color 0C
