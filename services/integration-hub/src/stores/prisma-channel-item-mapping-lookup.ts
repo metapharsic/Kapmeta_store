@@ -22,8 +22,8 @@ export class PrismaChannelItemMappingLookup implements ChannelItemMappingLookup 
     }
 
     return {
-      menuItemId: row.menuItemId,
-      channelPriceMinor: row.channelPrice,
+      menuItemId: (row as any).item_id || (row as any).menuItemId,
+      channelPriceMinor: (row as any).channelPrice || null,
     };
   }
 }

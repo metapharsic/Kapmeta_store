@@ -1,22 +1,6 @@
-import { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 import { createKot, PrismaKotRepository } from "@kapmeta/kitchen";
-import { consumeForOrderLine, PrismaInventoryRepository } from "@kapmeta/inventory";
-
-// Cross-service composition, deliberately kept OUT of services/orders,
-// services/kitchen, services/inventory themselves — each service stays
-// decoupled per module boundaries (docs/03-architecture/high-level-design.md
-// §4). This is the only place that knows "CONFIRMED triggers a KOT" and
-// "COMPLETED triggers stock consumption."
-//
-// Best-effort, not transactional with the status transition itself: the
-// order transition has already committed by the time these run (called
-// after transitionOrder succeeds in routes/orders.ts). A KOT-creation or
-// stock-consumption failure here does NOT roll back the order status —
-// it's logged and the order stays in its new status. This mirrors WF-ORD-01's
-// note that steps 5-6 are one transaction but 9-12 (of which this is a kin)
-// are event-driven and individually retryable. There is no retry queue wired
-// up yet — a failure here is currently silent beyond the log line. Flagging
-// that explicitly: this is the gap to close before this is production-safe.
+import { stampOrderMergeLabel } from "./table-merge";
 
 export async function onOrderConfirmed(orderId: string, prisma: PrismaClient): Promise<void> {
   const order = await prisma.order.findUnique({
@@ -28,50 +12,106 @@ export async function onOrderConfirmed(orderId: string, prisma: PrismaClient): P
     return;
   }
 
+  const alreadyTicketed = await prisma.kOTItem.findMany({
+    where: {
+      kotTicket: { orderId },
+      orderItemId: { not: null },
+    },
+    select: { orderItemId: true },
+  });
+  const ticketedIds = new Set(
+    alreadyTicketed.map((row) => row.orderItemId).filter((id): id is string => Boolean(id))
+  );
+
+  const newLines = order.orderItems.filter((item) => !item.isVoided && !ticketedIds.has(item.id));
+  if (newLines.length === 0) {
+    return;
+  }
+
   try {
     await createKot(
       {
         outletId: order.outletId,
         orderId: order.id,
-        lines: order.orderItems.map((item) => ({
+        lines: newLines.map((item) => ({
           menuItemId: item.menuItemId,
-          quantity: item.quantity,
+          quantity: Number(item.quantity) || 1,
           notes: item.notes ?? undefined,
           course: item.course ?? undefined,
+          orderItemId: item.id,
         })),
       },
       new PrismaKotRepository(prisma),
     );
+    if (order.diningTableId) {
+      await stampOrderMergeLabel(prisma, order.outletId, order.id, order.diningTableId);
+    }
+    const table = order.diningTableId
+      ? await prisma.diningTable.findFirst({
+          where: { id: order.diningTableId },
+          select: { tableNumber: true, mergeGroupId: true, mergePrimaryTableId: true },
+        })
+      : null;
+    // #region agent log
+    fetch("http://127.0.0.1:7323/ingest/28c85a32-5ef1-4fe5-9437-78139f7a5bfb", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c675b" },
+      body: JSON.stringify({
+        sessionId: "9c675b",
+        runId: "post-merge",
+        hypothesisId: "V",
+        location: "order-lifecycle.ts:onOrderConfirmed",
+        message: "KOT created from order lines",
+        data: {
+          orderId,
+          diningTableId: order.diningTableId,
+          tableNumber: table?.tableNumber || null,
+          mergeGroupId: table?.mergeGroupId || null,
+          newLineCount: newLines.length,
+          broadcastKotCreated: false,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+    import("../websockets").then(({ broadcast }) => {
+      broadcast("kot.created", {
+        orderId: order.id,
+        diningTableId: order.diningTableId,
+        tableNumber: table?.tableNumber || null,
+      });
+      if (order.diningTableId) {
+        broadcast("order.updated", { orderId: order.id, diningTableId: order.diningTableId });
+        broadcast("table.status_updated", { tableId: order.diningTableId, orderId: order.id, status: "OCCUPIED" });
+      }
+    }).catch(() => {});
+    // #region agent log
+    fetch("http://127.0.0.1:7323/ingest/28c85a32-5ef1-4fe5-9437-78139f7a5bfb", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c675b" },
+      body: JSON.stringify({
+        sessionId: "9c675b",
+        runId: "post-fix",
+        hypothesisId: "V",
+        location: "order-lifecycle.ts:onOrderConfirmed:fanout",
+        message: "KOT created fanout",
+        data: {
+          orderId,
+          diningTableId: order.diningTableId,
+          tableNumber: table?.tableNumber || null,
+          mergeGroupId: table?.mergeGroupId || null,
+          newLineCount: newLines.length,
+          broadcastKotCreated: true,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
   } catch (err) {
     console.error(`onOrderConfirmed: KOT creation failed for order ${orderId}`, err);
   }
 }
 
-export async function onOrderCompleted(orderId: string, prisma: PrismaClient): Promise<void> {
-  const order = await prisma.order.findUnique({
-    where: { id: orderId },
-    include: { orderItems: true },
-  });
-  if (!order) {
-    console.error(`onOrderCompleted: order ${orderId} not found`);
-    return;
-  }
-
-  const repo = new PrismaInventoryRepository(prisma);
-  for (const item of order.orderItems) {
-    try {
-      const result = await consumeForOrderLine(
-        order.outletId,
-        order.id,
-        { menuItemId: item.menuItemId, quantity: item.quantity },
-        repo,
-      );
-      if (!result.ok) {
-        // Per WF-INV-01: no recipe found never blocks the order — log and continue.
-        console.error(`onOrderCompleted: no recipe for menu item ${result.menuItemId} (order ${orderId})`);
-      }
-    } catch (err) {
-      console.error(`onOrderCompleted: stock consumption failed for order ${orderId}, item ${item.menuItemId}`, err);
-    }
-  }
+export async function onItemsAdded(orderId: string, prisma: PrismaClient): Promise<void> {
+  return onOrderConfirmed(orderId, prisma);
 }

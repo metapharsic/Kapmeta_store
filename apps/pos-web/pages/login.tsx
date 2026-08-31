@@ -30,9 +30,9 @@ const QUICK_ROLES: QuickRole[] = [
     label: "ADMIN",
     roleTitle: "Super Admin / Owner",
     icon: "🛡️",
-    email: "admin@hotelkapila.com",
-    password: "password123",
-    outletId: "11111111-1111-1111-1111-111111111111",
+    email: "admin@restaurant.com",
+    password: "admin123",
+    outletId: "a0deb015-8ef8-4ef5-aac7-6e91c9da6b5b",
     targetPath: "/",
   },
   {
@@ -40,9 +40,9 @@ const QUICK_ROLES: QuickRole[] = [
     label: "CASHIER",
     roleTitle: "Front Desk Cashier",
     icon: "💳",
-    email: "cashier@hotelkapila.com",
-    password: "password123",
-    outletId: "11111111-1111-1111-1111-111111111111",
+    email: "",
+    password: "",
+    outletId: "a0deb015-8ef8-4ef5-aac7-6e91c9da6b5b",
     targetPath: "/",
   },
   {
@@ -50,9 +50,9 @@ const QUICK_ROLES: QuickRole[] = [
     label: "CHEF",
     roleTitle: "Kitchen Display Staff",
     icon: "👨‍🍳",
-    email: "chef@hotelkapila.com",
-    password: "password123",
-    outletId: "11111111-1111-1111-1111-111111111111",
+    email: "",
+    password: "",
+    outletId: "a0deb015-8ef8-4ef5-aac7-6e91c9da6b5b",
     targetPath: "/kitchen",
   },
   {
@@ -60,29 +60,24 @@ const QUICK_ROLES: QuickRole[] = [
     label: "WAITER",
     roleTitle: "Floor Staff",
     icon: "🍽️",
-    email: "waiter@hotelkapila.com",
-    password: "password123",
-    outletId: "11111111-1111-1111-1111-111111111111",
+    email: "",
+    password: "",
+    outletId: "a0deb015-8ef8-4ef5-aac7-6e91c9da6b5b",
     targetPath: "/waiter",
   },
 ];
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("admin@hotelkapila.com");
-  const [password, setPassword] = useState("password123");
-  const [outletId, setOutletId] = useState("11111111-1111-1111-1111-111111111111");
+  const [email, setEmail] = useState("admin@restaurant.com");
+  const [password, setPassword] = useState("admin123");
+  const [outletId, setOutletId] = useState("a0deb015-8ef8-4ef5-aac7-6e91c9da6b5b");
   const [error, setError] = useState<string | null>(null);
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [activeRoleKey, setActiveRoleKey] = useState<string | null>(null);
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
-
-  // Clear any stale session data on the login page so users are not stuck
-  useEffect(() => {
-    logout().catch(() => {});
-  }, []);
 
   const performLogin = async (eMail: string, pass: string, outId: string, targetPath = "/") => {
     setError(null);

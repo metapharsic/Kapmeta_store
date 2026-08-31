@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import Head from "next/head";
 import { authedFetch, useAuthGuard } from "../lib/auth";
+import { useKapmetaSocket } from "../lib/useKapmetaSocket";
 import PetPoojaHeader from "../components/PetPoojaHeader";
 import PetPoojaKotView, { REFERENCE_KOT_TICKETS, KotCardData } from "../components/PetPoojaKotView";
 
@@ -62,28 +63,22 @@ export default function KitchenMonitor() {
     fetchTickets();
   }, [authLoading]);
 
-  // WebSocket for real-time updates
+  // Long-lived socket + backup poller + clock tick
+  useKapmetaSocket(
+    () => {
+      fetchTickets();
+    },
+    !authLoading,
+    "kitchen"
+  );
+
   useEffect(() => {
     if (authLoading) return;
-
-    let ws: WebSocket | null = null;
-    try {
-      ws = new WebSocket("ws://localhost:4001/ws");
-      ws.onmessage = (event) => {
-        try {
-          const payload = JSON.parse(event.data);
-          if (payload.topic === "kot.created" || payload.topic === "kot.status_updated") {
-            fetchTickets();
-          }
-        } catch {}
-      };
-    } catch {}
 
     const interval = setInterval(fetchTickets, 30000);
     const clock = setInterval(() => setNow(Date.now()), 1000);
 
     return () => {
-      if (ws) ws.close();
       clearInterval(interval);
       clearInterval(clock);
     };
@@ -151,7 +146,7 @@ export default function KitchenMonitor() {
         }}
       />
 
-      {/* Main PetPooja POS KOT View (Exact Screenshot Match: 8 Cards, 4 Columns, Pick Up, MM:SS Timers, MFR Input) */}
+      {/* Main PetPooja POS KOT View */}
       <PetPoojaKotView
         initialTickets={mappedTickets}
         onMarkFoodReady={(id) => {

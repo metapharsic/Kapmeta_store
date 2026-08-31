@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { prisma } from "../db";
+import { prisma } from "../prisma";
 import { createPurchaseOrder, receiveGoods, transitionPurchaseOrder, PrismaPurchaseRepository } from "@kapmeta/purchase";
 import { requireAuth, requirePermission, type AuthedRequest } from "../middleware/require-auth";
 

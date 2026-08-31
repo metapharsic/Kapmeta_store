@@ -6,6 +6,10 @@ interface TableOption {
   tableNumber: string;
   section: string | null;
   status: string;
+  currentOrder?: {
+    id: string;
+    kots?: { id: string; ticketNumber: string; status: string }[];
+  } | null;
 }
 
 interface MoveKotModalProps {
@@ -18,11 +22,15 @@ export default function MoveKotModal({ tables, onClose, onSuccess }: MoveKotModa
   const [sourceTableId, setSourceTableId] = useState("");
   const [targetTableId, setTargetTableId] = useState("");
   const [transferMode, setTransferMode] = useState<"FULL_TABLE" | "KOT">("FULL_TABLE");
+  const [kotTicketId, setKotTicketId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const occupiedTables = tables.filter((t) => t.status !== "VACANT");
+  // Source tables can be any occupied table, or any table with active orders, or fallback to all tables
+  const occupiedTables = tables.filter((t) => t.status === "OCCUPIED" || t.status === "RESERVED" || t.status !== "VACANT");
+  const availableSourceTables = occupiedTables.length > 0 ? occupiedTables : tables;
   const vacantTables = tables.filter((t) => t.id !== sourceTableId);
+  const sourceKots = tables.find((t) => t.id === sourceTableId)?.currentOrder?.kots || [];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,22 +38,27 @@ export default function MoveKotModal({ tables, onClose, onSuccess }: MoveKotModa
       setError("Please select both source and target tables.");
       return;
     }
+    if (transferMode === "KOT" && !kotTicketId) {
+      setError("Select the KOT ticket to move.");
+      return;
+    }
 
     setLoading(true);
     setError(null);
     try {
-      const res = await authedFetch(`/orders/tables/transfer`, {
+      const res = await authedFetch(`/tables/transfer`, {
         method: "POST",
         body: JSON.stringify({
           sourceTableId,
           targetTableId,
           transferMode,
+          kotTicketId: transferMode === "KOT" ? kotTicketId : undefined,
         }),
       });
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || "Failed to transfer table/KOT");
+        throw new Error(err.error || err.message || "Failed to transfer table/KOT");
       }
 
       onSuccess();
@@ -101,18 +114,45 @@ export default function MoveKotModal({ tables, onClose, onSuccess }: MoveKotModa
             <label>Source Table (From)</label>
             <select
               value={sourceTableId}
-              onChange={(e) => setSourceTableId(e.target.value)}
+              onChange={(e) => {
+                setSourceTableId(e.target.value);
+                setKotTicketId("");
+              }}
               className="select-field"
               required
             >
               <option value="">Select source table...</option>
-              {occupiedTables.map((t) => (
+              {availableSourceTables.map((t) => (
                 <option key={t.id} value={t.id}>
                   Table {t.tableNumber} ({t.section || "General"}) - {t.status}
                 </option>
               ))}
             </select>
           </div>
+
+          {transferMode === "KOT" && (
+            <div className="form-group" style={{ marginTop: "14px" }}>
+              <label>KOT Ticket</label>
+              <select
+                value={kotTicketId}
+                onChange={(e) => setKotTicketId(e.target.value)}
+                className="select-field"
+                required
+              >
+                <option value="">Select KOT to move...</option>
+                {sourceKots.map((k) => (
+                  <option key={k.id} value={k.id}>
+                    {k.ticketNumber} — {k.status}
+                  </option>
+                ))}
+              </select>
+              {sourceTableId && sourceKots.length === 0 && (
+                <p style={{ fontSize: "0.75rem", color: "#dc2626", marginTop: "6px" }}>
+                  No live KOTs on that table. Use Move Entire Table instead.
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="form-group" style={{ marginTop: "14px" }}>
             <label>Target Table (To)</label>

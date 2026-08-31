@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/router";
+import { getApiBase } from "../lib/auth";
 
 interface StaffProfile {
   id: string;
@@ -27,7 +28,7 @@ export default function CaptainPinLoginModal({
   isOpen,
   onClose,
   onSuccess,
-  outletId = "11111111-1111-1111-1111-111111111111",
+  outletId = "a0deb015-8ef8-4ef5-aac7-6e91c9da6b5b",
 }: CaptainPinLoginModalProps) {
   const router = useRouter();
   const [selectedStaff, setSelectedStaff] = useState<StaffProfile>(STAFF_LIST[0]);
@@ -65,7 +66,7 @@ export default function CaptainPinLoginModal({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/auth/pin-login", {
+      const res = await fetch(`${getApiBase()}/auth/pin-login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

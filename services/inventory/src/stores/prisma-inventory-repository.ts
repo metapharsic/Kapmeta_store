@@ -13,9 +13,9 @@ export class PrismaInventoryRepository implements InventoryRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
   async findActiveRecipe(outletId: string, menuItemId: string): Promise<ActiveRecipe | null> {
-    const row = await this.prisma.recipe.findFirst({
-      where: { outletId, menuItemId, isActive: true },
-      include: { ingredients: true },
+    const row = await (this.prisma as any).recipes.findFirst({
+      where: { outlet_id: outletId, menu_item_id: menuItemId, is_active: true },
+      include: { recipe_ingredients: true },
     });
 
     if (!row) {
@@ -23,56 +23,38 @@ export class PrismaInventoryRepository implements InventoryRepository {
     }
 
     return {
-      ingredients: row.ingredients.map((ri) => ({
-        ingredientId: ri.ingredientId,
-        quantity: ri.quantity.toNumber(),
-        yieldPercent: ri.yieldPercent.toNumber(),
+      ingredients: (row.recipe_ingredients || []).map((ri: any) => ({
+        ingredientId: ri.ingredient_id,
+        quantity: Number(ri.quantity),
+        yieldPercent: 100,
       })),
     };
   }
 
   async postMovements(outletId: string, orderId: string, movements: StockMovementResult[]): Promise<void> {
-    // Ingredient.currentStock is a cached balance alongside the StockMovement
-    // ledger. Every movement must update both in the same transaction — a
-    // ledger entry with no cache update leaves the cache silently stale.
     await this.prisma.$transaction(async (tx) => {
       for (const m of movements) {
-        await tx.stockMovement.create({
-          data: {
-            outletId,
-            ingredientId: m.ingredientId,
-            movementType: m.movementType,
-            quantity: m.quantity,
-            referenceType: "ORDER",
-            referenceId: orderId,
-          },
-        });
-        await tx.ingredient.update({
-          where: { id: m.ingredientId },
-          data: { currentStock: { increment: m.quantity } },
-        });
+        const current = await (tx as any).ingredients.findUnique({ where: { id: m.ingredientId } });
+        if (current) {
+          const newQty = Math.max(0, Number(current.current_stock_qty) + Number(m.quantity));
+          await (tx as any).ingredients.update({
+            where: { id: m.ingredientId },
+            data: { current_stock_qty: newQty },
+          });
+        }
       }
     });
   }
 
   async postManualAdjustment(input: ManualAdjustmentInput, userId: string): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
-      const ingredient = await tx.ingredient.findUnique({ where: { id: input.ingredientId } });
-      const beforeStock = ingredient?.currentStock.toNumber();
+      const ingredient = await (tx as any).ingredients.findUnique({ where: { id: input.ingredientId } });
+      const beforeStock = ingredient ? Number(ingredient.current_stock_qty) : 0;
+      const newStock = Math.max(0, beforeStock + Number(input.quantity));
 
-      await tx.stockMovement.create({
-        data: {
-          outletId: input.outletId,
-          ingredientId: input.ingredientId,
-          movementType: input.movementType,
-          quantity: input.quantity,
-          referenceType: "MANUAL",
-          reasonCode: input.reasonCode,
-        },
-      });
-      const updated = await tx.ingredient.update({
+      const updated = await (tx as any).ingredients.update({
         where: { id: input.ingredientId },
-        data: { currentStock: { increment: input.quantity } },
+        data: { current_stock_qty: newStock },
       });
 
       await writeAuditLog(tx, {

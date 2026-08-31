@@ -13,7 +13,7 @@ export class ExecutiveDashboard {
       where: {
         outletId,
         createdAt: { gte: startDate, lte: endDate },
-        status: { in: ["SETTLED", "COMPLETED"] } // Only completed orders
+        status: "COMPLETED",
       },
       include: {
         orderItems: {
@@ -23,7 +23,6 @@ export class ExecutiveDashboard {
             }
           }
         },
-        invoices: true
       }
     });
 
@@ -39,17 +38,17 @@ export class ExecutiveDashboard {
 
     for (const order of orders) {
       totalRevenue += order.grandTotal;
-      totalDiscount += order.discountTotal;
+      totalDiscount += order.discountTotal || 0n;
 
       const hour = order.createdAt.getHours();
       hourlyVelocity[hour] += order.grandTotal;
 
       for (const item of order.orderItems) {
-        const catName = item.menuItem.category.name;
+        const catName = item.menuItem?.category?.name || "General";
         if (!categoryMix[catName]) {
           categoryMix[catName] = { quantity: 0, revenue: 0n };
         }
-        categoryMix[catName].quantity += item.quantity;
+        categoryMix[catName].quantity += Number(item.quantity);
         categoryMix[catName].revenue += item.subtotal;
       }
     }

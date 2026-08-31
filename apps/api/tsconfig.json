@@ -2,8 +2,34 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": ".",
-    "noImplicitAny": false
+    "rootDir": "../..",
+    "baseUrl": "../..",
+    "noImplicitAny": false,
+    "paths": {
+      "@pos-web/*": ["apps/pos-web/*"],
+      "@admin-web/*": ["apps/admin-web/*"],
+      "@api/*": ["apps/api/*"],
+      "@kapmeta/config": ["packages/config"],
+      "@kapmeta/shared-types": ["packages/shared-types"],
+      "@kapmeta/shared-types/*": ["packages/shared-types/*"],
+      "@kapmeta/ui-kit": ["packages/ui-kit"],
+      "@kapmeta/auth": ["services/auth/src/index.ts"],
+      "@kapmeta/orders": ["services/orders/src/index.ts"],
+      "@kapmeta/menu": ["services/menu/src/index.ts"],
+      "@kapmeta/kitchen": ["services/kitchen/src/index.ts"],
+      "@kapmeta/finance": ["services/finance/src/index.ts"],
+      "@kapmeta/inventory": ["services/inventory/src/index.ts"],
+      "@kapmeta/reporting": ["services/reporting/src/index.ts"],
+      "@kapmeta/crm": ["services/crm/src/index.ts"],
+      "@kapmeta/tables": ["services/tables/src/index.ts"],
+      "@kapmeta/marketing": ["services/marketing/src/index.ts"],
+      "@kapmeta/notifications": ["services/notifications/src/index.ts"],
+      "@kapmeta/integration": ["services/integration/src/index.ts"],
+      "@kapmeta/integration-hub": ["services/integration-hub/src/index.ts"],
+      "@kapmeta/purchase": ["services/purchase/src/index.ts"],
+      "@kapmeta/aggregator": ["services/aggregator/src/index.ts"],
+      "@kapmeta/shared": ["services/shared/src/index.ts"]
+    }
   },
   "include": ["src", "test"]
 }

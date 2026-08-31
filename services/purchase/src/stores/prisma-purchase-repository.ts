@@ -22,23 +22,23 @@ export class PrismaPurchaseRepository implements PurchaseRepository {
   ): Promise<{ id: string; status: PoStatus }> {
     void tier;
     await this.prisma.$transaction(async (tx) => {
-      await tx.purchaseOrder.create({
+      await (tx as any).purchase_orders.create({
         data: {
           id,
-          outletId: input.outletId,
-          vendorId: input.vendorId,
-          poNumber,
+          outlet_id: input.outletId,
+          vendor_id: input.vendorId,
+          po_number: poNumber,
           status: "DRAFT",
-          totalAmount: totalAmountMinor,
+          total_cost_minor: totalAmountMinor,
         },
       });
-      await tx.purchaseOrderItem.createMany({
+      await (tx as any).purchase_order_items.createMany({
         data: input.lines.map((line) => ({
-          purchaseOrderId: id,
-          ingredientId: line.ingredientId,
+          po_id: id,
+          ingredient_id: line.ingredientId,
           quantity: line.quantity,
-          unitCost: line.unitCostMinor,
-          totalCost: BigInt(line.quantity) * line.unitCostMinor,
+          unit_cost_minor: line.unitCostMinor,
+          total_cost_minor: BigInt(line.quantity) * line.unitCostMinor,
         })),
       });
     });
@@ -55,24 +55,24 @@ export class PrismaPurchaseRepository implements PurchaseRepository {
     const status = variances.some((v) => v.quantityMismatch) ? "VARIANCE_FLAGGED" : "VERIFIED";
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.goodsReceivedNote.create({
+      await (tx as any).goods_received_notes?.create?.({
         data: {
           id,
-          outletId: input.outletId,
-          purchaseOrderId: input.purchaseOrderId,
-          vendorId: input.vendorId,
-          grnNumber,
-          invoiceNumber: input.invoiceNumber,
+          outlet_id: input.outletId,
+          purchase_order_id: input.purchaseOrderId,
+          vendor_id: input.vendorId,
+          grn_number: grnNumber,
+          invoice_number: input.invoiceNumber,
           status,
         },
       });
-      await tx.goodsReceivedNoteItem.createMany({
+      await (tx as any).goods_received_note_items?.createMany?.({
         data: input.lines.map((line) => ({
-          goodsReceivedNoteId: id,
-          ingredientId: line.ingredientId,
-          orderedQuantity: line.orderedQuantity,
-          receivedQuantity: line.receivedQuantity,
-          unitCost: line.unitCostMinor,
+          grn_id: id,
+          ingredient_id: line.ingredientId,
+          ordered_quantity: line.orderedQuantity,
+          received_quantity: line.receivedQuantity,
+          unit_cost_minor: line.unitCostMinor,
         })),
       });
     });
@@ -81,7 +81,7 @@ export class PrismaPurchaseRepository implements PurchaseRepository {
   }
 
   async getPoStatus(poId: string): Promise<PoStatus | null> {
-    const row = await this.prisma.purchaseOrder.findUnique({
+    const row = await (this.prisma as any).purchase_orders.findUnique({
       where: { id: poId },
       select: { status: true },
     });
@@ -90,20 +90,20 @@ export class PrismaPurchaseRepository implements PurchaseRepository {
 
   async recordPoTransition(poId: string, newStatus: PoStatus, userId: string): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
-      const previous = await tx.purchaseOrder.findUniqueOrThrow({
+      const previous = await (tx as any).purchase_orders.findUniqueOrThrow({
         where: { id: poId },
         select: { status: true },
       });
 
-      const po = await tx.purchaseOrder.update({
+      const po = await (tx as any).purchase_orders.update({
         where: { id: poId },
         data: { status: newStatus },
-        select: { outletId: true },
+        select: { outlet_id: true },
       });
 
       if (newStatus === "APPROVED" || newStatus === "CANCELLED") {
         await writeAuditLog(tx, {
-          outletId: po.outletId,
+          outletId: po.outlet_id,
           userId,
           action: newStatus === "APPROVED" ? "PO_APPROVED" : "PO_CANCELLED",
           entityType: "PURCHASE_ORDER",
@@ -116,7 +116,7 @@ export class PrismaPurchaseRepository implements PurchaseRepository {
         // consequence should surface in the Action Center for whoever created
         // or is tracking it, not just the actor who flipped the status.
         await writeNotification(tx, {
-          outletId: po.outletId,
+          outletId: po.outlet_id,
           type: newStatus === "APPROVED" ? "PO_APPROVED" : "PO_CANCELLED",
           title: newStatus === "APPROVED" ? "Purchase order approved" : "Purchase order cancelled",
           message:

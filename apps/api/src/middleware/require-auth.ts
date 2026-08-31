@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
-import { prisma } from "../db";
 import { verifyAccessToken, PrismaRbacChecker } from "@kapmeta/auth";
+import { prisma } from "../prisma";
 
 const rbac = new PrismaRbacChecker(prisma);
 

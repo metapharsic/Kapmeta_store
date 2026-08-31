@@ -23,6 +23,8 @@ interface SalesSummaryApi {
 // serialized as a string).
 interface ItemPerformanceApi {
   menuItemId: string;
+  menuItemName?: string;
+  name?: string;
   quantitySold: number;
   netSalesMinor: string;
 }
@@ -74,7 +76,6 @@ interface TableTurnaroundApi {
   qualifyingOrderCount: number;
 }
 
-// Real response shape of GET /leakage-report (LeakageReport, bigint fields as strings).
 interface LeakageReportApi {
   outletId: string;
   fromDate: string;
@@ -90,6 +91,76 @@ interface LeakageReportApi {
   totalWaivedOffMinor: string;
   kotsNotBilledCount: number;
   estimatedRevenueAtRiskMinor: string;
+}
+
+interface TaxComponentBreakdownApi {
+  componentName: string;
+  ratePercent: number;
+  taxableAmountMinor: string;
+  taxCollectedMinor: string;
+  percentageShare: number;
+}
+
+interface TaxBreakdownApi {
+  outletId: string;
+  fromDate: string;
+  toDate: string;
+  formulaVersion: number;
+  totalTaxableSalesMinor: string;
+  totalTaxCollectedMinor: string;
+  effectiveTaxRatePercent: number;
+  orderCount: number;
+  components: TaxComponentBreakdownApi[];
+}
+
+interface TableSectionOccupancyApi {
+  section: string;
+  totalTables: number;
+  occupiedTables: number;
+  vacantTables: number;
+  totalCapacity: number;
+  occupiedCapacity: number;
+  occupancyRatePercent: number;
+}
+
+interface TableOccupancyApi {
+  outletId: string;
+  totalTables: number;
+  occupiedTables: number;
+  vacantTables: number;
+  occupancyRatePercent: number;
+  totalCapacity: number;
+  occupiedCapacity: number;
+  capacityUtilizationPercent: number;
+  sections: TableSectionOccupancyApi[];
+}
+
+interface InvoiceItemApi {
+  id: string;
+  name: string;
+  quantity: number;
+  priceMinor: string;
+  totalMinor: string;
+  isVeg: boolean;
+}
+
+interface RecentInvoiceApi {
+  id: string;
+  invoiceNumber: string;
+  orderNumber: string;
+  orderType: string;
+  status: string;
+  tableNumber: string | null;
+  section: string | null;
+  subtotalMinor: string;
+  taxTotalMinor: string;
+  discountTotalMinor: string;
+  grandTotalMinor: string;
+  paymentMethod: string;
+  paymentStatus: string;
+  itemCount: number;
+  items: InvoiceItemApi[];
+  createdAt: string;
 }
 
 type TimeRange = "Day" | "Month" | "Quarter" | "Year";
@@ -118,6 +189,10 @@ export default function AdminDashboard() {
   const [channelBreakdown, setChannelBreakdown] = useState<ChannelBreakdownApi | null>(null);
   const [tableTurnaround, setTableTurnaround] = useState<TableTurnaroundApi | null>(null);
   const [leakageReport, setLeakageReport] = useState<LeakageReportApi | null>(null);
+  const [taxBreakdown, setTaxBreakdown] = useState<TaxBreakdownApi | null>(null);
+  const [tableOccupancy, setTableOccupancy] = useState<TableOccupancyApi | null>(null);
+  const [recentInvoices, setRecentInvoices] = useState<RecentInvoiceApi[]>([]);
+  const [selectedInvoice, setSelectedInvoice] = useState<RecentInvoiceApi | null>(null);
   const [timeRange, setTimeRange] = useState<TimeRange>("Month");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -208,6 +283,30 @@ export default function AdminDashboard() {
           `Unbilled KOTs,${data.kotsNotBilledCount || 0}`,
           `Estimated Revenue At Risk (Rs),${(Number(data.estimatedRevenueAtRiskMinor || 0) / 100).toFixed(2)}`
         ].join("\n");
+      case "tax-breakdown": {
+        const comps = Array.isArray(data.components) ? data.components : [];
+        const lines = [
+          "Tax Component,Rate (%),Taxable Sales (Rs),Tax Collected (Rs),Share (%)",
+          ...comps.map((c: any) =>
+            `"${c.componentName}",${c.ratePercent}%,${(Number(c.taxableAmountMinor || 0) / 100).toFixed(2)},${(Number(c.taxCollectedMinor || 0) / 100).toFixed(2)},${(c.percentageShare || 0).toFixed(1)}%`
+          ),
+          "",
+          `Total Taxable Turnover (Rs),${(Number(data.totalTaxableSalesMinor || 0) / 100).toFixed(2)}`,
+          `Total GST Collected (Rs),${(Number(data.totalTaxCollectedMinor || 0) / 100).toFixed(2)}`,
+          `Effective Tax Rate,${(data.effectiveTaxRatePercent || 0).toFixed(2)}%`
+        ];
+        return lines.join("\n");
+      }
+      case "invoices": {
+        const invs = Array.isArray(data) ? data : [];
+        const lines = [
+          "Invoice Number,Order Number,Order Type,Table,Items Count,Subtotal (Rs),Tax (Rs),Grand Total (Rs),Payment Method,Date & Time",
+          ...invs.map((inv: any) =>
+            `"${inv.invoiceNumber}","${inv.orderNumber}","${inv.orderType}","${inv.tableNumber || '-'}",${inv.itemCount || 0},${(Number(inv.subtotalMinor || 0) / 100).toFixed(2)},${(Number(inv.taxTotalMinor || 0) / 100).toFixed(2)},${(Number(inv.grandTotalMinor || 0) / 100).toFixed(2)},"${inv.paymentMethod}","${inv.createdAt}"`
+          )
+        ];
+        return lines.join("\n");
+      }
       case "tally-export": {
         const vouchers = Array.isArray(data.vouchers) ? data.vouchers : [];
         const lines = ["Date,Voucher Number,Narration,Ledger Account,Entry Type,Amount (Rs)"];
@@ -295,7 +394,7 @@ export default function AdminDashboard() {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
 
-    Promise.all([
+    Promise.allSettled([
       authedFetch(`/reporting/sales-summary?${qs}`, { signal: controller.signal }).then((res) => {
         if (!res.ok) throw new Error("HTTP error " + res.status);
         return res.json() as Promise<SalesSummaryApi>;
@@ -320,15 +419,35 @@ export default function AdminDashboard() {
         if (!res.ok) throw new Error("HTTP error " + res.status);
         return res.json() as Promise<LeakageReportApi>;
       }),
+      authedFetch(`/reporting/tax-breakdown?${qs}`, { signal: controller.signal }).then((res) => {
+        if (!res.ok) throw new Error("HTTP error " + res.status);
+        return res.json() as Promise<TaxBreakdownApi>;
+      }),
+      authedFetch(`/tables/occupancy`, { signal: controller.signal }).then((res) => {
+        if (!res.ok) throw new Error("HTTP error " + res.status);
+        return res.json() as Promise<TableOccupancyApi>;
+      }),
+      authedFetch(`/reporting/invoices?limit=25&${qs}`, { signal: controller.signal }).then((res) => {
+        if (!res.ok) throw new Error("HTTP error " + res.status);
+        return res.json() as Promise<RecentInvoiceApi[]>;
+      }),
     ])
-      .then(([summaryRes, itemsRes, paymentRes, channelRes, ttaRes, leakageRes]) => {
+      .then((results) => {
         clearTimeout(timeout);
-        setSummary(summaryRes);
-        setItems(Array.isArray(itemsRes) ? itemsRes : []);
-        setPaymentBreakdown(paymentRes);
-        setChannelBreakdown(channelRes);
-        setTableTurnaround(ttaRes);
-        setLeakageReport(leakageRes);
+        const value = <T,>(r: PromiseSettledResult<T>, fallback: T): T =>
+          r.status === "fulfilled" ? r.value : fallback;
+        const [summaryRes, itemsRes, paymentRes, channelRes, ttaRes, leakageRes, taxRes, occupancyRes, invoicesRes] = results;
+        setSummary(value(summaryRes, null as SalesSummaryApi | null));
+        setItems(value(itemsRes, [] as ItemPerformanceApi[]));
+        setPaymentBreakdown(value(paymentRes, null as PaymentBreakdownApi | null));
+        setChannelBreakdown(value(channelRes, null as ChannelBreakdownApi | null));
+        setTableTurnaround(value(ttaRes, null as TableTurnaroundApi | null));
+        setLeakageReport(value(leakageRes, null as LeakageReportApi | null));
+        setTaxBreakdown(value(taxRes, null as TaxBreakdownApi | null));
+        setTableOccupancy(value(occupancyRes, null as TableOccupancyApi | null));
+        setRecentInvoices(value(invoicesRes, [] as RecentInvoiceApi[]));
+        const failed = results.filter((r) => r.status === "rejected");
+        setLoadError(failed.length === results.length ? "Failed to load reports" : null);
         setLoading(false);
       })
       .catch((err) => {
@@ -340,6 +459,9 @@ export default function AdminDashboard() {
         setChannelBreakdown(null);
         setTableTurnaround(null);
         setLeakageReport(null);
+        setTaxBreakdown(null);
+        setTableOccupancy(null);
+        setRecentInvoices([]);
         setLoading(false);
       });
   };
@@ -347,11 +469,15 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (authLoading) return;
     fetchReports();
+    const interval = setInterval(fetchReports, 15000);
+    return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, timeRange]);
 
-  const formatMoney = (minor: string | number) => {
-    const paise = typeof minor === "string" ? Number(minor) : minor;
+  const formatMoney = (minor: any) => {
+    if (minor === undefined || minor === null || minor === "") return "₹0.00";
+    const paise = typeof minor === "bigint" ? Number(minor) : Number(minor);
+    if (isNaN(paise)) return "₹0.00";
     return "₹" + (paise / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
 
@@ -482,6 +608,8 @@ export default function AdminDashboard() {
                     <option value="channel-breakdown">Channel Sales Breakdown</option>
                     <option value="table-turnaround">Table Turnaround Average</option>
                     <option value="leakage-report">Leakage & Loss Detection</option>
+                    <option value="tax-breakdown">GST Statutory Tax Breakdown</option>
+                    <option value="invoices">Settled Invoices Ledger (CSV)</option>
                     <option value="tally-export">Tally ERP Voucher Export</option>
                     <option value="z-report">Daily Z-Report</option>
                   </select>
@@ -668,7 +796,7 @@ export default function AdminDashboard() {
                     </div>
                   </div>
 
-                  <div className="kpi-card muted">
+                  <div className="kpi-card">
                     <div className="kpi-top">
                       <div className="icon-badge blue">
                         <span>👥</span>
@@ -676,7 +804,13 @@ export default function AdminDashboard() {
                       <span className="kpi-heading">TABLE OCCUPANCY RATE</span>
                     </div>
                     <div className="kpi-main">
-                      <h2 className="kpi-number na">Not available</h2>
+                      <h2 className="kpi-number">
+                        {tableOccupancy ? `${tableOccupancy.occupancyRatePercent.toFixed(1)}%` : "0.0%"}
+                      </h2>
+                      <div style={{ marginTop: "6px", fontSize: "0.75rem", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: "6px" }}>
+                        <span style={{ display: "inline-block", width: "8px", height: "8px", borderRadius: "50%", background: (tableOccupancy?.occupiedTables ?? 0) > 0 ? "var(--accent)" : "#10b981" }}></span>
+                        <span>{tableOccupancy?.occupiedTables ?? 0} of {tableOccupancy?.totalTables ?? 0} tables occupied</span>
+                      </div>
                     </div>
                   </div>
                 </section>
@@ -731,16 +865,47 @@ export default function AdminDashboard() {
                     <div className="panel-header">
                       <div>
                         <h3>GST Statutory Audit</h3>
-                        <p className="panel-sub">Requires a tax breakdown endpoint</p>
+                        <p className="panel-sub">Statutory tax liabilities & GST slab breakdown</p>
                       </div>
-                      <span className="pill-status muted">Not available</span>
+                      <span className="total-badge">{formatMoney(taxBreakdown?.totalTaxCollectedMinor ?? "0")}</span>
                     </div>
-                    <div className="not-available-box">
-                      <p>
-                        /sales-summary does not currently return tax figures. This section will
-                        populate once a GST/tax breakdown endpoint exists.
-                      </p>
-                    </div>
+                    {(!taxBreakdown || taxBreakdown.components.length === 0 || Number(taxBreakdown.totalTaxCollectedMinor) === 0) && (
+                      <div className="not-available-box">
+                        <p>No tax liabilities recorded for the selected period.</p>
+                      </div>
+                    )}
+                    {taxBreakdown && Number(taxBreakdown.totalTaxCollectedMinor) > 0 && (
+                      <div className="table-responsive">
+                        <table className="clean-table">
+                          <thead>
+                            <tr>
+                              <th>Component</th>
+                              <th>Rate</th>
+                              <th>Taxable Basis</th>
+                              <th>Tax Collected</th>
+                              <th>Share</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {taxBreakdown.components.map((c) => (
+                              <tr key={c.componentName}>
+                                <td>
+                                  <strong>{c.componentName}</strong>
+                                </td>
+                                <td>{c.ratePercent}%</td>
+                                <td className="amount-cell">{formatMoney(c.taxableAmountMinor)}</td>
+                                <td className="amount-cell">{formatMoney(c.taxCollectedMinor)}</td>
+                                <td>{c.percentageShare.toFixed(1)}%</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        <div style={{ padding: "12px 16px", background: "var(--bg-base)", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+                          <span>Effective Rate: <strong>{taxBreakdown.effectiveTaxRatePercent}%</strong></span>
+                          <span>Taxable Turnover: <strong>{formatMoney(taxBreakdown.totalTaxableSalesMinor)}</strong></span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </section>
 
@@ -765,7 +930,7 @@ export default function AdminDashboard() {
                       <table className="clean-table">
                         <thead>
                           <tr>
-                            <th>Menu Item ID</th>
+                            <th>Dish / Menu Item</th>
                             <th>Quantity Sold</th>
                             <th>Net Sales</th>
                           </tr>
@@ -774,7 +939,7 @@ export default function AdminDashboard() {
                           {topItems.map((it) => (
                             <tr key={it.menuItemId}>
                               <td>
-                                <strong>{it.menuItemId}</strong>
+                                <strong>{it.menuItemName || it.name || it.menuItemId}</strong>
                               </td>
                               <td>{it.quantitySold}</td>
                               <td className="amount-cell">{formatMoney(it.netSalesMinor)}</td>
@@ -963,25 +1128,230 @@ export default function AdminDashboard() {
                   )}
                 </section>
 
-                {/* Recent Settled Invoices — no invoices-list endpoint exists yet. */}
+                {/* Recent Settled Invoices — real data from /reporting/invoices */}
                 <section className="panel-card invoices-table-card">
                   <div className="panel-header">
                     <div>
                       <h3>Recent Settled Invoices</h3>
-                      <p className="panel-sub">Requires an invoices-list endpoint</p>
+                      <p className="panel-sub">Audited settled bills, payment modes & receipt reprint feed</p>
                     </div>
-                    <span className="pill-status muted">Not available</span>
+                    <span className="total-badge">{recentInvoices.length} settled bills</span>
                   </div>
-                  <div className="not-available-box">
-                    <p>
-                      There is no invoices-list endpoint in the reporting API yet, so this table
-                      cannot show real data. It will populate once that endpoint exists.
-                    </p>
-                  </div>
+
+                  {recentInvoices.length === 0 && (
+                    <div className="not-available-box">
+                      <p>No settled invoices recorded for the selected period.</p>
+                    </div>
+                  )}
+
+                  {recentInvoices.length > 0 && (
+                    <div className="table-responsive">
+                      <table className="clean-table">
+                        <thead>
+                          <tr>
+                            <th>Invoice / Order #</th>
+                            <th>Channel / Table</th>
+                            <th>Items</th>
+                            <th>Subtotal</th>
+                            <th>GST Tax</th>
+                            <th>Grand Total</th>
+                            <th>Payment</th>
+                            <th>Settled At</th>
+                            <th>Receipt</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {recentInvoices.map((inv) => (
+                            <tr key={inv.id}>
+                              <td>
+                                <strong>{inv.invoiceNumber}</strong>
+                                {inv.orderNumber && inv.orderNumber !== inv.invoiceNumber && (
+                                  <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>Ref: {inv.orderNumber}</div>
+                                )}
+                              </td>
+                              <td>
+                                <span className="pill-status info" style={{ textTransform: "capitalize" }}>
+                                  {inv.orderType.toLowerCase()} {inv.tableNumber ? `(${inv.tableNumber})` : ""}
+                                </span>
+                              </td>
+                              <td>{inv.itemCount} items</td>
+                              <td className="amount-cell">{formatMoney(inv.subtotalMinor)}</td>
+                              <td className="amount-cell">{formatMoney(inv.taxTotalMinor)}</td>
+                              <td className="amount-cell"><strong>{formatMoney(inv.grandTotalMinor)}</strong></td>
+                              <td>
+                                <span className="pill-status success" style={{ fontWeight: 700 }}>
+                                  {inv.paymentMethod}
+                                </span>
+                              </td>
+                              <td style={{ fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
+                                {new Date(inv.createdAt).toLocaleString("en-IN", {
+                                  day: "2-digit",
+                                  month: "short",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </td>
+                              <td>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedInvoice(inv)}
+                                  style={{
+                                    padding: "6px 12px",
+                                    borderRadius: "var(--radius-sm)",
+                                    border: "1px solid var(--border)",
+                                    background: "var(--bg-base)",
+                                    color: "var(--text-primary)",
+                                    fontSize: "0.75rem",
+                                    fontWeight: 700,
+                                    cursor: "pointer",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: "4px",
+                                  }}
+                                >
+                                  👁️ View Receipt
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </section>
               </>
             )}
           </>
+        )}
+
+        {/* Receipt Audit & Thermal Print Modal */}
+        {selectedInvoice && (
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: "rgba(0, 0, 0, 0.65)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 9999,
+              padding: "20px",
+              backdropFilter: "blur(4px)",
+            }}
+            onClick={() => setSelectedInvoice(null)}
+          >
+            <div
+              style={{
+                background: "#ffffff",
+                color: "#1e293b",
+                width: "100%",
+                maxWidth: "380px",
+                borderRadius: "var(--radius-lg)",
+                boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
+                padding: "24px",
+                fontFamily: "monospace, monospace",
+                position: "relative",
+                maxHeight: "90vh",
+                overflowY: "auto",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ textAlign: "center", borderBottom: "2px dashed #cbd5e1", paddingBottom: "16px", marginBottom: "16px" }}>
+                <h3 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 900, letterSpacing: "-0.5px", color: "#0f172a" }}>
+                  {me?.outletName || "PETPOOJA RESTAURANT"}
+                </h3>
+                <p style={{ margin: "4px 0 0", fontSize: "0.75rem", color: "#64748b" }}>TAX INVOICE / AUDIT RECEIPT</p>
+                <div style={{ marginTop: "8px", fontSize: "0.75rem", color: "#334155" }}>
+                  <div>Invoice: <strong>{selectedInvoice.invoiceNumber}</strong></div>
+                  <div>Date: {new Date(selectedInvoice.createdAt).toLocaleString("en-IN")}</div>
+                  <div>Type: <strong>{selectedInvoice.orderType}</strong> {selectedInvoice.tableNumber ? `| Table: ${selectedInvoice.tableNumber}` : ""}</div>
+                </div>
+              </div>
+
+              <div style={{ borderBottom: "1px dashed #cbd5e1", paddingBottom: "12px", marginBottom: "12px" }}>
+                <table style={{ width: "100%", fontSize: "0.8125rem", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr style={{ borderBottom: "1px solid #e2e8f0", color: "#64748b" }}>
+                      <th style={{ textAlign: "left", paddingBottom: "4px" }}>Item</th>
+                      <th style={{ textAlign: "center", paddingBottom: "4px" }}>Qty</th>
+                      <th style={{ textAlign: "right", paddingBottom: "4px" }}>Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedInvoice.items.map((it) => (
+                      <tr key={it.id}>
+                        <td style={{ padding: "4px 0" }}>{it.name}</td>
+                        <td style={{ textAlign: "center", padding: "4px 0" }}>{it.quantity}</td>
+                        <td style={{ textAlign: "right", padding: "4px 0" }}>{formatMoney(it.totalMinor)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div style={{ fontSize: "0.8125rem", lineHeight: "1.6", borderBottom: "2px dashed #cbd5e1", paddingBottom: "12px", marginBottom: "16px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span>Taxable Subtotal:</span>
+                  <strong>{formatMoney(selectedInvoice.subtotalMinor)}</strong>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", color: "#64748b" }}>
+                  <span>CGST (2.5%):</span>
+                  <span>{formatMoney(BigInt(Math.floor(Number(selectedInvoice.taxTotalMinor) / 2)))}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", color: "#64748b" }}>
+                  <span>SGST (2.5%):</span>
+                  <span>{formatMoney(BigInt(Math.ceil(Number(selectedInvoice.taxTotalMinor) / 2)))}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "1rem", fontWeight: 900, marginTop: "8px", paddingTop: "8px", borderTop: "1px solid #e2e8f0", color: "#0f172a" }}>
+                  <span>GRAND TOTAL:</span>
+                  <span>{formatMoney(selectedInvoice.grandTotalMinor)}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "#16a34a", marginTop: "4px", fontWeight: 700 }}>
+                  <span>PAYMENT METHOD:</span>
+                  <span>{selectedInvoice.paymentMethod} (CAPTURED)</span>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: "10px", marginTop: "16px" }}>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  style={{
+                    flex: 1,
+                    padding: "10px",
+                    borderRadius: "var(--radius-md)",
+                    border: "none",
+                    background: "var(--accent)",
+                    color: "#fff",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    fontSize: "0.875rem",
+                  }}
+                >
+                  🖨️ Print Duplicate
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedInvoice(null)}
+                  style={{
+                    padding: "10px 16px",
+                    borderRadius: "var(--radius-md)",
+                    border: "1px solid #cbd5e1",
+                    background: "#f8fafc",
+                    color: "#475569",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    fontSize: "0.875rem",
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </main>
 

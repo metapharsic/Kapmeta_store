@@ -1,6 +1,7 @@
 import { Router } from "express";
-import { prisma } from "../db";
+
 import { requireAuth, requirePermission, AuthedRequest } from "../middleware/require-auth";
+import { prisma } from "../prisma";
 import {
   createCampaign,
   listCampaigns,

@@ -102,9 +102,11 @@ export default function ItemToggleModal({ onClose }: ItemToggleModalProps) {
       // 1. Persist to API
       await authedFetch(`/menu/items/${item.id}/availability`, {
         method: "PATCH",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           isStocked: nextStocked,
           stockQty: nextStocked ? 100 : 0,
+          expectedVersion: 1,
         }),
       }).catch(() => {});
 

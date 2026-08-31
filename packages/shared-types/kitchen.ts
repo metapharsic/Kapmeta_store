@@ -27,6 +27,7 @@ export interface KotLineInput {
   quantity: number;
   notes?: string;
   course?: string;
+  orderItemId?: string;
 }
 
 export interface CreateKotInput {

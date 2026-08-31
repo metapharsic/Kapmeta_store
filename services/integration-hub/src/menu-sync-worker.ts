@@ -18,13 +18,13 @@ export class MenuSyncWorker {
   async syncCatalogToChannels(outletId: string): Promise<ChannelSyncResult[]> {
     const items = await this.prisma.menuItem.findMany({
       where: { outletId },
-      include: { category: true, availabilities: true },
+      include: { category: true },
     });
 
     const user = await this.prisma.user.findFirst();
-    const userId = user?.id || "system-sync";
+    const userId = user?.id || outletId;
 
-    const outOfStockItems = items.filter((i) => !i.isActive || (i.availabilities.length > 0 && !i.availabilities[0].isStocked));
+    const outOfStockItems = items.filter((i) => !i.isActive);
     const channels = ["SWIGGY", "ZOMATO", "MAGICPIN"];
     const results: ChannelSyncResult[] = [];
 
@@ -34,8 +34,8 @@ export class MenuSyncWorker {
         await this.prisma.auditLog.create({
           data: {
             outletId,
-            userId,
-            action: "MENU_SYNC_ONLINE_AGGREGATOR",
+            actor_id: userId,
+            action: "UPDATE",
             entityType: "MENU_ITEM",
             entityId: outletId,
             afterState: {

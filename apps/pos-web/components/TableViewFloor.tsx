@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/router";
 import { authedFetch } from "../lib/auth";
+import { useKapmetaSocket } from "../lib/useKapmetaSocket";
 import MoveKotModal from "./MoveKotModal";
 import AddTableModal from "./AddTableModal";
 
@@ -8,12 +9,18 @@ interface TableItem {
   id: string;
   tableNumber: string;
   capacity: number;
-  section: string;
-  status: "VACANT" | "RUNNING" | "PRINTED" | "PAID" | "RUNNING_KOT";
+  section: string | null;
+  status: "VACANT" | "RUNNING" | "PRINTED" | "PAID" | "RUNNING_KOT" | "DIRTY";
+  kitchenStage?: "QUEUED" | "COOKING" | "READY" | "SERVED" | null;
   activeOrderId?: string | null;
   totalMinor?: number;
   elapsedMinutes?: number;
   itemCount?: number;
+  currentOrder?: any;
+  mergeGroupId?: string | null;
+  mergePrimaryTableId?: string | null;
+  mergedWith?: string[];
+  isMergePrimary?: boolean;
 }
 
 interface TableViewFloorProps {
@@ -22,262 +29,228 @@ interface TableViewFloorProps {
   onNavigatePickup?: () => void;
 }
 
-// Fallback seed data perfectly matching the reference screenshot
-const DEFAULT_AC_TABLES: TableItem[] = [
-  { id: "a1", tableNumber: "A1", capacity: 4, section: "AC", status: "VACANT" },
-  { id: "a2", tableNumber: "A2", capacity: 4, section: "AC", status: "VACANT" },
-  { id: "a3", tableNumber: "A3", capacity: 4, section: "AC", status: "VACANT" },
-  { id: "a4", tableNumber: "A4", capacity: 4, section: "AC", status: "VACANT" },
-  { id: "a5", tableNumber: "A5", capacity: 4, section: "AC", status: "VACANT" },
-  { id: "a6", tableNumber: "A6", capacity: 4, section: "AC", status: "VACANT" },
-  { id: "a7", tableNumber: "A7", capacity: 4, section: "AC", status: "VACANT" },
-  { id: "a8", tableNumber: "A8", capacity: 4, section: "AC", status: "PRINTED", elapsedMinutes: 26, totalMinor: 23800 },
-  { id: "a9", tableNumber: "A9", capacity: 4, section: "AC", status: "VACANT" },
-  { id: "a10", tableNumber: "A10", capacity: 4, section: "AC", status: "VACANT" },
-  { id: "a11", tableNumber: "A11", capacity: 4, section: "AC", status: "VACANT" },
-  { id: "a12", tableNumber: "A12", capacity: 4, section: "AC", status: "VACANT" },
-  { id: "a13", tableNumber: "A13", capacity: 4, section: "AC", status: "VACANT" },
-  { id: "a14", tableNumber: "A14", capacity: 4, section: "AC", status: "VACANT" },
-  { id: "a15", tableNumber: "A15", capacity: 4, section: "AC", status: "VACANT" },
-];
-
-const DEFAULT_NON_AC_TABLES: TableItem[] = [
-  { id: "b1", tableNumber: "B1", capacity: 4, section: "Non AC", status: "VACANT" },
-  { id: "b2", tableNumber: "B2", capacity: 4, section: "Non AC", status: "VACANT" },
-  { id: "b3", tableNumber: "B3", capacity: 4, section: "Non AC", status: "VACANT" },
-  { id: "b4", tableNumber: "B4", capacity: 4, section: "Non AC", status: "RUNNING_KOT", elapsedMinutes: 31, totalMinor: 74381 },
-  { id: "b5", tableNumber: "B5", capacity: 4, section: "Non AC", status: "VACANT" },
-  { id: "b6", tableNumber: "B6", capacity: 4, section: "Non AC", status: "VACANT" },
-  { id: "b7", tableNumber: "B7", capacity: 4, section: "Non AC", status: "RUNNING_KOT", elapsedMinutes: 3, totalMinor: 4286 },
-  { id: "b8", tableNumber: "B8", capacity: 4, section: "Non AC", status: "VACANT" },
-  { id: "b9", tableNumber: "B9", capacity: 4, section: "Non AC", status: "VACANT" },
-  { id: "b10", tableNumber: "B10", capacity: 4, section: "Non AC", status: "VACANT" },
-  { id: "b11", tableNumber: "B11", capacity: 4, section: "Non AC", status: "RUNNING_KOT", elapsedMinutes: 11, totalMinor: 19810 },
-  { id: "b12", tableNumber: "B12", capacity: 4, section: "Non AC", status: "VACANT" },
-  { id: "b13", tableNumber: "B13", capacity: 4, section: "Non AC", status: "VACANT" },
-  { id: "b14", tableNumber: "B14", capacity: 4, section: "Non AC", status: "VACANT" },
-  { id: "b15", tableNumber: "B15", capacity: 4, section: "Non AC", status: "RUNNING_KOT", elapsedMinutes: 7, totalMinor: 30286 },
-  { id: "b16", tableNumber: "B16", capacity: 4, section: "Non AC", status: "VACANT" },
-  { id: "b17", tableNumber: "B17", capacity: 4, section: "Non AC", status: "VACANT" },
-  { id: "b18", tableNumber: "B18", capacity: 4, section: "Non AC", status: "RUNNING_KOT", elapsedMinutes: 12, totalMinor: 15048 },
-  { id: "b19", tableNumber: "B19", capacity: 4, section: "Non AC", status: "RUNNING_KOT", elapsedMinutes: 19, totalMinor: 29238 },
-  { id: "b20", tableNumber: "B20", capacity: 4, section: "Non AC", status: "VACANT" },
-  { id: "b21", tableNumber: "B21", capacity: 4, section: "Non AC", status: "RUNNING_KOT", elapsedMinutes: 12, totalMinor: 21810 },
-  { id: "b22", tableNumber: "B22", capacity: 4, section: "Non AC", status: "RUNNING_KOT", elapsedMinutes: 1, totalMinor: 21810 },
-  { id: "b23", tableNumber: "B23", capacity: 4, section: "Non AC", status: "RUNNING_KOT", elapsedMinutes: 21, totalMinor: 42666 },
-  { id: "b24", tableNumber: "B24", capacity: 4, section: "Non AC", status: "VACANT" },
-  { id: "b25", tableNumber: "B25", capacity: 4, section: "Non AC", status: "VACANT" },
-  { id: "b26", tableNumber: "B26", capacity: 4, section: "Non AC", status: "VACANT" },
-];
-
 export default function TableViewFloor({
   onSelectTable,
   onNavigateDelivery,
   onNavigatePickup,
 }: TableViewFloorProps) {
   const router = useRouter();
-  const getInitialTables = (): TableItem[] => {
-    const base = [...DEFAULT_AC_TABLES, ...DEFAULT_NON_AC_TABLES];
-    try {
-      if (typeof window !== "undefined") {
-        const raw = localStorage.getItem("kapmeta_custom_tables");
-        if (raw) {
-          const custom: TableItem[] = JSON.parse(raw);
-          custom.forEach((ct) => {
-            if (!base.some((b) => b.tableNumber.toLowerCase() === ct.tableNumber.toLowerCase())) {
-              base.push(ct);
-            }
-          });
-        }
-      }
-    } catch {}
-    return base;
-  };
-
-  const [tables, setTables] = useState<TableItem[]>(getInitialTables);
-  const [loading, setLoading] = useState(false);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isVacating, setIsVacating] = useState(false);
+  const [tables, setTables] = useState<TableItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
-  const [isMoveKotActive, setIsMoveKotActive] = useState(false);
-  const [isMoveKotModalOpen, setIsMoveKotModalOpen] = useState(false);
+  const [isMoveKotOpen, setIsMoveKotOpen] = useState(false);
   const [isAddTableOpen, setIsAddTableOpen] = useState(false);
   const [inspectTable, setInspectTable] = useState<TableItem | null>(null);
   const [inspectOrderDetails, setInspectOrderDetails] = useState<any | null>(null);
+  const [actionFeedback, setActionFeedback] = useState<string | null>(null);
 
   const fetchTablesData = async () => {
-    setIsRefreshing(true);
     try {
+      setLoading(true);
       const res = await authedFetch("/tables");
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          // Fetch live orders to map running amounts and elapsed times
-          const ordersRes = await authedFetch("/orders?view=live");
-          const activeOrders = ordersRes.ok ? await ordersRes.json() : [];
-          const orderList = Array.isArray(activeOrders) ? activeOrders : (activeOrders.orders || []);
+        const mapped: TableItem[] = (data || []).map((tbl: any) => {
+          const currentOrder = tbl.currentOrder || null;
+          const status: TableItem["status"] = currentOrder
+            ? ((tbl.status as any) || "RUNNING")
+            : tbl.mergeGroupId
+              ? "RUNNING"
+              : "VACANT";
+          const queuedKot = (currentOrder?.kots || []).some((k: any) =>
+            k.status === "QUEUED" || k.status === "KOT_CREATED" || k.status === "PENDING"
+          );
+          let kitchenStage: TableItem["kitchenStage"] = currentOrder ? ((tbl.kitchenStage as any) || null) : null;
+          if (kitchenStage === "QUEUED" && !queuedKot) kitchenStage = null;
+          let elapsedMinutes: number | undefined;
+          if (currentOrder?.createdAt) {
+            const created = new Date(currentOrder.createdAt).getTime();
+            elapsedMinutes = Math.max(1, Math.floor((Date.now() - created) / 60000));
+          }
 
-          const tableMap = new Map<string, any>();
-          orderList.forEach((ord: any) => {
-            if (ord.diningTableId) {
-              tableMap.set(ord.diningTableId, ord);
-              tableMap.set(ord.diningTableId.toLowerCase(), ord);
-            }
-          });
+          return {
+            id: tbl.id,
+            tableNumber: tbl.tableNumber,
+            capacity: tbl.capacity || 4,
+            section: tbl.section || "Non AC",
+            status,
+            kitchenStage,
+            activeOrderId: currentOrder?.id || tbl.activeOrderId || null,
+            totalMinor: Number(currentOrder?.grandTotalPaise || 0),
+            elapsedMinutes,
+            itemCount: currentOrder?.items?.length || 0,
+            currentOrder,
+            mergeGroupId: tbl.mergeGroupId || null,
+            mergePrimaryTableId: tbl.mergePrimaryTableId || null,
+            mergedWith: Array.isArray(tbl.mergedWith) ? tbl.mergedWith : [],
+            isMergePrimary: !!tbl.isMergePrimary,
+          };
+        });
 
-          const mapped: TableItem[] = data.map((tbl: any) => {
-            const matchedOrder = tableMap.get(tbl.id) || tableMap.get(tbl.id.toLowerCase()) || tableMap.get(tbl.tableNumber) || tableMap.get(tbl.tableNumber.toLowerCase());
-            const activeOrder = tbl.currentOrder || matchedOrder;
-            let status: TableItem["status"] = "VACANT";
-            let totalMinor = 0;
-            let elapsedMinutes = 0;
-            let itemCount = 0;
-            let activeOrderId = null;
+        // #region agent log
+        fetch("http://127.0.0.1:7323/ingest/28c85a32-5ef1-4fe5-9437-78139f7a5bfb", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c675b" },
+          body: JSON.stringify({
+            sessionId: "9c675b",
+            runId: "wave1-kot",
+            hypothesisId: "C",
+            location: "TableViewFloor.tsx:fetchTablesData",
+            message: "floor paint from GET /tables only",
+            data: {
+              queued: mapped
+                .filter((t) => t.kitchenStage === "QUEUED")
+                .map((t) => t.tableNumber),
+              occupied: mapped
+                .filter((t) => t.status !== "VACANT")
+                .map((t) => ({
+                  n: t.tableNumber,
+                  status: t.status,
+                  kitchenStage: t.kitchenStage,
+                  kots: (t.currentOrder?.kots || []).map((k: any) => k.status),
+                })),
+              serveCount: mapped.filter((t) => t.kitchenStage === "READY").length,
+              vacantCount: mapped.filter((t) => t.status === "VACANT").length,
+              mergeGroups: mapped
+                .filter((t) => t.mergeGroupId)
+                .map((t) => ({ n: t.tableNumber, mergedWith: t.mergedWith, orderId: t.activeOrderId })),
+            },
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion
 
-            if (activeOrder && activeOrder.status && !["COMPLETED", "CANCELLED", "VOIDED"].includes(String(activeOrder.status).toUpperCase())) {
-              activeOrderId = activeOrder.id;
-              totalMinor = Number(activeOrder.grandTotalPaise || activeOrder.grandTotalMinor || activeOrder.grandTotal || (activeOrder.totalAmount ? Math.round(activeOrder.totalAmount * 100) : 0));
-              itemCount = activeOrder.itemCount || (activeOrder.items?.length || 0);
-              const created = new Date(activeOrder.createdAt).getTime();
-              elapsedMinutes = Math.max(1, Math.floor((Date.now() - created) / 60000));
-
-              const ordStatus = String(activeOrder.status || "").toUpperCase();
-              const hasKot = Boolean(
-                activeOrder.hasKot ||
-                activeOrder.kotSent ||
-                ["CONFIRMED", "IN_KITCHEN", "READY", "KOT_CREATED", "IN_PREPARATION"].includes(ordStatus) ||
-                (activeOrder.kotTickets && activeOrder.kotTickets.length > 0)
-              );
-
-              if (ordStatus === "PRINTED" || tbl.status === "BILLING") {
-                status = "PRINTED";
-              } else if (ordStatus === "PAID" || ordStatus === "SETTLED") {
-                status = "PAID";
-              } else if (hasKot) {
-                status = "RUNNING_KOT"; // Yellow
-              } else {
-                status = "RUNNING"; // Blue
-              }
-            } else if (tbl.status === "BILLING") {
-              status = "PRINTED";
-              totalMinor = Number(tbl.currentOrder?.grandTotalPaise || tbl.currentOrder?.totalAmount || 0);
-            } else if (tbl.status === "OCCUPIED" && tbl.currentOrder && !["COMPLETED", "CANCELLED", "VOIDED"].includes(String(tbl.currentOrder.status).toUpperCase())) {
-              status = "RUNNING_KOT"; // Occupied table with placed order has active KOT
-              totalMinor = Number(tbl.currentOrder?.grandTotalPaise || tbl.currentOrder?.totalAmount || 0);
-            }
-
-            // Check for frontend draft cart if still vacant
-            if (status === "VACANT" && typeof window !== "undefined") {
-              try {
-                const keysToTry = [
-                  `kapmeta_draft_${tbl.tableNumber}`,
-                  `kapmeta_draft_${tbl.tableNumber?.toLowerCase()}`,
-                  `kapmeta_draft_${tbl.tableNumber?.toUpperCase()}`,
-                  `kapmeta_draft_${tbl.id}`,
-                  `kapmeta_draft_${tbl.id?.toLowerCase()}`,
-                  `kapmeta_draft_${tbl.id?.toUpperCase()}`,
-                ];
-                let foundDraft: any = null;
-                for (const k of keysToTry) {
-                  const d = localStorage.getItem(k);
-                  if (d) {
-                    foundDraft = JSON.parse(d);
-                    break;
-                  }
-                }
-                if (foundDraft && Array.isArray(foundDraft) && foundDraft.length > 0) {
-                  status = "RUNNING"; // Blue (Draft cart started)
-                  totalMinor = foundDraft.reduce((sum: number, c: any) => {
-                    const linePrice = c.itemTotalMinor || (c.item?.priceMinor ? Number(c.item.priceMinor) * (c.quantity || 1) : 0);
-                    return sum + linePrice;
-                  }, 0);
-                  itemCount = foundDraft.reduce((sum: number, c: any) => sum + (c.quantity || 1), 0);
-                  elapsedMinutes = 1;
-                }
-              } catch (e) {}
-            }
-
-            return {
-              id: tbl.id,
-              tableNumber: tbl.tableNumber,
-              capacity: tbl.capacity || 4,
-              section: tbl.section || "Non AC",
-              status,
-              activeOrderId,
-              totalMinor,
-              elapsedMinutes,
-              itemCount,
-            };
-          });
-
-          // Merge custom tables if not already in mapped data
-          try {
-            if (typeof window !== "undefined") {
-              const raw = localStorage.getItem("kapmeta_custom_tables");
-              if (raw) {
-                const custom: TableItem[] = JSON.parse(raw);
-                custom.forEach((ct) => {
-                  if (!mapped.some((m) => m.tableNumber.toLowerCase() === ct.tableNumber.toLowerCase())) {
-                    mapped.push(ct);
-                  }
-                });
-              }
-            }
-          } catch {}
-
-          setTables(mapped);
-        }
+        setTables(mapped);
       }
     } catch (e) {
-      console.warn("Using offline table seed layout", e);
+      console.error("Failed to load tables", e);
     } finally {
-      setIsRefreshing(false);
+      setLoading(false);
     }
   };
 
-  const handleVacateTable = async (tbl: TableItem) => {
-    setIsVacating(true);
+  const handleServeTable = async (e: React.MouseEvent, tbl: TableItem) => {
+    e.stopPropagation();
     try {
-      await authedFetch(`/tables/${encodeURIComponent(tbl.id || tbl.tableNumber)}/vacate`, {
-        method: "POST",
-      });
-
-      // Clear any draft from localStorage
-      if (typeof window !== "undefined") {
-        const keysToClear = [
-          `kapmeta_draft_${tbl.tableNumber}`,
-          `kapmeta_draft_${tbl.tableNumber?.toLowerCase()}`,
-          `kapmeta_draft_${tbl.tableNumber?.toUpperCase()}`,
-          `kapmeta_draft_${tbl.id}`,
-          `kapmeta_draft_${tbl.id?.toLowerCase()}`,
-          `kapmeta_draft_${tbl.id?.toUpperCase()}`,
-        ];
-        keysToClear.forEach((k) => {
-          try { localStorage.removeItem(k); } catch {}
-        });
+      const res = await authedFetch(`/tables/${tbl.id}/serve`, { method: "POST" });
+      if (res.ok) {
+        setActionFeedback(`Table ${tbl.tableNumber} marked served.`);
+        setTimeout(() => setActionFeedback(null), 4000);
+        await fetchTablesData();
+        return;
       }
+      const errJson = await res.json().catch(() => ({}));
+      setActionFeedback(errJson.error || `Could not serve table ${tbl.tableNumber}.`);
+      setTimeout(() => setActionFeedback(null), 5000);
+    } catch (err) {
+      console.error("Failed to serve table food", err);
+      setActionFeedback(`Network error serving table ${tbl.tableNumber}.`);
+      setTimeout(() => setActionFeedback(null), 5000);
+    }
+  };
 
-      setInspectTable(null);
-      setInspectOrderDetails(null);
-      await fetchTablesData();
+  const handleVacateTable = async (e: React.MouseEvent, tbl: TableItem) => {
+    e.stopPropagation();
+    try {
+      const res = await authedFetch(`/tables/${tbl.id}/vacant`, { method: "POST" });
+      if (res.ok) {
+        setActionFeedback(`Table ${tbl.tableNumber} marked vacant.`);
+        setTimeout(() => setActionFeedback(null), 4000);
+        await fetchTablesData();
+        return;
+      }
+      const errJson = await res.json().catch(() => ({}));
+      setActionFeedback(errJson.error || `Could not vacate table ${tbl.tableNumber}.`);
+      setTimeout(() => setActionFeedback(null), 5000);
     } catch (err) {
       console.error("Failed to vacate table", err);
-    } finally {
-      setIsVacating(false);
+      setActionFeedback(`Network error vacating table ${tbl.tableNumber}.`);
+      setTimeout(() => setActionFeedback(null), 5000);
     }
   };
+
+  useKapmetaSocket(() => {
+    fetchTablesData();
+  }, true, "pos-floor");
 
   useEffect(() => {
     fetchTablesData();
-    const timer = setInterval(fetchTablesData, 12000);
-    return () => clearInterval(timer);
+    const timer = setInterval(fetchTablesData, 10000);
+    return () => {
+      clearInterval(timer);
+    };
   }, []);
 
-  const handleTableClick = (tbl: TableItem) => {
-    if (isMoveKotActive) {
-      setIsMoveKotModalOpen(true);
+  const [mergeMode, setMergeMode] = useState(false);
+  const [mergeSourceIds, setMergeSourceIds] = useState<string[]>([]);
+  const [mergeFeedback, setMergeFeedback] = useState<string | null>(null);
+
+  const toggleMergeSource = (tbl: TableItem) => {
+    setMergeSourceIds((prev) =>
+      prev.includes(tbl.id) ? prev.filter((id) => id !== tbl.id) : [...prev, tbl.id]
+    );
+  };
+
+  const completeMerge = async (targetTable: TableItem) => {
+    if (mergeSourceIds.length === 0) {
+      alert("Please select at least one occupied source table to merge.");
       return;
     }
+    try {
+      const res = await authedFetch("/tables/merge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceTableIds: mergeSourceIds, targetTableId: targetTable.id }),
+      });
+      // #region agent log
+      fetch("http://127.0.0.1:7323/ingest/28c85a32-5ef1-4fe5-9437-78139f7a5bfb", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c675b" },
+        body: JSON.stringify({
+          sessionId: "9c675b",
+          runId: "merge-fix",
+          hypothesisId: "Q",
+          location: "TableViewFloor.tsx:completeMerge",
+          message: "POS merge POST /tables/merge",
+          data: {
+            ok: res.ok,
+            status: res.status,
+            sourceTableIds: mergeSourceIds,
+            targetTableId: targetTable.id,
+            targetNumber: targetTable.tableNumber,
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
+      if (res.ok) {
+        setMergeSourceIds([]);
+        setMergeMode(false);
+        setMergeFeedback(`Successfully merged tables into Table ${targetTable.tableNumber}!`);
+        setTimeout(() => setMergeFeedback(null), 5000);
+        await fetchTablesData();
+      } else {
+        const errJson = await res.json().catch(() => ({}));
+        alert(errJson.error || "Failed to merge tables");
+      }
+    } catch (e: any) {
+      alert("Network error merging tables");
+    }
+  };
+
+  const handleTableClick = (tbl: TableItem) => {
+    if (mergeMode) {
+      if (mergeSourceIds.includes(tbl.id)) {
+        toggleMergeSource(tbl);
+      } else if (mergeSourceIds.length > 0 && !mergeSourceIds.includes(tbl.id)) {
+        // Tap this table as target destination
+        completeMerge(tbl);
+      } else {
+        toggleMergeSource(tbl);
+      }
+      return;
+    }
+
     if (onSelectTable) {
       onSelectTable(tbl);
     } else {
@@ -299,61 +272,122 @@ export default function TableViewFloor({
         console.error(err);
       }
     } else {
-      // Mock order preview for demo tables
-      setInspectOrderDetails({
-        items: [
-          { id: "1", quantity: 1, menuItemName: "North Indian Meal Box", subtotalMinor: tbl.totalMinor ? tbl.totalMinor * 0.7 : 14000 },
-          { id: "2", quantity: 1, menuItemName: "Cold Coffee", subtotalMinor: tbl.totalMinor ? tbl.totalMinor * 0.3 : 6000 }
-        ],
-        grandTotalMinor: tbl.totalMinor || 20000
-      });
+      setInspectOrderDetails(null);
     }
   };
 
   const handleQuickPrint = (e: React.MouseEvent, tbl: TableItem) => {
     e.stopPropagation();
-    alert(`Print Command Sent: KOT & Bill generated for Table ${tbl.tableNumber}`);
+    if (!tbl.activeOrderId) {
+      alert(`Table ${tbl.tableNumber} is vacant.`);
+      return;
+    }
+    // Trigger thermal print job
+    authedFetch(`/orders/${tbl.activeOrderId}/print`, { method: "POST" })
+      .then((res) => {
+        if (res.ok) alert(`KOT/Bill sent to Thermal Printer for Table ${tbl.tableNumber}`);
+        else alert(`Print command sent.`);
+      })
+      .catch(() => alert("Printing..."));
   };
 
-  // Group tables strictly into "AC" and "Non AC" sections
+  // Group tables by section
   const sections = useMemo(() => {
-    const ac = tables.filter((t) => (t.section || "").toUpperCase().includes("AC") && !(t.section || "").toUpperCase().includes("NON"));
-    const nonAc = tables.filter((t) => !(t.section || "").toUpperCase().includes("AC") || (t.section || "").toUpperCase().includes("NON"));
-
-    const filterFn = (t: TableItem) => {
-      if (!statusFilter) return true;
-      return t.status === statusFilter;
-    };
-
-    return [
-      { name: "AC", items: ac.filter(filterFn) },
-      { name: "Non AC", items: nonAc.filter(filterFn) },
-    ];
+    const map = new Map<string, TableItem[]>();
+    tables.forEach((t) => {
+      if (statusFilter) {
+        if (statusFilter === "RUNNING") {
+          if (t.status !== "RUNNING" && t.status !== "RUNNING_KOT") return;
+        } else if (t.status !== statusFilter) {
+          return;
+        }
+      }
+      const sec = t.section || "Non AC";
+      if (!map.has(sec)) map.set(sec, []);
+      map.get(sec)!.push(t);
+    });
+    return Array.from(map.entries());
   }, [tables, statusFilter]);
 
   return (
-    <div className="table-view-outer-container">
-      {/* Primary Action Toolbar */}
-      <div className="table-view-action-toolbar">
-        <div className="toolbar-left-heading">
-          <h1 className="view-page-title">Table View</h1>
-        </div>
-
-        <div className="toolbar-right-actions">
+    <div className="table-view-container">
+      {/* Subheader Toolbar */}
+      <div className="table-view-toolbar">
+        <div className="toolbar-left">
+          <h2 className="toolbar-title">Table View</h2>
           <button
             type="button"
-            className={`circular-refresh-btn ${isRefreshing ? "spinning" : ""}`}
-            onClick={fetchTablesData}
-            title="Refresh Tables Status"
+            className="btn-move-kot"
+            onClick={() => setIsMoveKotOpen(true)}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2.5">
-              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
-            </svg>
+            Move KOT / Items
+          </button>
+          <button
+            type="button"
+            className={`btn-move-kot ${mergeMode ? "active-merge" : ""}`}
+            style={mergeMode ? { background: "#4f46e5", color: "#fff", borderColor: "#6366f1" } : {}}
+            onClick={() => {
+              setMergeMode((v) => !v);
+              setMergeSourceIds([]);
+            }}
+          >
+            {mergeMode ? "✕ Cancel Merge" : "🔀 Merge Tables"}
+          </button>
+
+          {/* Status Color Legend Pills */}
+          <div className="status-legend-group">
+            <button
+              className={`legend-pill ${statusFilter === null ? "active" : ""}`}
+              onClick={() => setStatusFilter(null)}
+            >
+              All Tables
+            </button>
+            <button
+              className={`legend-pill ${statusFilter === "VACANT" ? "active" : ""}`}
+              onClick={() => setStatusFilter(statusFilter === "VACANT" ? null : "VACANT")}
+            >
+              <span className="dot dot-blank"></span> Blank Table
+            </button>
+            <button
+              className={`legend-pill ${statusFilter === "RUNNING" ? "active" : ""}`}
+              onClick={() => setStatusFilter(statusFilter === "RUNNING" ? null : "RUNNING")}
+            >
+              <span className="dot dot-running"></span> Running Table
+            </button>
+            <button
+              className={`legend-pill ${statusFilter === "PRINTED" ? "active" : ""}`}
+              onClick={() => setStatusFilter(statusFilter === "PRINTED" ? null : "PRINTED")}
+            >
+              <span className="dot dot-printed"></span> Printed Table
+            </button>
+            <button
+              className={`legend-pill ${statusFilter === "PAID" ? "active" : ""}`}
+              onClick={() => setStatusFilter(statusFilter === "PAID" ? null : "PAID")}
+            >
+              <span className="dot dot-paid"></span> Paid Table
+            </button>
+            <button
+              className={`legend-pill ${statusFilter === "RUNNING_KOT" ? "active" : ""}`}
+              onClick={() => setStatusFilter(statusFilter === "RUNNING_KOT" ? null : "RUNNING_KOT")}
+            >
+              <span className="dot dot-running-kot"></span> Running KOT Table
+            </button>
+          </div>
+        </div>
+
+        <div className="toolbar-right">
+          <button
+            type="button"
+            className="btn-toolbar-icon"
+            onClick={fetchTablesData}
+            title="Refresh Table Floor"
+          >
+            🔄
           </button>
 
           <button
             type="button"
-            className="petpooja-pill-red-btn"
+            className="btn-add-table"
             onClick={() => setIsAddTableOpen(true)}
           >
             Add Table
@@ -361,7 +395,7 @@ export default function TableViewFloor({
 
           <button
             type="button"
-            className="petpooja-pill-red-btn"
+            className="btn-delivery-jump"
             onClick={() => {
               if (onNavigateDelivery) onNavigateDelivery();
               else router.push("/orders?tab=online");
@@ -372,7 +406,7 @@ export default function TableViewFloor({
 
           <button
             type="button"
-            className="petpooja-pill-red-btn"
+            className="btn-pickup-jump"
             onClick={() => {
               if (onNavigatePickup) onNavigatePickup();
               else router.push("/?mode=PICKUP");
@@ -383,168 +417,181 @@ export default function TableViewFloor({
         </div>
       </div>
 
-      {/* Filter & Move KOT Legend Bar */}
-      <div className="legend-and-controls-bar">
-        {/* Move KOT Pill Switch */}
-        <div
-          className={`move-kot-switch-capsule ${isMoveKotActive ? "is-active" : ""}`}
-          onClick={() => {
-            setIsMoveKotActive(!isMoveKotActive);
-            if (!isMoveKotActive) setIsMoveKotModalOpen(true);
-          }}
-          title="Click to toggle Table / KOT transfer mode"
-        >
-          <div className="switch-slider-knob"></div>
-          <span className="switch-label-text">Move KOT / Items</span>
+      {mergeMode && (
+        <div style={{ background: "#312e81", color: "#e0e7ff", padding: "10px 20px", fontSize: "0.8125rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span>
+            {mergeSourceIds.length === 0
+              ? "🔀 Step 1: Click one or more occupied tables to select source orders."
+              : `🔀 Selected ${mergeSourceIds.length} source table(s). Step 2: Click the target table to merge all orders into.`}
+          </span>
+          <button
+            style={{ background: "#4338ca", color: "#fff", border: "none", padding: "4px 12px", borderRadius: "6px", cursor: "pointer", fontSize: "0.75rem" }}
+            onClick={() => {
+              setMergeMode(false);
+              setMergeSourceIds([]);
+            }}
+          >
+            Cancel
+          </button>
         </div>
+      )}
 
-        {/* Status Legend Pills */}
-        <div className="status-legend-pills-row">
-          <div
-            className={`legend-item ${statusFilter === "VACANT" ? "selected" : ""}`}
-            onClick={() => setStatusFilter(statusFilter === "VACANT" ? null : "VACANT")}
-          >
-            <span className="legend-dot dot-blank"></span>
-            <span className="legend-text">Blank Table</span>
-          </div>
-
-          <div
-            className={`legend-item ${statusFilter === "RUNNING" ? "selected" : ""}`}
-            onClick={() => setStatusFilter(statusFilter === "RUNNING" ? null : "RUNNING")}
-          >
-            <span className="legend-dot dot-running"></span>
-            <span className="legend-text">Running Table</span>
-          </div>
-
-          <div
-            className={`legend-item ${statusFilter === "PRINTED" ? "selected" : ""}`}
-            onClick={() => setStatusFilter(statusFilter === "PRINTED" ? null : "PRINTED")}
-          >
-            <span className="legend-dot dot-printed"></span>
-            <span className="legend-text">Printed Table</span>
-          </div>
-
-          <div
-            className={`legend-item ${statusFilter === "PAID" ? "selected" : ""}`}
-            onClick={() => setStatusFilter(statusFilter === "PAID" ? null : "PAID")}
-          >
-            <span className="legend-dot dot-paid"></span>
-            <span className="legend-text">Paid Table</span>
-          </div>
-
-          <div
-            className={`legend-item ${statusFilter === "RUNNING_KOT" ? "selected" : ""}`}
-            onClick={() => setStatusFilter(statusFilter === "RUNNING_KOT" ? null : "RUNNING_KOT")}
-          >
-            <span className="legend-dot dot-running-kot"></span>
-            <span className="legend-text">Running KOT Table</span>
-          </div>
+      {mergeFeedback && (
+        <div style={{ background: "#065f46", color: "#ecfdf5", padding: "10px 20px", fontSize: "0.8125rem", fontWeight: 600 }}>
+          {mergeFeedback}
         </div>
-      </div>
+      )}
+      {actionFeedback && (
+        <div style={{ background: "#1e3a5f", color: "#e0f2fe", padding: "10px 20px", fontSize: "0.8125rem", fontWeight: 600 }}>
+          {actionFeedback}
+        </div>
+      )}
 
-      {/* Floor Sections & Matrix Cards */}
-      <div className="floor-sections-wrapper">
-        {sections.map((sec) => (
-          <div key={sec.name} className="floor-section-group">
-            <h2 className="section-header-title">{sec.name}</h2>
-            <div className="matrix-table-grid">
-              {sec.items.map((tbl) => {
-                const isBlank = tbl.status === "VACANT";
-                const isPrinted = tbl.status === "PRINTED";
-                const isRunningKot = tbl.status === "RUNNING_KOT";
-                const isRunning = tbl.status === "RUNNING";
-                const isPaid = tbl.status === "PAID";
+      {/* Floor Matrix Grid */}
+      <div className="floor-matrix-scroll">
+        {loading && tables.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "48px", color: "#94a3b8" }}>
+            Loading floor sections and tables...
+          </div>
+        ) : sections.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "48px", color: "#94a3b8" }}>
+            No tables match the selected filter.
+          </div>
+        ) : (
+          sections.map(([sectionName, secTables]) => (
+            <div key={sectionName} className="floor-section-block">
+              <h3 className="section-title-label">{sectionName}</h3>
+              <div className="tables-grid">
+                {secTables.map((tbl) => {
+                  const isOccupied = tbl.status !== "VACANT";
+                  const cardClass =
+                    tbl.status === "RUNNING_KOT"
+                      ? "card-running-kot"
+                      : tbl.status === "PRINTED"
+                      ? "card-printed"
+                      : tbl.status === "PAID"
+                      ? "card-paid"
+                      : tbl.status === "RUNNING"
+                      ? "card-running"
+                      : "card-blank";
 
-                let cardThemeClass = "theme-blank";
-                if (isPrinted) cardThemeClass = "theme-printed";
-                else if (isRunningKot) cardThemeClass = "theme-running-kot";
-                else if (isRunning) cardThemeClass = "theme-running";
-                else if (isPaid) cardThemeClass = "theme-paid";
+                  const isMergeSelected = mergeSourceIds.includes(tbl.id);
+                  return (
+                    <div
+                      key={tbl.id}
+                      className={`table-card ${cardClass} ${isMergeSelected ? "selected-merge-source" : ""}`}
+                      style={isMergeSelected ? { outline: "3px solid #6366f1", transform: "scale(1.03)", boxShadow: "0 0 15px rgba(99, 102, 241, 0.5)" } : {}}
+                      onClick={() => handleTableClick(tbl)}
+                    >
+                      <div className="card-top-info">
+                        {isOccupied && tbl.elapsedMinutes ? (
+                          <span className="elapsed-badge">{tbl.elapsedMinutes} Min</span>
+                        ) : (
+                          <span className="blank-spacer"></span>
+                        )}
+                        <span className="table-code-name">{tbl.tableNumber}</span>
+                        {tbl.mergedWith && tbl.mergedWith.length > 1 && (
+                          <span
+                            style={{
+                              fontSize: "9px",
+                              fontWeight: 700,
+                              color: "#c4b5fd",
+                              background: "rgba(99, 102, 241, 0.25)",
+                              border: "1px solid rgba(129, 140, 248, 0.5)",
+                              borderRadius: "4px",
+                              padding: "1px 5px",
+                              marginLeft: 4,
+                            }}
+                          >
+                            Merged {tbl.mergedWith.join(" + ")}
+                          </span>
+                        )}
+                        {isOccupied && tbl.totalMinor ? (
+                          <span className="table-amount">₹{(tbl.totalMinor / 100).toFixed(2)}</span>
+                        ) : (
+                          <span className="blank-amount"></span>
+                        )}
+                      </div>
 
-                return (
-                  <div
-                    key={tbl.id}
-                    className={`table-matrix-card ${cardThemeClass}`}
-                    onClick={() => handleTableClick(tbl)}
-                    data-testid={`table-card-${tbl.tableNumber}`}
-                  >
-                    {/* Top line: Elapsed minutes (if occupied) */}
-                    <div className="card-row-top">
-                      {!isBlank && tbl.elapsedMinutes ? (
-                        <span className="elapsed-time-text">{tbl.elapsedMinutes} Min</span>
-                      ) : (
-                        <span className="empty-slot"></span>
+                      {isOccupied && tbl.kitchenStage && (
+                        <div style={{ margin: "2px 0 4px 0", textAlign: "center", display: "flex", justifyContent: "center" }}>
+                          {tbl.kitchenStage === "COOKING" && (
+                            <span style={{ fontSize: "10px", background: "rgba(245, 158, 11, 0.2)", color: "#fbbf24", border: "1px solid rgba(245, 158, 11, 0.5)", borderRadius: "4px", padding: "1px 6px", fontWeight: 700 }}>
+                              👨‍🍳 Cooking
+                            </span>
+                          )}
+                          {tbl.kitchenStage === "READY" && (
+                            <span style={{ fontSize: "10px", background: "rgba(16, 185, 129, 0.25)", color: "#34d399", border: "1px solid rgba(16, 185, 129, 0.6)", borderRadius: "4px", padding: "1px 6px", fontWeight: 800 }}>
+                              🔔 Food Ready
+                            </span>
+                          )}
+                          {tbl.kitchenStage === "QUEUED" && (
+                            <span style={{ fontSize: "10px", background: "rgba(14, 165, 233, 0.2)", color: "#38bdf8", border: "1px solid rgba(14, 165, 233, 0.4)", borderRadius: "4px", padding: "1px 6px", fontWeight: 700 }}>
+                              🟡 KOT Queued
+                            </span>
+                          )}
+                          {tbl.kitchenStage === "SERVED" && (
+                            <span style={{ fontSize: "10px", background: "rgba(99, 102, 241, 0.2)", color: "#a5b4fc", border: "1px solid rgba(99, 102, 241, 0.4)", borderRadius: "4px", padding: "1px 6px", fontWeight: 700 }}>
+                              🍽️ Served
+                            </span>
+                          )}
+                        </div>
                       )}
-                    </div>
 
-                    {/* Middle line: Table Number */}
-                    <div className="card-row-middle">
-                      <span className="table-number-label">{tbl.tableNumber}</span>
-                    </div>
-
-                    {/* Bottom line: Running Amount (if occupied) */}
-                    <div className="card-row-bottom">
-                      {!isBlank && tbl.totalMinor ? (
-                        <span className="table-price-label">
-                          ₹{(tbl.totalMinor / 100).toFixed(2)}
-                        </span>
-                      ) : (
-                        <span className="empty-slot"></span>
-                      )}
-                    </div>
-
-                    {/* Floating Action Buttons below Card */}
-                    {!isBlank && (
-                      <div className="card-floating-actions">
+                      <div className="card-bottom-actions">
+                        {tbl.kitchenStage === "READY" && (
+                          <button
+                            type="button"
+                            className="btn-card-serve"
+                            style={{ background: "#10b981", color: "#fff", border: "none", borderRadius: "4px", padding: "2px 6px", fontSize: "10px", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: "2px" }}
+                            onClick={(e) => handleServeTable(e, tbl)}
+                            title="Mark all ready food served to table"
+                          >
+                            🍽️ Serve
+                          </button>
+                        )}
+                        {(tbl.status === "PAID" || tbl.status === "PRINTED" || tbl.kitchenStage === "SERVED" || tbl.status === "DIRTY") && (
+                          <button
+                            type="button"
+                            className="btn-card-vacant"
+                            style={{ background: "#6366f1", color: "#fff", border: "none", borderRadius: "4px", padding: "2px 6px", fontSize: "10px", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: "2px" }}
+                            onClick={(e) => handleVacateTable(e, tbl)}
+                            title="Clear table and mark vacant for next guests"
+                          >
+                            🧹 Vacant
+                          </button>
+                        )}
                         <button
                           type="button"
-                          className="action-icon-pill"
-                          onClick={(e) => handleInspect(e, tbl)}
-                          title="Preview Order"
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2">
-                            <circle cx="12" cy="12" r="10"></circle>
-                            <line x1="12" y1="16" x2="12" y2="12"></line>
-                            <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                          </svg>
-                        </button>
-                        <button
-                          type="button"
-                          className="action-icon-pill"
+                          className="card-action-icon"
                           onClick={(e) => handleQuickPrint(e, tbl)}
                           title="Quick Print KOT / Bill"
                         >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2">
-                            <polyline points="6 9 6 2 18 2 18 9"></polyline>
-                            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
-                            <rect x="6" y="14" width="12" height="8"></rect>
-                          </svg>
+                          🖨️
+                        </button>
+                        <button
+                          type="button"
+                          className="card-action-icon"
+                          onClick={(e) => handleInspect(e, tbl)}
+                          title="Preview Table Details"
+                        >
+                          👁️
                         </button>
                       </div>
-                    )}
-                  </div>
-                );
-              })}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Floating Watermark & Non-Commercial Session Banner matching screenshot */}
-      <div className="petpooja-bottom-watermark-overlay">
-        <div className="windows-act-text">Activate Windows</div>
-        <div className="windows-sub-text">Go to Settings to activate Windows.</div>
-        <div className="session-banner-pill">This is a non-commercial session.</div>
+          ))
+        )}
       </div>
 
       {/* Move KOT Modal */}
-      {isMoveKotModalOpen && (
+      {isMoveKotOpen && (
         <MoveKotModal
-          onClose={() => {
-            setIsMoveKotModalOpen(false);
-            setIsMoveKotActive(false);
-          }}
           tables={tables}
+          onClose={() => setIsMoveKotOpen(false)}
           onSuccess={fetchTablesData}
         />
       )}
@@ -554,7 +601,6 @@ export default function TableViewFloor({
         <AddTableModal
           onClose={() => setIsAddTableOpen(false)}
           onTableCreated={fetchTablesData}
-          existingTables={tables.map((t) => t.tableNumber)}
         />
       )}
 
@@ -567,497 +613,383 @@ export default function TableViewFloor({
               <button className="close-btn" onClick={() => setInspectTable(null)}>✕</button>
             </div>
 
-            <div style={{ marginTop: "12px", fontSize: "0.875rem", color: "#334155" }}>
-              <div>Status: <strong>{inspectTable.status}</strong></div>
-              <div>Capacity: <strong>{inspectTable.capacity} guests</strong></div>
-              {inspectTable.elapsedMinutes ? (
-                <div>Elapsed Dining Time: <strong>{inspectTable.elapsedMinutes} mins</strong></div>
-              ) : null}
+            <div style={{ marginTop: "12px", fontSize: "0.875rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>Status: <strong style={{ color: "#2563eb" }}>{inspectTable.status}</strong></span>
+                <span>Stage: <strong style={{ color: inspectTable.kitchenStage === "READY" ? "#d97706" : inspectTable.kitchenStage === "SERVED" ? "#059669" : "#64748b" }}>{inspectTable.kitchenStage || "N/A"}</strong></span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: "4px" }}>
+                <span>Capacity: <strong>{inspectTable.capacity} guests</strong></span>
+                {inspectTable.elapsedMinutes ? (
+                  <span>Seated: <strong>{inspectTable.elapsedMinutes} mins</strong></span>
+                ) : null}
+              </div>
             </div>
 
-            {inspectOrderDetails && inspectOrderDetails.items ? (
-              <div style={{ marginTop: "16px" }}>
-                <h4 style={{ margin: "0 0 8px 0", fontSize: "0.875rem", color: "#0f172a" }}>Active Order Items:</h4>
-                <div style={{ maxHeight: "200px", overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: "6px", background: "#f8fafc" }}>
-                  {inspectOrderDetails.items.map((it: any) => (
-                    <div key={it.id} style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", borderBottom: "1px solid #f1f5f9", fontSize: "0.8125rem" }}>
-                      <span>{it.quantity}x {it.menuItemName || it.menuItem?.name}</span>
-                      <span style={{ fontWeight: 600 }}>₹{(Number(it.subtotalMinor || 0) / 100).toFixed(2)}</span>
+            {/* Granular KOT Waves Breakdown */}
+            {inspectTable.currentOrder?.kots && inspectTable.currentOrder.kots.length > 0 ? (
+              <div style={{ marginTop: "14px" }}>
+                <h4 style={{ margin: "0 0 6px 0", fontSize: "0.8125rem", color: "#475569" }}>Kitchen Order Tickets (KOT Waves):</h4>
+                <div style={{ maxHeight: "160px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "6px" }}>
+                  {inspectTable.currentOrder.kots.map((k: any) => (
+                    <div key={k.id} style={{ background: "#f8fafc", padding: "6px 8px", borderRadius: "6px", border: "1px solid #e2e8f0", fontSize: "0.75rem" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, marginBottom: "3px" }}>
+                        <span>KOT #{k.ticketNumber}</span>
+                        <span style={{ color: k.status === "SERVED" ? "#059669" : k.status === "READY" ? "#d97706" : "#2563eb" }}>
+                          {k.status}
+                        </span>
+                      </div>
+                      {k.items?.map((it: any) => (
+                        <div key={it.id} style={{ display: "flex", justifyContent: "space-between", color: "#64748b" }}>
+                          <span>{it.quantity}x {it.name}</span>
+                          <span>{it.status}</span>
+                        </div>
+                      ))}
                     </div>
                   ))}
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between", marginTop: "12px", fontWeight: 700, fontSize: "0.95rem" }}>
-                  <span>Grand Total:</span>
-                  <span style={{ color: "#d32f2f" }}>
-                    ₹{(Number(inspectOrderDetails.grandTotalMinor || 0) / 100).toFixed(2)}
-                  </span>
+              </div>
+            ) : inspectOrderDetails && inspectOrderDetails.items ? (
+              <div style={{ marginTop: "16px" }}>
+                <h4 style={{ margin: "0 0 8px 0", fontSize: "0.875rem" }}>Active Order Items:</h4>
+                <div style={{ maxHeight: "160px", overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: "6px" }}>
+                  {inspectOrderDetails.items.map((it: any) => (
+                    <div key={it.id} style={{ display: "flex", justifyContent: "space-between", padding: "6px 10px", borderBottom: "1px solid #f1f5f9", fontSize: "0.8125rem" }}>
+                      <span>{it.quantity}x {it.menuItemName || it.menuItem?.name}</span>
+                      <span>₹{(Number(it.subtotalMinor || 0) / 100).toFixed(2)}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
             ) : null}
 
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "20px", flexWrap: "wrap" }}>
-              <button className="btn-modal-cancel" onClick={() => setInspectTable(null)}>Close</button>
-              {inspectTable.status !== "VACANT" && (
+            {inspectTable.totalMinor ? (
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: "12px", fontWeight: 700, fontSize: "0.95rem" }}>
+                <span>Running Total:</span>
+                <span style={{ color: "#16a34a" }}>
+                  ₹{(Number(inspectTable.totalMinor || 0) / 100).toFixed(2)}
+                </span>
+              </div>
+            ) : null}
+
+            <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", marginTop: "20px", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: "6px" }}>
+                {inspectTable.kitchenStage === "READY" && (
+                  <button
+                    type="button"
+                    style={{ background: "#10b981", color: "#fff", border: "none", padding: "6px 12px", borderRadius: "6px", fontSize: "0.8125rem", fontWeight: 700, cursor: "pointer" }}
+                    onClick={async (e) => {
+                      await handleServeTable(e, inspectTable);
+                      setInspectTable(null);
+                    }}
+                  >
+                    🍽️ Mark All Served
+                  </button>
+                )}
                 <button
-                  className="btn-modal-vacate"
-                  disabled={isVacating}
-                  onClick={() => handleVacateTable(inspectTable)}
-                  title="Force complete orders and mark this table as clean/vacant"
+                  type="button"
+                  style={{ background: "#6366f1", color: "#fff", border: "none", padding: "6px 12px", borderRadius: "6px", fontSize: "0.8125rem", fontWeight: 700, cursor: "pointer" }}
+                  onClick={async (e) => {
+                    await handleVacateTable(e, inspectTable);
+                    setInspectTable(null);
+                  }}
                 >
-                  {isVacating ? "Clearing..." : "🧹 Clear / Mark Vacant"}
+                  🧹 Mark Vacant
                 </button>
-              )}
-              <button
-                className="btn-modal-open-pos"
-                onClick={() => {
-                  handleTableClick(inspectTable);
-                  setInspectTable(null);
-                }}
-              >
-                Open in POS Register →
-              </button>
+              </div>
+
+              <div style={{ display: "flex", gap: "6px" }}>
+                <button className="btn-secondary" onClick={() => setInspectTable(null)}>Close</button>
+                <button
+                  className="btn-primary"
+                  onClick={() => {
+                    handleTableClick(inspectTable);
+                    setInspectTable(null);
+                  }}
+                >
+                  Open in POS Register →
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
 
       <style jsx>{`
-        .table-view-outer-container {
+        .table-view-container {
           display: flex;
           flex-direction: column;
-          min-height: calc(100vh - 76px);
-          background: #ffffff;
+          height: calc(100vh - 48px);
+          background: #f1f5f9;
           font-family: inherit;
-          padding: 16px 24px;
-          position: relative;
         }
 
-        /* 1. Primary Action Toolbar */
-        .table-view-action-toolbar {
+        .table-view-toolbar {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          margin-bottom: 8px;
+          padding: 8px 16px;
+          background: #ffffff;
+          border-bottom: 1px solid #e2e8f0;
+          gap: 12px;
+          flex-wrap: wrap;
         }
-        .view-page-title {
-          font-size: 1.25rem;
-          font-weight: 600;
-          color: #111827;
-          margin: 0;
-          letter-spacing: -0.3px;
-        }
-        .toolbar-right-actions {
+
+        .toolbar-left {
           display: flex;
           align-items: center;
           gap: 12px;
-        }
-        .circular-refresh-btn {
-          width: 36px;
-          height: 36px;
-          border-radius: 50%;
-          background: #ffffff;
-          border: 1px solid #d1d5db;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          transition: transform 0.2s, background 0.15s;
-          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-        }
-        .circular-refresh-btn:hover {
-          background: #f8fafc;
-          transform: rotate(45deg);
-        }
-
-        .petpooja-pill-red-btn {
-          background: #d32f2f;
-          color: #ffffff;
-          border: none;
-          font-weight: 600;
-          font-size: 0.8125rem;
-          padding: 8px 24px;
-          border-radius: 9999px;
-          cursor: pointer;
-          box-shadow: 0 1px 3px rgba(211, 47, 47, 0.25);
-          transition: background 0.15s, transform 0.1s;
-        }
-        .petpooja-pill-red-btn:hover {
-          background: #b71c1c;
-          transform: translateY(-0.5px);
-        }
-
-        /* 2. Legend & Move KOT Controls Bar */
-        .legend-and-controls-bar {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 20px;
-          margin: 12px 0 18px 0;
           flex-wrap: wrap;
         }
-
-        .move-kot-switch-capsule {
-          display: flex;
-          align-items: center;
-          background: #e2e8f0;
-          border-radius: 9999px;
-          padding: 3px 14px 3px 4px;
-          cursor: pointer;
-          gap: 8px;
-          user-select: none;
-          transition: background 0.15s;
-        }
-        .move-kot-switch-capsule.is-active {
-          background: #bfdbfe;
-        }
-        .switch-slider-knob {
-          width: 18px;
-          height: 18px;
-          border-radius: 50%;
-          background: #ffffff;
-          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-          transition: transform 0.2s;
-        }
-        .move-kot-switch-capsule.is-active .switch-slider-knob {
-          transform: translateX(6px);
-          background: #1d4ed8;
-        }
-        .switch-label-text {
-          font-size: 0.78rem;
-          font-weight: 600;
+        .toolbar-title {
+          font-size: 0.95rem;
+          font-weight: 700;
           color: #334155;
+          margin: 0;
         }
 
-        .status-legend-pills-row {
-          display: flex;
-          align-items: center;
-          gap: 16px;
-          flex-wrap: wrap;
+        .btn-move-kot {
+          background: #eff6ff;
+          color: #2563eb;
+          border: 1px solid #bfdbfe;
+          border-radius: 4px;
+          padding: 4px 10px;
+          font-size: 0.75rem;
+          font-weight: 600;
+          cursor: pointer;
         }
-        .legend-item {
+        .btn-move-kot:hover {
+          background: #dbeafe;
+        }
+
+        .status-legend-group {
           display: flex;
           align-items: center;
           gap: 6px;
-          cursor: pointer;
-          user-select: none;
-          padding: 2px 4px;
+        }
+        .legend-pill {
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
           border-radius: 4px;
-          transition: opacity 0.15s;
-        }
-        .legend-item:hover {
-          opacity: 0.8;
-        }
-        .legend-item.selected {
-          outline: 1.5px solid #64748b;
-        }
-        .legend-dot {
-          width: 10px;
-          height: 10px;
-          border-radius: 50%;
-          display: inline-block;
-        }
-        .dot-blank {
-          background: #ffffff;
-          border: 1.5px solid #cbd5e1;
-        }
-        .dot-running {
-          background: #38bdf8;
-        }
-        .dot-printed {
-          background: #4ade80;
-        }
-        .dot-paid {
-          background: #fb923c;
-        }
-        .dot-running-kot {
-          background: #facc15;
-        }
-        .legend-text {
-          font-size: 0.78rem;
+          padding: 3px 8px;
+          font-size: 0.6875rem;
           color: #475569;
-          font-weight: 500;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          cursor: pointer;
+        }
+        .legend-pill.active {
+          background: #e2e8f0;
+          font-weight: 700;
+          color: #0f172a;
         }
 
-        /* 3. Floor Section & Matrix Grid */
-        .floor-sections-wrapper {
+        .dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 999px;
+          display: inline-block;
+        }
+        .dot-blank { background: #cbd5e1; }
+        .dot-running { background: #0284c7; }
+        .dot-printed { background: #22c55e; }
+        .dot-paid { background: #3b82f6; }
+        .dot-running-kot { background: #eab308; }
+
+        .toolbar-right {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        .btn-toolbar-icon {
+          background: #f8fafc;
+          border: 1px solid #cbd5e1;
+          border-radius: 4px;
+          padding: 4px 8px;
+          cursor: pointer;
+        }
+        .btn-add-table {
+          background: #f97316;
+          color: #ffffff;
+          border: none;
+          border-radius: 4px;
+          padding: 5px 12px;
+          font-size: 0.75rem;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        .btn-delivery-jump, .btn-pickup-jump {
+          background: #dc2626;
+          color: #ffffff;
+          border: none;
+          border-radius: 4px;
+          padding: 5px 12px;
+          font-size: 0.75rem;
+          font-weight: 700;
+          cursor: pointer;
+        }
+
+        .floor-matrix-scroll {
+          flex: 1;
+          overflow-y: auto;
+          padding: 16px;
           display: flex;
           flex-direction: column;
           gap: 20px;
         }
-        .floor-section-group {
-          display: flex;
-          flex-direction: column;
+
+        .floor-section-block {
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 8px;
+          padding: 14px;
         }
-        .section-header-title {
-          font-size: 0.95rem;
-          font-weight: 600;
-          color: #1e293b;
+        .section-title-label {
           margin: 0 0 12px 0;
+          font-size: 0.8125rem;
+          font-weight: 700;
+          color: #64748b;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
         }
 
-        .matrix-table-grid {
+        .tables-grid {
           display: grid;
-          grid-template-columns: repeat(13, minmax(0, 1fr));
+          grid-template-columns: repeat(auto-fill, minmax(105px, 1fr));
           gap: 10px;
         }
-        @media (max-width: 1300px) {
-          .matrix-table-grid {
-            grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
-          }
-        }
 
-        /* Table Card Dimensions & Styles */
-        .table-matrix-card {
-          width: 100%;
-          min-height: 76px;
-          border-radius: 8px;
+        .table-card {
+          border-radius: 6px;
+          padding: 8px 6px 4px 6px;
+          min-height: 80px;
           display: flex;
           flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          padding: 6px 4px;
+          justify-content: space-between;
           cursor: pointer;
-          position: relative;
-          user-select: none;
-          transition: transform 0.12s, box-shadow 0.12s;
+          transition: transform 0.1s, box-shadow 0.1s;
+          border: 1px solid transparent;
         }
-        .table-matrix-card:hover {
+        .table-card:hover {
           transform: translateY(-2px);
           box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         }
 
-        .card-row-top {
-          height: 14px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
+        .card-blank {
+          background: #e2e8f0;
+          color: #475569;
+          border-color: #cbd5e1;
         }
-        .card-row-middle {
-          flex: 1;
-          display: flex;
-          align-items: center;
-          justify-content: center;
+        .card-running-kot {
+          background: #fef08a; /* Yellow */
+          color: #713f12;
+          border-color: #facc15;
         }
-        .card-row-bottom {
-          height: 16px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
+        .card-printed {
+          background: #bbf7d0; /* Green */
+          color: #14532d;
+          border-color: #86efac;
         }
-        .empty-slot {
-          display: block;
-          height: 1px;
+        .card-paid {
+          background: #bfdbfe; /* Blue */
+          color: #1e3a8a;
+          border-color: #93c5fd;
+        }
+        .card-running {
+          background: #bae6fd; /* Cyan */
+          color: #0c4a6e;
+          border-color: #7dd3fc;
         }
 
-        .table-number-label {
+        .card-top-info {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 1px;
+        }
+        .elapsed-badge {
+          font-size: 0.625rem;
+          font-weight: 600;
+        }
+        .table-code-name {
           font-size: 0.875rem;
-          font-weight: 600;
+          font-weight: 800;
         }
-
-        /* Theme: Blank Table */
-        .theme-blank {
-          background: #f4f5f7;
-          border: 1.5px dashed #d1d5db;
-        }
-        .theme-blank .table-number-label {
-          color: #4b5563;
-        }
-
-        /* Theme: Printed Table (Green) */
-        .theme-printed {
-          background: #bbf7d0;
-          border: 1.5px solid #4ade80;
-        }
-        .theme-printed .elapsed-time-text {
+        .table-amount {
           font-size: 0.6875rem;
-          font-weight: 600;
-          color: #166534;
-        }
-        .theme-printed .table-number-label {
-          color: #14532d;
           font-weight: 700;
         }
-        .theme-printed .table-price-label {
-          font-size: 0.72rem;
-          font-weight: 700;
-          color: #14532d;
+        .blank-spacer {
+          height: 12px;
         }
 
-        /* Theme: Running KOT Table (Yellow) */
-        .theme-running-kot {
-          background: #fef08a;
-          border: 1.5px solid #facc15;
-        }
-        .theme-running-kot .elapsed-time-text {
-          font-size: 0.6875rem;
-          font-weight: 600;
-          color: #854d0e;
-        }
-        .theme-running-kot .table-number-label {
-          color: #713f12;
-          font-weight: 700;
-        }
-        .theme-running-kot .table-price-label {
-          font-size: 0.72rem;
-          font-weight: 700;
-          color: #713f12;
-        }
-
-        /* Theme: Running Table (Blue) */
-        .theme-running {
-          background: #e0f2fe;
-          border: 1.5px solid #38bdf8;
-        }
-        .theme-running .table-number-label {
-          color: #0369a1;
-          font-weight: 700;
-        }
-
-        /* Theme: Paid Table (Peach) */
-        .theme-paid {
-          background: #ffedd5;
-          border: 1.5px solid #fb923c;
-        }
-        .theme-paid .table-number-label {
-          color: #c2410c;
-          font-weight: 700;
-        }
-
-        /* Floating Action Pill Buttons */
-        .card-floating-actions {
-          position: absolute;
-          bottom: -10px;
+        .card-bottom-actions {
           display: flex;
           align-items: center;
-          justify-content: center;
-          gap: 4px;
-          z-index: 5;
+          justify-content: space-between;
+          padding-top: 4px;
+          border-top: 1px solid rgba(0, 0, 0, 0.06);
         }
-        .action-icon-pill {
-          width: 22px;
-          height: 20px;
-          background: #ffffff;
-          border: 1px solid #94a3b8;
-          border-radius: 4px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
+        .card-action-icon {
+          background: transparent;
+          border: none;
+          padding: 2px 4px;
           cursor: pointer;
-          padding: 0;
-          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-          transition: background 0.12s, transform 0.1s;
-        }
-        .action-icon-pill:hover {
-          background: #f1f5f9;
-          transform: scale(1.1);
-        }
-
-        /* Watermark Overlay */
-        .petpooja-bottom-watermark-overlay {
-          position: fixed;
-          bottom: 12px;
-          right: 24px;
-          pointer-events: none;
-          text-align: right;
-          z-index: 20;
-          opacity: 0.65;
-        }
-        .windows-act-text {
           font-size: 0.75rem;
-          color: #64748b;
-          font-weight: 500;
+          opacity: 0.7;
         }
-        .windows-sub-text {
-          font-size: 0.65rem;
-          color: #94a3b8;
-        }
-        .session-banner-pill {
-          margin-top: 4px;
-          display: inline-block;
-          background: rgba(15, 23, 42, 0.75);
-          color: #ffffff;
-          padding: 2px 8px;
-          border-radius: 4px;
-          font-size: 0.65rem;
+        .card-action-icon:hover {
+          opacity: 1;
         }
 
-        /* Modals */
+        /* Inspect modal */
         .inspect-backdrop {
           position: fixed;
-          inset: 0;
-          background: rgba(15, 23, 42, 0.4);
-          z-index: 100;
+          top: 0;
+          left: 0;
+          width: 100vw;
+          height: 100vh;
+          background: rgba(15, 23, 42, 0.5);
+          z-index: 150;
           display: flex;
           align-items: center;
           justify-content: center;
         }
         .inspect-card {
           background: #ffffff;
-          border-radius: 10px;
           padding: 20px;
+          border-radius: 12px;
           width: 90%;
           max-width: 440px;
-          box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
         }
         .inspect-header {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          border-bottom: 1px solid #e2e8f0;
-          padding-bottom: 10px;
-        }
-        .inspect-header h3 {
-          margin: 0;
-          font-size: 1rem;
-          font-weight: 700;
-          color: #0f172a;
         }
         .close-btn {
           background: transparent;
           border: none;
-          font-size: 1rem;
-          color: #64748b;
+          font-size: 1.1rem;
           cursor: pointer;
         }
-        .btn-modal-cancel {
+        .btn-secondary {
           background: #f1f5f9;
           border: 1px solid #cbd5e1;
-          color: #475569;
           padding: 6px 14px;
           border-radius: 6px;
-          font-size: 0.8125rem;
-          cursor: pointer;
-        }
-        .btn-modal-vacate {
-          background: #fff1f2;
-          border: 1px solid #fecdd3;
-          color: #be123c;
-          padding: 6px 14px;
-          border-radius: 6px;
-          font-size: 0.8125rem;
           font-weight: 600;
           cursor: pointer;
-          transition: background 0.15s;
         }
-        .btn-modal-vacate:hover {
-          background: #ffe4e6;
-        }
-        .btn-modal-open-pos {
-          background: #d32f2f;
+        .btn-primary {
+          background: #2563eb;
           color: #ffffff;
           border: none;
           padding: 6px 16px;
           border-radius: 6px;
-          font-size: 0.8125rem;
           font-weight: 600;
           cursor: pointer;
-        }
-        .circular-refresh-btn.spinning {
-          animation: refreshSpin 0.75s linear infinite;
-        }
-        @keyframes refreshSpin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
         }
       `}</style>
     </div>

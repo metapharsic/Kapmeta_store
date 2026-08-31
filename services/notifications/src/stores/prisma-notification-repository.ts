@@ -46,4 +46,16 @@ export class PrismaNotificationRepository implements NotificationRepository {
     });
     return row as NotificationRecord;
   }
+
+  async markAllRead(outletId: string, userId: string): Promise<number> {
+    const result = await this.prisma.notification.updateMany({
+      where: {
+        outletId,
+        OR: [{ userId }, { userId: null }],
+        isRead: false,
+      },
+      data: { isRead: true },
+    });
+    return result.count;
+  }
 }

@@ -1,12 +1,14 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import Head from "next/head";
 import Link from "next/link";
-import { authedFetch, useAuthGuard, getWsBase, logout } from "../lib/auth";
+import { authedFetch, useAuthGuard, logout } from "../lib/auth";
+import { useKapmetaSocket } from "../lib/useKapmetaSocket";
 import CaptainNavDrawer from "../components/CaptainNavDrawer";
 import UnsuccessfulKotModal from "../components/UnsuccessfulKotModal";
 import LanServerDiscoveryModal from "../components/LanServerDiscoveryModal";
 import CaptainPinLoginModal from "../components/CaptainPinLoginModal";
 import WaiterCashTipsCalculator from "../components/WaiterCashTipsCalculator";
+import MoveKotModal from "../components/MoveKotModal";
 import AttractiveMenuItemCard, { MenuItemData } from "../components/menu/AttractiveMenuItemCard";
 import MenuCustomizerModal, { CustomizedItemSelection } from "../components/menu/MenuCustomizerModal";
 import { DietaryFilter } from "../components/menu/CategoryNavbar";
@@ -35,6 +37,17 @@ interface DiningTable {
   section: string;
   status: "VACANT" | "OCCUPIED" | "BILLING" | "DIRTY";
   isActive: boolean;
+  kitchenStage?: "QUEUED" | "COOKING" | "READY" | "SERVED" | null;
+  orderStatus?: string | null;
+  currentOrderId?: string | null;
+  mergeGroupId?: string | null;
+  mergePrimaryTableId?: string | null;
+  mergedWith?: string[];
+  isMergePrimary?: boolean;
+  currentOrder?: {
+    id: string;
+    kots?: { id: string; ticketNumber: string; status: string }[];
+  } | null;
 }
 
 type Course = "STARTER" | "MAIN" | "DESSERT" | "BEVERAGE";
@@ -53,6 +66,7 @@ interface KOTTicket {
   ticketNumber: string;
   status: "QUEUED" | "PREPARING" | "READY" | "SERVED";
   createdAt: string;
+  tableNumber?: string | null;
   kotItems: {
     id: string;
     quantity: number;
@@ -78,6 +92,7 @@ interface OrderDetail {
     isVoided: boolean;
     course: string | null;
     seatNumber: number | null;
+    kitchenStatus?: string | null;
   }[];
 }
 
@@ -105,6 +120,14 @@ interface QueuedRequest {
   url: string;
   method: string;
   body: any;
+}
+
+function kitchenItemLabel(status?: string | null): string {
+  if (status === "SERVED") return "Served";
+  if (status === "READY") return "Ready";
+  if (status === "PREPARING" || status === "COOKING" || status === "IN_PREPARATION") return "Cooking";
+  if (status === "QUEUED" || status === "KOT_CREATED" || status === "PENDING") return "In kitchen";
+  return "Ticketed";
 }
 
 const OFFLINE_QUEUE_KEY = "kapmeta_waiter_offline_queue";
@@ -405,6 +428,7 @@ export default function WaiterDashboard() {
   const [menuItems, setMenuItems] = useState<MenuItem[]>(DEFAULT_WAITER_MENU_ITEMS);
   const [categories, setCategories] = useState<string[]>(ORDER_CATEGORIES);
   const [myKots, setMyKots] = useState<KOTTicket[]>([]);
+  const kotFetchGen = useRef(0);
   const [selectedSection, setSelectedSection] = useState<string>("All");
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -423,6 +447,10 @@ export default function WaiterDashboard() {
   // Manage existing occupied table order (add items / void)
   const [manageOrder, setManageOrder] = useState<OrderDetail | null>(null);
   const [loadingManageOrder, setLoadingManageOrder] = useState(false);
+  const manageOrderRef = useRef<OrderDetail | null>(null);
+  const activeTableRef = useRef<DiningTable | null>(null);
+  manageOrderRef.current = manageOrder;
+  activeTableRef.current = activeTable;
 
   // Table Transfer & Merge states
   const [transferFromTable, setTransferFromTable] = useState<DiningTable | null>(null);
@@ -468,8 +496,10 @@ export default function WaiterDashboard() {
     completedOrders: number;
     avgOrderMinutes: number | null;
     tipsMinor: string;
+    serviceChargeMinor?: string;
     revenueMinor: string;
   } | null>(null);
+  const [isMoveKotOpen, setIsMoveKotOpen] = useState(false);
 
   // Load Tables
   const fetchTables = async () => {
@@ -477,9 +507,32 @@ export default function WaiterDashboard() {
       const res = await authedFetch("/tables");
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          setTables(data);
-        }
+        const mapped: DiningTable[] = (data || []).map((tbl: any) => {
+          const live = !!tbl.currentOrder;
+          let status: DiningTable["status"] = "VACANT";
+          if (!live) status = "VACANT";
+          else if (tbl.status === "PRINTED" || tbl.status === "BILLING" || tbl.status === "PAID") status = "BILLING";
+          else status = "OCCUPIED";
+          return {
+            id: tbl.id,
+            tableNumber: tbl.tableNumber,
+            capacity: tbl.groupCapacity || tbl.capacity || 4,
+            section: tbl.section || "General",
+            status,
+            isActive: tbl.isActive !== false,
+            kitchenStage: tbl.kitchenStage || null,
+            orderStatus: tbl.currentOrder?.status || null,
+            currentOrderId: tbl.currentOrder?.id || tbl.activeOrderId || null,
+            mergeGroupId: tbl.mergeGroupId || null,
+            mergePrimaryTableId: tbl.mergePrimaryTableId || null,
+            mergedWith: Array.isArray(tbl.mergedWith) ? tbl.mergedWith : [],
+            isMergePrimary: !!tbl.isMergePrimary,
+            currentOrder: tbl.currentOrder
+              ? { id: tbl.currentOrder.id, kots: tbl.currentOrder.kots || [] }
+              : null,
+          };
+        });
+        setTables(mapped);
       }
     } catch (e) {
       console.error("Failed to fetch tables", e);
@@ -488,26 +541,40 @@ export default function WaiterDashboard() {
     }
   };
 
+  const fetchMyStats = async () => {
+    try {
+      const res = await authedFetch("/waiters/me/stats");
+      if (res.ok) setMyStats(await res.json());
+    } catch {
+      // keep last snapshot
+    }
+  };
+
   // Load Menu
   const fetchMenu = async () => {
     try {
       const res = await authedFetch("/menu/items");
       if (res.ok) {
-        const data: RawMenuItemApi[] = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          const rawOverrides = typeof window !== "undefined" ? localStorage.getItem("kapmeta_stock_overrides") : null;
-          const overrides = rawOverrides ? JSON.parse(rawOverrides) : {};
-          const mapped: MenuItem[] = data.map((item) => ({
-            ...item,
-            category: item.categoryName,
-            isStocked: overrides[item.id] !== undefined
-              ? overrides[item.id]
-              : (item.availability ? item.availability.isStocked : true),
-            stockQty: item.availability ? item.availability.stockQty : 100,
-          }));
-          setMenuItems(mapped);
-          setCategories(Array.from(new Set(mapped.map((item) => item.category))));
-        }
+        const data = await res.json();
+        const rawItems = Array.isArray(data) ? data : data.items || [];
+        const rawOverrides = typeof window !== "undefined" ? localStorage.getItem("kapmeta_stock_overrides") : null;
+        const overrides = rawOverrides ? JSON.parse(rawOverrides) : {};
+        const mapped: MenuItem[] = rawItems.map((item: any) => ({
+          id: item.id,
+          name: item.name || "Dish",
+          category: item.categoryName || item.category?.name || item.category || "General",
+          description: item.description || "",
+          priceMinor: Number(item.priceMinor || (Number(item.price || 0) * 100)),
+          isVeg: item.isVeg ?? true,
+          isStocked: overrides[item.id] !== undefined
+            ? overrides[item.id]
+            : (item.isStocked !== undefined ? item.isStocked : (item.availability ? item.availability.isStocked : (item.isActive ?? true))),
+          stockQty: item.availability ? item.availability.stockQty : (item.stockQty ?? 100),
+          icon: item.icon || "🍽️",
+        }));
+        setMenuItems(mapped);
+        const cats = Array.from(new Set(mapped.map((item) => item.category).filter(Boolean)));
+        setCategories(["All", ...cats]);
       }
     } catch (e) {
       console.error("Failed to fetch menu items", e);
@@ -516,13 +583,36 @@ export default function WaiterDashboard() {
 
   // Load Waiter Active KOTs
   const fetchKots = async () => {
+    const gen = ++kotFetchGen.current;
     try {
       const res = await authedFetch("/kitchen/kot");
-      if (res.ok) {
-        const data = await res.json();
-        // Show active KOTs (Queued, Preparing, Ready) to waiters so they can track and serve them
-        setMyKots(data.filter((k: KOTTicket) => k.status !== "SERVED"));
-      }
+      if (!res.ok) return;
+      const data = await res.json();
+      const rows: KOTTicket[] = Array.isArray(data) ? data : Array.isArray(data?.tickets) ? data.tickets : [];
+      const live = rows.filter((k) => k.status === "QUEUED" || k.status === "PREPARING" || k.status === "READY");
+      // #region agent log
+      fetch("http://127.0.0.1:7323/ingest/28c85a32-5ef1-4fe5-9437-78139f7a5bfb", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c675b" },
+        body: JSON.stringify({
+          sessionId: "9c675b",
+          runId: "wave2-ws",
+          hypothesisId: "F",
+          location: "waiter.tsx:fetchKots",
+          message: "waiter kitchen tickets",
+          data: {
+            gen,
+            applied: gen === kotFetchGen.current,
+            rawCount: rows.length,
+            liveCount: live.length,
+            statuses: rows.map((k) => k.status),
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
+      if (gen !== kotFetchGen.current) return;
+      setMyKots(live);
     } catch (e) {
       console.error("Failed to fetch KOTs", e);
     }
@@ -594,59 +684,6 @@ export default function WaiterDashboard() {
     window.addEventListener("offline", goOffline);
     setIsOnline(navigator.onLine);
 
-    let ws: WebSocket | null = null;
-    let reconnectTimer: NodeJS.Timeout | null = null;
-    let isUnmounted = false;
-
-    const connectWs = () => {
-      if (isUnmounted) return;
-      try {
-        const wsUrl = getWsBase();
-        ws = new WebSocket(wsUrl);
-
-        ws.onmessage = (event) => {
-          try {
-            const payload = JSON.parse(event.data);
-            if (payload.topic === "kot.created" || payload.topic === "kot.status_updated") {
-              fetchKots();
-              fetchTables();
-
-              if (payload.topic === "kot.status_updated" && payload.data?.status === "READY") {
-                const ticketId = payload.data?.kotTicketId || "";
-                const msg = `KOT Ticket #${ticketId.slice(-4)} is READY at the pickup counter!`;
-                showPickupNotification(msg);
-                playPickupBeep();
-                if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-                  new Notification("Kitchen: Order Ready", { body: msg, icon: undefined });
-                }
-              }
-            }
-          } catch (err) {
-            console.error("WS parse error", err);
-          }
-        };
-
-        ws.onclose = () => {
-          if (!isUnmounted) {
-            reconnectTimer = setTimeout(connectWs, 3000);
-          }
-        };
-
-        ws.onerror = () => {
-          try {
-            ws?.close();
-          } catch {}
-        };
-      } catch (err) {
-        if (!isUnmounted) {
-          reconnectTimer = setTimeout(connectWs, 5000);
-        }
-      }
-    };
-
-    connectWs();
-
-    // Polling backup + presence heartbeat + offline queue retry
     const interval = setInterval(() => {
       fetchTables();
       fetchKots();
@@ -655,9 +692,6 @@ export default function WaiterDashboard() {
     }, 15000);
 
     return () => {
-      isUnmounted = true;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      if (ws) ws.close();
       clearInterval(interval);
       window.removeEventListener("online", goOnline);
       window.removeEventListener("offline", goOffline);
@@ -668,6 +702,47 @@ export default function WaiterDashboard() {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 8000);
   };
+
+  useKapmetaSocket(
+    (payload) => {
+      const status = payload.data?.status;
+      const stage = payload.data?.stage;
+      const servedIds = [
+        payload.data?.kotTicketId,
+        ...((payload.data?.kotTicketIds as string[] | undefined) || []),
+      ].filter((id): id is string => typeof id === "string" && id.length > 0);
+
+      if (status === "SERVED" && servedIds.length > 0) {
+        setMyKots((prev) => prev.filter((k) => !servedIds.includes(k.id)));
+      }
+
+      fetchKots();
+      fetchTables();
+      fetchMyStats();
+      const openOrderId = manageOrderRef.current?.id;
+      if (openOrderId) {
+        authedFetch(`/orders/${openOrderId}`)
+          .then(async (r) => {
+            if (r.ok) setManageOrder(await r.json());
+          })
+          .catch(() => {});
+      }
+      if (
+        (payload.topic === "kot.status_updated" && status === "READY") ||
+        (payload.topic === "order.status_updated" && stage === "FOOD_READY")
+      ) {
+        const ticketId = String(payload.data?.kotTicketId || payload.data?.orderId || "");
+        const msg = `Order/Ticket #${ticketId.slice(-4)} is READY at the pickup counter!`;
+        showPickupNotification(msg);
+        playPickupBeep();
+        if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+          new Notification("Kitchen: Order Ready", { body: msg, icon: undefined });
+        }
+      }
+    },
+    !authLoading,
+    "waiter"
+  );
 
   // Unique sections list
   const sections = useMemo(() => {
@@ -822,28 +897,35 @@ export default function WaiterDashboard() {
       seatNumber: ci.seatNumber ?? undefined,
     }));
     const body = {
+      action: "KOT",
+      status: "KOT_CREATED",
       terminalNumber: "T-01",
       orderType: "DINE_IN",
-      diningTableId: activeTable.id,
+      diningTableId: activeTable.mergePrimaryTableId || activeTable.id,
+      tableNumber: activeTable.tableNumber,
       waiterId: me?.userId,
       idempotencyKey,
       lines,
     };
 
     try {
-      const res = await authedFetch("/orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      const existingOrderId = activeTable.currentOrderId;
+      const res = existingOrderId
+        ? await authedFetch(`/orders/${existingOrderId}/items`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ lines }),
+          })
+        : await authedFetch("/orders", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
 
       if (res.ok) {
         const created = await res.json();
-        // Order sits at PLACED until CONFIRMED — that transition is what
-        // fires the kitchen KOT (order-lifecycle onOrderConfirmed). Without
-        // this the order would never reach the kitchen. Best-effort: don't
-        // block the waiter's flow if this call fails.
-        if (!created.alreadyExisted) {
+        const orderId = created.id || existingOrderId;
+        if (!created.alreadyExisted && created.id) {
           await authedFetch(`/orders/${created.id}/status`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
@@ -855,20 +937,32 @@ export default function WaiterDashboard() {
           localStorage.removeItem(`kapmeta_draft_${activeTable.id}`);
         }
         setCart((prev) => prev.filter((ci) => !firing.includes(ci)));
-        if (courseFilter && !manageOrder) {
-          // Course-wise flow: the order now exists — switch into "manage" mode
-          // so the next course fires via add-items onto this same order instead
-          // of creating a duplicate one.
-          const detailRes = await authedFetch(`/orders/${created.id}`);
+        if (courseFilter && !manageOrder && orderId) {
+          const detailRes = await authedFetch(`/orders/${orderId}`);
           if (detailRes.ok) setManageOrder(await detailRes.json());
         } else if (!courseFilter) {
           setActiveTable(null);
         }
         fetchTables();
         fetchKots();
-        showPickupNotification(`Order placed for Table ${activeTable.tableNumber}!`);
+        showPickupNotification(`KOT sent for Table ${activeTable.tableNumber}.`);
       } else {
-        const errData = await res.json();
+        const errData = await res.json().catch(() => ({}));
+        // #region agent log
+        fetch("http://127.0.0.1:7323/ingest/28c85a32-5ef1-4fe5-9437-78139f7a5bfb", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c675b" },
+          body: JSON.stringify({
+            sessionId: "9c675b",
+            runId: "waiter-kot",
+            hypothesisId: "G",
+            location: "waiter.tsx:submitOrder:fail",
+            message: "waiter order POST failed",
+            data: { table: activeTable.tableNumber, httpStatus: res.status, error: errData.error },
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion
         setOrderError(errData.error || "Failed to place order");
       }
     } catch (e) {
@@ -888,16 +982,40 @@ export default function WaiterDashboard() {
   // Change Table Status directly
   const updateTableStatus = async (tableId: string, status: "VACANT" | "OCCUPIED" | "BILLING" | "DIRTY") => {
     try {
-      const res = await authedFetch(`/tables/${tableId}/status`, {
-        method: "PATCH",
+      const url = status === "VACANT" ? `/tables/${tableId}/vacant` : `/tables/${tableId}/status`;
+      const res = await authedFetch(url, {
+        method: status === "VACANT" ? "POST" : "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
+        body: status === "VACANT" ? undefined : JSON.stringify({ status }),
       });
       if (res.ok) {
         fetchTables();
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setTableActionError(errData.error || "Could not update table");
+        showPickupNotification(errData.error || "Could not update table");
       }
     } catch (e) {
       console.error("Failed to update table status", e);
+    }
+  };
+
+  const serveTable = async (table: DiningTable) => {
+    try {
+      const res = await authedFetch(`/tables/${table.id}/serve`, { method: "POST" });
+      if (res.ok) {
+        fetchTables();
+        fetchKots();
+        showPickupNotification(`Table ${table.tableNumber} served — still running until billed`);
+        if (activeTableRef.current?.id === table.id) {
+          await openManageTable(table);
+        }
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        showPickupNotification(errData.error || "Serve failed");
+      }
+    } catch (e) {
+      console.error("Failed to serve table", e);
     }
   };
 
@@ -916,7 +1034,28 @@ export default function WaiterDashboard() {
       const { id: orderId } = await activeRes.json();
       const detailRes = await authedFetch(`/orders/${orderId}`);
       if (detailRes.ok) {
-        setManageOrder(await detailRes.json());
+        const detail = await detailRes.json();
+        setManageOrder(detail);
+        // #region agent log
+        fetch("http://127.0.0.1:7323/ingest/28c85a32-5ef1-4fe5-9437-78139f7a5bfb", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c675b" },
+          body: JSON.stringify({
+            sessionId: "9c675b",
+            runId: "waiter-lifecycle",
+            hypothesisId: "H",
+            location: "waiter.tsx:openManageTable",
+            message: "manage order kitchenStatus",
+            data: {
+              table: table.tableNumber,
+              orderId: detail.id,
+              orderStatus: detail.status,
+              kitchenStatuses: (detail.items || []).map((i: any) => i.kitchenStatus),
+            },
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion
       }
     } catch (e) {
       console.error("Failed to load table order", e);
@@ -1007,12 +1146,12 @@ export default function WaiterDashboard() {
       const res = await authedFetch(`/tables/${transferFromTable.id}/transfer`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ toTableId }),
+        body: JSON.stringify({ targetTableId: toTableId, toTableId }),
       });
       if (res.ok) {
         setTransferFromTable(null);
         fetchTables();
-        showPickupNotification("Table transferred!");
+        showPickupNotification(`Table ${transferFromTable.tableNumber} transferred successfully!`);
       } else {
         const errData = await res.json();
         setTableActionError(errData.error || "Transfer failed");
@@ -1035,10 +1174,26 @@ export default function WaiterDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sourceTableIds: mergeSourceIds, targetTableId }),
       });
+      // #region agent log
+      fetch("http://127.0.0.1:7323/ingest/28c85a32-5ef1-4fe5-9437-78139f7a5bfb", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c675b" },
+        body: JSON.stringify({
+          sessionId: "9c675b",
+          runId: "merge-fix",
+          hypothesisId: "Q",
+          location: "waiter.tsx:completeMerge",
+          message: "waiter merge POST /tables/merge",
+          data: { ok: res.ok, status: res.status, sourceTableIds: mergeSourceIds, targetTableId },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       if (res.ok) {
         setMergeSourceIds([]);
         setMergeMode(false);
         fetchTables();
+        fetchKots();
         showPickupNotification("Tables merged!");
       } else {
         const errData = await res.json();
@@ -1059,10 +1214,15 @@ export default function WaiterDashboard() {
     setServiceChargeInput("");
     setLoadingBill(true);
     try {
-      const activeRes = await authedFetch(`/orders/by-table/${table.id}/active`);
-      if (!activeRes.ok) return;
-      const { id: orderId } = await activeRes.json();
-      const billRes = await authedFetch(`/orders/${orderId}/bill`);
+      const orderId = table.currentOrderId;
+      let resolvedOrderId = orderId || null;
+      if (!resolvedOrderId) {
+        const activeRes = await authedFetch(`/orders/by-table/${table.id}/active`);
+        if (!activeRes.ok) return;
+        const { id } = await activeRes.json();
+        resolvedOrderId = id;
+      }
+      const billRes = await authedFetch(`/orders/${resolvedOrderId}/bill`);
       if (billRes.ok) {
         const b = await billRes.json();
         setBill(b);
@@ -1087,12 +1247,27 @@ export default function WaiterDashboard() {
     }
   };
 
-  const applyCharges = async () => {
-    if (!bill) return;
+  const applyCharges = async (): Promise<boolean> => {
+    if (!bill) return false;
     setSavingCharges(true);
     try {
       const tipMinor = Math.round((parseFloat(tipInput) || 0) * 100);
       const serviceChargeMinor = Math.round((parseFloat(serviceChargeInput) || 0) * 100);
+      // #region agent log
+      fetch("http://127.0.0.1:7323/ingest/28c85a32-5ef1-4fe5-9437-78139f7a5bfb", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c675b" },
+        body: JSON.stringify({
+          sessionId: "9c675b",
+          runId: "waiter-charges",
+          hypothesisId: "K",
+          location: "waiter.tsx:applyCharges",
+          message: "waiter applying tip/service before bill",
+          data: { orderId: bill.orderId, tipMinor, serviceChargeMinor },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       const res = await authedFetch(`/orders/${bill.orderId}/charges`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -1105,9 +1280,12 @@ export default function WaiterDashboard() {
           setBill(b);
           setPaymentAmount((Number(b.dueMinor) / 100).toFixed(2));
         }
+        return true;
       }
+      return false;
     } catch (e) {
       console.error("Failed to apply charges", e);
+      return false;
     } finally {
       setSavingCharges(false);
     }
@@ -1115,10 +1293,34 @@ export default function WaiterDashboard() {
 
   const submitPayment = async (overrideAmountMinor?: number, seatNumber?: number) => {
     if (!bill) return;
-    const amountMinor = overrideAmountMinor ?? Math.round(parseFloat(paymentAmount) * 100);
-    if (!amountMinor || amountMinor <= 0) return;
     setSubmittingPayment(true);
     try {
+      await applyCharges();
+      const latestBillRes = await authedFetch(`/orders/${bill.orderId}/bill`);
+      const latestBill = latestBillRes.ok ? await latestBillRes.json() : bill;
+      if (latestBillRes.ok) setBill(latestBill);
+      const amountMinor =
+        overrideAmountMinor ??
+        (Number(latestBill.dueMinor) || Math.round(parseFloat(paymentAmount) * 100));
+      const alreadyPaidInFull = Number(latestBill.dueMinor) <= 0;
+      if ((!amountMinor || amountMinor <= 0) && !alreadyPaidInFull) {
+        setSubmittingPayment(false);
+        return;
+      }
+      if (alreadyPaidInFull && billTable) {
+        const settleRes = await authedFetch(`/orders/${bill.orderId}/settle`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ paymentMethod }),
+        });
+        await authedFetch(`/tables/${billTable.id}/vacant`, { method: "POST" }).catch(() => {});
+        setBillTable(null);
+        fetchTables();
+        fetchMyStats();
+        showPickupNotification(settleRes.ok ? "Bill settled — table vacant" : "Settle failed");
+        setSubmittingPayment(false);
+        return;
+      }
       const res = await authedFetch(`/orders/${bill.orderId}/payments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1130,9 +1332,62 @@ export default function WaiterDashboard() {
           const b = await refreshed.json();
           setBill(b);
           if (Number(b.dueMinor) <= 0 && billTable) {
-            await updateTableStatus(billTable.id, "DIRTY");
+            const settleRes = await authedFetch(`/orders/${bill.orderId}/settle`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ paymentMethod }),
+            });
+            // #region agent log
+            fetch("http://127.0.0.1:7323/ingest/28c85a32-5ef1-4fe5-9437-78139f7a5bfb", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c675b" },
+              body: JSON.stringify({
+                sessionId: "9c675b",
+                runId: "post-merge",
+                hypothesisId: "W",
+                location: "waiter.tsx:submitPayment",
+                message: "waiter pay then settle",
+                data: {
+                  orderId: bill.orderId,
+                  tableId: billTable.id,
+                  tableNumber: billTable.tableNumber,
+                  mergeGroupId: billTable.mergeGroupId || null,
+                  settleOk: settleRes.ok,
+                  settleStatus: settleRes.status,
+                },
+                timestamp: Date.now(),
+              }),
+            }).catch(() => {});
+            // #endregion
+            if (!settleRes.ok) {
+              const errData = await settleRes.json().catch(() => ({}));
+              showPickupNotification(errData.error || "Paid, but settle failed");
+            }
+            const vacantRes = await authedFetch(`/tables/${billTable.id}/vacant`, { method: "POST" }).catch(() => null);
+            // #region agent log
+            fetch("http://127.0.0.1:7323/ingest/28c85a32-5ef1-4fe5-9437-78139f7a5bfb", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c675b" },
+              body: JSON.stringify({
+                sessionId: "9c675b",
+                runId: "post-fix",
+                hypothesisId: "W",
+                location: "waiter.tsx:submitPayment:vacant",
+                message: "waiter vacant after settle",
+                data: {
+                  orderId: bill.orderId,
+                  tableId: billTable.id,
+                  vacantOk: vacantRes ? vacantRes.ok : false,
+                  vacantStatus: vacantRes ? vacantRes.status : null,
+                },
+                timestamp: Date.now(),
+              }),
+            }).catch(() => {});
+            // #endregion
             setBillTable(null);
             fetchTables();
+            fetchMyStats();
+            showPickupNotification("Bill settled — table vacant");
           }
         }
         if (splitBySeat) await loadSeatBills();
@@ -1156,6 +1411,11 @@ export default function WaiterDashboard() {
       if (res.ok) {
         fetchKots();
         fetchTables();
+        const openOrderId = manageOrderRef.current?.id;
+        if (openOrderId) {
+          const detailRes = await authedFetch(`/orders/${openOrderId}`);
+          if (detailRes.ok) setManageOrder(await detailRes.json());
+        }
       }
     } catch (e) {
       console.error("Failed to serve KOT", e);
@@ -1290,8 +1550,14 @@ export default function WaiterDashboard() {
                     {activeTable.section}
                   </span>
                   {manageOrder ? (
-                    <span className="text-xs bg-amber-950 text-amber-300 border border-amber-500/30 px-2.5 py-0.5 rounded-full font-bold">
-                      Order #{manageOrder.orderNumber}
+                    <span className={`text-xs border px-2.5 py-0.5 rounded-full font-bold ${
+                      manageOrder.items.filter((i) => !i.isVoided).every((i) => i.kitchenStatus === "SERVED")
+                        ? "bg-emerald-950 text-emerald-300 border-emerald-500/30"
+                        : "bg-amber-950 text-amber-300 border-amber-500/30"
+                    }`}>
+                      {manageOrder.items.filter((i) => !i.isVoided).every((i) => i.kitchenStatus === "SERVED")
+                        ? `Running — Served · #${manageOrder.orderNumber}`
+                        : `Order #${manageOrder.orderNumber}`}
                     </span>
                   ) : (
                     <span className="text-xs bg-emerald-950 text-emerald-300 border border-emerald-500/30 px-2.5 py-0.5 rounded-full font-bold">
@@ -1513,10 +1779,23 @@ export default function WaiterDashboard() {
                   {/* Fired items if managing */}
                   {manageOrder && manageOrder.items.filter((i) => !i.isVoided).length > 0 && (
                     <div className="border border-slate-800/80 rounded-xl p-3 bg-slate-950/60 max-h-36 overflow-y-auto">
-                      <div className="text-[10px] font-bold text-slate-400 uppercase mb-2">Already in Kitchen</div>
+                      <div className="text-[10px] font-bold text-slate-400 uppercase mb-2">
+                        {manageOrder.items.filter((i) => !i.isVoided).every((i) => i.kitchenStatus === "SERVED")
+                          ? "Served — table still running"
+                          : "Fired tickets"}
+                      </div>
                       {manageOrder.items.filter((i) => !i.isVoided).map((i) => (
                         <div key={i.id} className="flex justify-between items-center text-xs text-slate-300 py-1 border-b border-slate-900 last:border-0">
-                          <span>{i.menuItemName} <b className="text-indigo-400">x{i.quantity}</b></span>
+                          <span>
+                            {i.menuItemName} <b className="text-indigo-400">x{i.quantity}</b>
+                            <span className={`ml-2 text-[10px] font-bold ${
+                              i.kitchenStatus === "SERVED" ? "text-emerald-400" :
+                              i.kitchenStatus === "READY" ? "text-amber-400" :
+                              i.kitchenStatus === "PREPARING" ? "text-indigo-400" : "text-slate-500"
+                            }`}>
+                              {kitchenItemLabel(i.kitchenStatus)}
+                            </span>
+                          </span>
                           <button
                             onClick={() => voidItem(i.id)}
                             className="text-[10px] text-rose-400 hover:text-rose-300 font-semibold"
@@ -1655,6 +1934,12 @@ export default function WaiterDashboard() {
                     >
                       {mergeMode ? "Cancel Merge" : "Merge Tables"}
                     </button>
+                    <button
+                      onClick={() => setIsMoveKotOpen(true)}
+                      className="px-3 py-1.5 rounded-lg text-[10px] font-bold bg-slate-800 text-slate-300 hover:text-slate-100"
+                    >
+                      Move KOT
+                    </button>
                     {offlineCount > 0 && (
                       <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-amber-950/40 text-amber-400 border border-amber-500/20">
                         {offlineCount} queued
@@ -1663,8 +1948,7 @@ export default function WaiterDashboard() {
                     <button
                       onClick={async () => {
                         setShowStats(true);
-                        const res = await authedFetch("/waiters/me/stats");
-                        if (res.ok) setMyStats(await res.json());
+                        await fetchMyStats();
                       }}
                       className="px-3 py-1.5 rounded-lg text-[10px] font-bold bg-slate-800 text-slate-300 hover:text-slate-100"
                     >
@@ -1711,16 +1995,25 @@ export default function WaiterDashboard() {
                   {filteredTables.map((table) => {
                     let statusColor = "border-emerald-500/20 bg-emerald-950/20 text-emerald-400";
                     let badgeLabel = "Vacant";
-                    
-                    if (table.status === "OCCUPIED") {
-                      statusColor = "border-rose-500/20 bg-rose-950/20 text-rose-400";
-                      badgeLabel = "Occupied";
-                    } else if (table.status === "BILLING") {
+
+                    if (table.status === "BILLING") {
                       statusColor = "border-blue-500/20 bg-blue-950/20 text-blue-400";
                       badgeLabel = "Billing";
                     } else if (table.status === "DIRTY") {
                       statusColor = "border-amber-500/20 bg-amber-950/20 text-amber-400";
                       badgeLabel = "Dirty";
+                    } else if (table.status === "OCCUPIED" && table.kitchenStage === "READY") {
+                      statusColor = "border-amber-500/30 bg-amber-950/30 text-amber-300";
+                      badgeLabel = "Ready";
+                    } else if (table.status === "OCCUPIED" && table.kitchenStage === "SERVED") {
+                      statusColor = "border-emerald-500/30 bg-emerald-950/30 text-emerald-300";
+                      badgeLabel = "Served · Running";
+                    } else if (table.status === "OCCUPIED" && (table.kitchenStage === "QUEUED" || table.kitchenStage === "COOKING")) {
+                      statusColor = "border-rose-500/20 bg-rose-950/20 text-rose-400";
+                      badgeLabel = table.kitchenStage === "COOKING" ? "Cooking" : "In kitchen";
+                    } else if (table.status === "OCCUPIED") {
+                      statusColor = "border-rose-500/20 bg-rose-950/20 text-rose-400";
+                      badgeLabel = "Running";
                     }
 
                     const isMergeSelected = mergeSourceIds.includes(table.id);
@@ -1732,7 +2025,7 @@ export default function WaiterDashboard() {
                         data-status={table.status}
                         data-table-uuid={table.id}
                         onClick={() => {
-                          if (mergeMode && table.status === "OCCUPIED") toggleMergeSource(table.id);
+                          if (mergeMode) toggleMergeSource(table.id);
                         }}
                         className={`border rounded-2xl p-4 flex flex-col justify-between h-auto min-h-36 transition-all duration-300 relative overflow-hidden group ${statusColor} ${
                           isMergeSelected ? "ring-2 ring-indigo-400" : ""
@@ -1746,25 +2039,30 @@ export default function WaiterDashboard() {
                             </span>
                           </div>
                           <span className="text-[11px] text-slate-400 mt-1 block">Capacity: {table.capacity} Pax</span>
+                          {table.mergedWith && table.mergedWith.length > 1 && (
+                            <span className="text-[10px] text-indigo-300 mt-0.5 block font-medium">
+                              Merged {table.mergedWith.join(" + ")}
+                            </span>
+                          )}
                         </div>
 
                         {mergeMode ? (
-                          table.status === "OCCUPIED" && (
-                            <div className="mt-auto pt-3 z-10 flex flex-col gap-1">
-                              <span className="text-[10px] text-center text-indigo-300">{isMergeSelected ? "Selected" : "Tap to select"}</span>
-                              {isMergeSelected && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    completeMerge(table.id);
-                                  }}
-                                  className="w-full bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg py-1.5 text-xs font-semibold transition-all"
-                                >
-                                  Merge Into This
-                                </button>
-                              )}
-                            </div>
-                          )
+                          <div className="mt-auto pt-3 z-10 flex flex-col gap-1">
+                            <span className="text-[10px] text-center text-indigo-300 font-medium">
+                              {isMergeSelected ? "✓ Selected (Source)" : "Tap to select / target"}
+                            </span>
+                            {mergeSourceIds.length > 0 && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  completeMerge(table.id);
+                                }}
+                                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg py-1.5 text-[11px] font-bold transition-all shadow-md"
+                              >
+                                Merge into Table {table.tableNumber}
+                              </button>
+                            )}
+                          </div>
                         ) : (
                           <div className="flex flex-col gap-1.5 mt-auto pt-3 z-10">
                             {table.status === "VACANT" && transferFromTable && (
@@ -1785,6 +2083,14 @@ export default function WaiterDashboard() {
                             )}
                             {table.status === "OCCUPIED" && (
                               <>
+                                {table.kitchenStage === "READY" && (
+                                  <button
+                                    onClick={() => serveTable(table)}
+                                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg py-1.5 text-xs font-semibold transition-all"
+                                  >
+                                    Serve
+                                  </button>
+                                )}
                                 <button
                                   onClick={() => {
                                     setCoversCount(table.capacity || 2);
@@ -1792,7 +2098,7 @@ export default function WaiterDashboard() {
                                   }}
                                   className="w-full bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg py-1.5 text-xs font-semibold transition-all"
                                 >
-                                  Manage Order
+                                  {table.kitchenStage === "SERVED" ? "Add next / Running" : "Manage Order"}
                                 </button>
                                 <div className="flex gap-1">
                                   <button
@@ -1808,20 +2114,20 @@ export default function WaiterDashboard() {
                                     Bill
                                   </button>
                                   <button
-                                    onClick={() => updateTableStatus(table.id, "DIRTY")}
+                                    onClick={() => updateTableStatus(table.id, "VACANT")}
                                     className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg py-1.5 text-[10px] font-semibold transition-all"
                                   >
-                                    Clear
+                                    Vacate
                                   </button>
                                 </div>
                               </>
                             )}
                             {table.status === "BILLING" && (
                               <button
-                                onClick={() => updateTableStatus(table.id, "DIRTY")}
+                                onClick={() => openBill(table)}
                                 className="w-full bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg py-1.5 text-xs font-semibold transition-all"
                               >
-                                Settle & Clear
+                                Pay & Vacate
                               </button>
                             )}
                             {table.status === "DIRTY" && (
@@ -1876,7 +2182,9 @@ export default function WaiterDashboard() {
                       >
                         <div>
                           <div className="flex justify-between items-center mb-3">
-                            <span className="font-bold text-xs text-slate-100">KOT #{kot.ticketNumber}</span>
+                            <span className="font-bold text-xs text-slate-100">
+                              KOT #{kot.ticketNumber}{kot.tableNumber ? ` · ${kot.tableNumber}` : ""}
+                            </span>
                             <span className={`text-[9px] font-semibold uppercase px-2 py-0.5 rounded-full ${badgeColor}`}>
                               {kot.status}
                             </span>
@@ -1955,6 +2263,24 @@ export default function WaiterDashboard() {
         </div>
       )}
 
+      {isMoveKotOpen && (
+        <MoveKotModal
+          tables={tables.map((t) => ({
+            id: t.id,
+            tableNumber: t.tableNumber,
+            section: t.section,
+            status: t.status,
+            currentOrder: t.currentOrder || null,
+          }))}
+          onClose={() => setIsMoveKotOpen(false)}
+          onSuccess={() => {
+            fetchTables();
+            fetchKots();
+            fetchMyStats();
+          }}
+        />
+      )}
+
       {showStats && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={() => setShowStats(false)}>
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -1980,8 +2306,16 @@ export default function WaiterDashboard() {
                   <div className="text-[10px] text-slate-500 mt-1">Avg Order Time (min)</div>
                 </div>
                 <div className="bg-slate-950 rounded-xl p-3">
-                  <div className="text-2xl font-bold text-emerald-400">₹{(Number(myStats.tipsMinor) / 100).toFixed(0)}</div>
+                  <div className="text-2xl font-bold text-emerald-400">₹{(Number(myStats.tipsMinor) / 100).toFixed(2)}</div>
                   <div className="text-[10px] text-slate-500 mt-1">Tips Earned</div>
+                </div>
+                <div className="bg-slate-950 rounded-xl p-3">
+                  <div className="text-2xl font-bold text-slate-100">₹{(Number(myStats.serviceChargeMinor || 0) / 100).toFixed(2)}</div>
+                  <div className="text-[10px] text-slate-500 mt-1">Service Charge</div>
+                </div>
+                <div className="bg-slate-950 rounded-xl p-3">
+                  <div className="text-2xl font-bold text-slate-100">{myStats.completedOrders}</div>
+                  <div className="text-[10px] text-slate-500 mt-1">Settled Orders</div>
                 </div>
                 <div className="bg-slate-950 rounded-xl p-3 col-span-2">
                   <div className="text-2xl font-bold text-slate-100">₹{(Number(myStats.revenueMinor) / 100).toFixed(2)}</div>
@@ -2001,7 +2335,24 @@ export default function WaiterDashboard() {
               <button onClick={() => setBillTable(null)} className="text-slate-400 hover:text-slate-200 text-xl font-bold">×</button>
             </div>
 
-            {loadingBill && <p className="text-xs text-slate-500">Loading bill...</p>}
+            {loadingBill && <p className="text-xs text-slate-500 py-4 text-center">Loading live bill details...</p>}
+
+            {!loadingBill && !bill && (
+              <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-5 text-center flex flex-col items-center gap-3">
+                <span className="text-3xl">🧾</span>
+                <p className="text-xs text-slate-400">No active running order or pending bill for Table {billTable.tableNumber}.</p>
+                <button
+                  onClick={() => {
+                    const tbl = billTable;
+                    setBillTable(null);
+                    openManageTable(tbl);
+                  }}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg px-4 py-2 text-xs font-semibold transition-all"
+                >
+                  Manage / Create Order
+                </button>
+              </div>
+            )}
 
             {bill && (
               <div className="flex flex-col gap-3">
@@ -2129,24 +2480,32 @@ export default function WaiterDashboard() {
       <CaptainNavDrawer
         isOpen={isCaptainDrawerOpen}
         onClose={() => setIsCaptainDrawerOpen(false)}
-        outletName={me?.outlet?.name || "Hotel Kapila"}
+        outletName={me?.outlet?.name || "Main Outlet"}
         stationCode="cp4"
         staffName={me?.name || "Captain"}
         unsuccessfulCount={offlineCount}
         onNewKot={() => {
           setSelectedSection("All");
           setActiveTable(null);
+          showPickupNotification("Select a vacant table to log a new KOT.");
         }}
         onOpenUnsuccessfulModal={() => setIsUnsuccessfulModalOpen(true)}
         onOpenCashTipsCalculator={() => setIsCashTipsCalculatorOpen(true)}
-        onSyncData={() => {
-          fetchTables();
-          fetchMenu();
-          fetchKots();
+        onSyncData={async () => {
+          await fetchTables();
+          await fetchMenu();
+          await fetchKots();
+          await flushOfflineQueue();
+          showPickupNotification("✅ Tables, menu catalog, and KOT data synchronized!");
         }}
-        onUpdateMenu={() => fetchMenu()}
+        onUpdateMenu={async () => {
+          await fetchMenu();
+          showPickupNotification("🍴 Menu catalog updated to latest version!");
+        }}
         onOpenServerIpModal={() => setIsServerIpModalOpen(true)}
-        onOpenSettings={() => alert("Captain Tablet Station Settings: Station cp4 | Printer IP: Auto-discover")}
+        onOpenSettings={() => {
+          showPickupNotification("⚙️ Captain Station: cp4 | Mode: High-Reliability Local LAN");
+        }}
         onLogout={logout}
       />
 

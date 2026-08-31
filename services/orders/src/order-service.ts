@@ -181,7 +181,7 @@ export function priceOrder(
     // item price is scaled below.
     let modifierSurchargeUnitMinor = 0n;
     const modifiers: PricedOrderLineModifier[] = [];
-    for (const modifierOptionId of line.modifierOptionIds || []) {
+    for (const modifierOptionId of (line.modifierOptionIds || [])) {
       const modifierPriceMinor = modifierPrices.get(modifierOptionId);
       if (modifierPriceMinor === undefined) {
         throw new Error(`no price found for modifier option ${modifierOptionId}`);
@@ -190,20 +190,19 @@ export function priceOrder(
       modifiers.push({ modifierOptionId, priceMinor: modifierPriceMinor });
     }
 
-    const lineSubtotalMinor = (unitPriceMinor + modifierSurchargeUnitMinor) * BigInt(line.quantity);
+    const unitPrice = BigInt(unitPriceMinor ?? 0);
+    const surcharge = BigInt(modifierSurchargeUnitMinor ?? 0);
+    const qty = BigInt(line.quantity ?? 1);
+    const lineSubtotalMinor = (unitPrice + surcharge) * qty;
 
-    // MenuItem.price is tax-inclusive (schema: "5% GST inclusive"), so the
-    // charged amount doesn't change — this backs out the embedded tax
-    // component (CGST+SGST combined) for invoice/Finance/Z-report line
-    // items only. Modifiers are taxed at the same rate as their parent item
-    // (no per-modifier tax class in the schema).
-    const taxRateBasisPoints = BigInt(Math.round(taxRatePercent * 100));
+    const rate = Number(taxRatePercent ?? 5);
+    const taxRateBasisPoints = BigInt(Math.round(rate * 100));
     const lineTaxMinor = lineSubtotalMinor - (lineSubtotalMinor * 10000n) / (10000n + taxRateBasisPoints);
 
     pricedLines.push({
       menuItemId: line.menuItemId,
-      quantity: line.quantity,
-      unitPriceMinor,
+      quantity: Number(line.quantity ?? 1),
+      unitPriceMinor: unitPrice,
       subtotalMinor: lineSubtotalMinor,
       taxMinor: lineTaxMinor,
       modifiers,
@@ -224,6 +223,46 @@ export function priceOrder(
     grandTotalMinor: subtotalMinor,
     lines: pricedLines,
   };
+}
+
+async function deductBOMForOrder(orderId: string, orderRepo: OrderRepository): Promise<void> {
+  // Fetch order detail to get menu items + quantities
+  const orderDetail = await (orderRepo as any).getOrderById?.(orderId);
+  if (!orderDetail || !orderDetail.lines) return;
+
+  const outletId = orderDetail.outletId;
+  if (!outletId) return;
+
+  // Group by menuItemId
+  const itemQtyMap = new Map<string, number>();
+  for (const line of orderDetail.lines) {
+    const curr = itemQtyMap.get(line.menuItemId) || 0;
+    itemQtyMap.set(line.menuItemId, curr + (line.quantity || 1));
+  }
+
+  // For each menu item with a recipe, deduct ingredients
+  const prisma = (orderRepo as any).prisma;
+  if (!prisma) return;
+
+  for (const [menuItemId, qty] of itemQtyMap.entries()) {
+    const recipe = await prisma.recipes.findFirst({
+      where: { outlet_id: outletId, menu_item_id: menuItemId, is_active: true },
+      include: { recipe_ingredients: true },
+    });
+    if (!recipe || !recipe.recipe_ingredients.length) continue;
+
+    const portions = Number(recipe.yield_portions || 1);
+    for (const ri of recipe.recipe_ingredients) {
+      const deductQty = (Number(ri.quantity) / portions) * qty;
+      await prisma.ingredients.updateMany({
+        where: { id: ri.ingredient_id, outlet_id: outletId },
+        data: {
+          current_stock_qty: { decrement: deductQty },
+          updated_at: new Date(),
+        },
+      });
+    }
+  }
 }
 
 export async function createOrder(
@@ -283,6 +322,17 @@ export async function transitionOrder(
   }
 
   await orderRepo.recordTransition(orderId, toStatus, userId, reasonCode, approverUserId);
+
+  // BOM deduction: when order completed, consume recipe ingredients
+  if (toStatus === "COMPLETED") {
+    try {
+      await deductBOMForOrder(orderId, orderRepo);
+    } catch (error) {
+      console.error("BOM deduction failed for order", orderId, error);
+      // Non-fatal: order already marked completed, log and continue
+    }
+  }
+
   return { ok: true, newStatus: toStatus };
 }
 
@@ -345,7 +395,11 @@ export async function addOrderItems(
     prices.set(line.menuItemId, price);
   }
 
-  const modifierOptionIds = Array.from(new Set(lines.flatMap((line) => line.modifierOptionIds)));
+  const modifierOptionIds = Array.from(
+    new Set(
+      lines.flatMap((line) => (Array.isArray(line.modifierOptionIds) ? line.modifierOptionIds : [])).filter(Boolean)
+    )
+  );
   const modifierPrices =
     modifierOptionIds.length > 0 && modifierPriceLookup
       ? await modifierPriceLookup.getPrices(modifierOptionIds, outletId)

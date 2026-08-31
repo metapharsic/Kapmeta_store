@@ -20,6 +20,7 @@ interface ShiftData {
   cardSalesMinor: string;
   upiSalesMinor: string;
   digitalTipsMinor: string;
+  serviceChargeMinor?: string;
   totalRevenueMinor: string;
   recentOrders: any[];
 }
@@ -401,8 +402,32 @@ export default function WaiterCashTipsCalculator({
             <button
               type="button"
               className="btn-complete-shift"
-              onClick={() => {
-                alert(`Shift closed successfully for ${shiftData?.waiter?.name || "Captain"}. Net tip payout of ₹${netWaiterTipPayout.toFixed(2)} recorded.`);
+              onClick={async () => {
+                try {
+                  const res = await authedFetch("/waiters/me/shift-handover", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      actualCashCountedMinor: Math.round(totalCountedCash * 100),
+                      openingFloatMinor: Math.round(openingFloat * 100),
+                      netTipPayoutMinor: Math.round(netWaiterTipPayout * 100),
+                      digitalTipsMinor: Number(shiftData?.digitalTipsMinor || 0),
+                      serviceChargeMinor: Number((shiftData as any)?.serviceChargeMinor || 0),
+                      cashSalesMinor: Number(shiftData?.cashSalesMinor || 0),
+                      managerNotes: `Captain Shift Handover: ${shiftData?.waiter?.name || "Captain"}. Net tip payout: ₹${netWaiterTipPayout.toFixed(2)}, Denominations: 500x${denoms.n500}, 200x${denoms.n200}, 100x${denoms.n100}, 50x${denoms.n50}, 20x${denoms.n20}, 10x${denoms.n10}, Coins: ₹${denoms.coins}`,
+                    }),
+                  });
+                  if (res.ok) {
+                    alert(`Captain handover saved for ${shiftData?.waiter?.name || "Captain"}.\n\nTotal Cash Counted: ₹${totalCountedCash.toFixed(2)}\nNet Tip Payout: ₹${netWaiterTipPayout.toFixed(2)}\nVariance: ${cashVariance >= 0 ? "+" : "-"}₹${Math.abs(cashVariance).toFixed(2)}\n\nHouse cash drawer was NOT closed. Finance sees this handover live.`);
+                  } else {
+                    const errData = await res.json().catch(() => ({}));
+                    alert(errData.error || "Handover failed");
+                    return;
+                  }
+                } catch {
+                  alert("Network error saving captain handover. House drawer was not touched.");
+                  return;
+                }
                 onClose();
               }}
             >

@@ -87,25 +87,32 @@ interface PurchaseOrderApi {
   }[];
 }
 
-function formatPriceMinor(priceMinor: string): string {
-  const rupees = Number(BigInt(priceMinor)) / 100;
-  return `₹${rupees.toFixed(2)}`;
+function formatPriceMinor(priceMinor?: string | number): string {
+  if (priceMinor === undefined || priceMinor === null || priceMinor === "") return "₹0.00";
+  try {
+    const rupees = Number(priceMinor) / 100;
+    return isNaN(rupees) ? "₹0.00" : `₹${rupees.toFixed(2)}`;
+  } catch {
+    return "₹0.00";
+  }
 }
 
 function mapApiRow(row: AvailabilityApiRow): ItemAvailability {
+  const id = row.menuItemId || (row as any).id || "";
+  const name = row.name || "Dish";
   return {
-    id: row.menuItemId,
-    stockQty: row.stockQty,
-    isStocked: row.isStocked,
-    version: row.version,
-    category: row.categoryName,
+    id,
+    stockQty: typeof row.stockQty === "number" ? row.stockQty : 100,
+    isStocked: typeof row.isStocked === "boolean" ? row.isStocked : true,
+    version: typeof row.version === "number" ? row.version : 1,
+    category: row.categoryName || (row as any).category || "General",
     menuItem: {
-      id: row.menuItemId,
-      name: row.name,
+      id,
+      name,
       description: "",
       icon: row.isVeg ? "🥗" : "🍗",
       priceFormatted: formatPriceMinor(row.priceMinor),
-      isVeg: row.isVeg,
+      isVeg: row.isVeg ?? true,
     },
   };
 }
@@ -131,6 +138,12 @@ export default function InventoryDashboard() {
   const [newIngUom, setNewIngUom] = useState("g");
   const [newIngReorder, setNewIngReorder] = useState("500");
   const [newIngUnitCost, setNewIngUnitCost] = useState("10");
+  const [newIngStock, setNewIngStock] = useState("100");
+
+  // Quick Stock Adjust State
+  const [adjustModalIng, setAdjustModalIng] = useState<RawIngredient | null>(null);
+  const [adjustQty, setAdjustQty] = useState("");
+  const [adjustType, setAdjustType] = useState<"ADD" | "DEDUCT">("ADD");
 
   // Recipes State
   const [recipes, setRecipes] = useState<RecipeApi[]>([]);
@@ -148,6 +161,12 @@ export default function InventoryDashboard() {
   const [newVendorName, setNewVendorName] = useState("");
   const [newVendorPhone, setNewVendorPhone] = useState("");
   const [newVendorEmail, setNewVendorEmail] = useState("");
+  const [showAddPoModal, setShowAddPoModal] = useState(false);
+  const [newPoVendorId, setNewPoVendorId] = useState("");
+  const [newPoLines, setNewPoLines] = useState<{ ingredientId: string; quantity: number; unitPrice: number }[]>([
+    { ingredientId: "", quantity: 10, unitPrice: 50 },
+  ]);
+  const [receivingPoId, setReceivingPoId] = useState<string | null>(null);
 
   const fetchAvailability = () => {
     setLoading(true);
@@ -175,12 +194,12 @@ export default function InventoryDashboard() {
   const fetchIngredients = async () => {
     setLoadingIng(true);
     try {
-      const res = await authedFetch("/ingredients");
+      const res = await authedFetch("/inventory/ingredients");
       if (res.ok) {
         setIngredients(await res.json());
       }
     } catch (e) {
-      console.error(e);
+      console.error("Error fetching ingredients:", e);
     } finally {
       setLoadingIng(false);
     }
@@ -189,12 +208,12 @@ export default function InventoryDashboard() {
   const fetchRecipes = async () => {
     setLoadingRec(true);
     try {
-      const res = await authedFetch("/recipes");
+      const res = await authedFetch("/inventory/recipes");
       if (res.ok) {
         setRecipes(await res.json());
       }
     } catch (e) {
-      console.error(e);
+      console.error("Error fetching recipes:", e);
     } finally {
       setLoadingRec(false);
     }
@@ -203,13 +222,13 @@ export default function InventoryDashboard() {
   const fetchVendorsAndPOs = async () => {
     try {
       const [vRes, poRes] = await Promise.all([
-        authedFetch("/vendors"),
-        authedFetch("/purchase-orders"),
+        authedFetch("/inventory/vendors"),
+        authedFetch("/inventory/purchase-orders"),
       ]);
       if (vRes.ok) setVendors(await vRes.json());
       if (poRes.ok) setPurchaseOrders(await poRes.json());
     } catch (e) {
-      console.error(e);
+      console.error("Error fetching vendors and POs:", e);
     }
   };
 
@@ -227,6 +246,11 @@ export default function InventoryDashboard() {
   }, [items]);
 
   const patchAvailability = async (id: string, isStocked: boolean, stockQty: number, expectedVersion: number) => {
+    // Optimistically update local state immediately
+    setItems((prev) =>
+      prev.map((it) => (it.id === id ? { ...it, isStocked, stockQty, version: expectedVersion + 1 } : it))
+    );
+
     try {
       const res = await authedFetch(`/menu/items/${id}/availability`, {
         method: "PATCH",
@@ -239,11 +263,14 @@ export default function InventoryDashboard() {
         return;
       }
       if (!res.ok) throw new Error("HTTP error " + res.status);
-      const data: AvailabilityApiRow = await res.json();
-      setItems((prev) =>
-        prev.map((it) => (it.id === id ? mapApiRow(data) : it))
-      );
-    } catch {
+      const data = await res.json();
+      if (data && typeof data.newVersion === "number") {
+        setItems((prev) =>
+          prev.map((it) => (it.id === id ? { ...it, isStocked, stockQty, version: data.newVersion } : it))
+        );
+      }
+    } catch (err) {
+      console.error("Error patching availability:", err);
       fetchAvailability();
     }
   };
@@ -252,7 +279,7 @@ export default function InventoryDashboard() {
     e.preventDefault();
     if (!newIngName.trim()) return;
     try {
-      const res = await authedFetch("/ingredients", {
+      const res = await authedFetch("/inventory/ingredients", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -260,15 +287,51 @@ export default function InventoryDashboard() {
           unitOfMeasure: newIngUom,
           reorderLevel: parseFloat(newIngReorder) || 0,
           unitCost: parseFloat(newIngUnitCost) || 0,
+          currentStock: parseFloat(newIngStock) || 0,
+          initialStock: parseFloat(newIngStock) || 0,
         }),
       });
       if (res.ok) {
         setShowAddIngModal(false);
         setNewIngName("");
-        fetchIngredients();
+        setNewIngReorder("500");
+        setNewIngUnitCost("10");
+        setNewIngStock("100");
+        await fetchIngredients();
+      } else {
+        const err = await res.json();
+        alert(err.error || "Failed to create ingredient");
       }
     } catch (e) {
       alert("Failed to create ingredient");
+    }
+  };
+
+  const handleAdjustStock = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adjustModalIng) return;
+    const amount = parseFloat(adjustQty);
+    if (isNaN(amount) || amount <= 0) {
+      alert("Please enter a valid positive quantity");
+      return;
+    }
+    const delta = adjustType === "ADD" ? amount : -amount;
+    try {
+      const res = await authedFetch(`/inventory/ingredients/${adjustModalIng.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quantity: delta }),
+      });
+      if (res.ok) {
+        setAdjustModalIng(null);
+        setAdjustQty("");
+        await fetchIngredients();
+      } else {
+        const err = await res.json();
+        alert(err.error || "Failed to adjust stock");
+      }
+    } catch (e) {
+      alert("Network error adjusting stock");
     }
   };
 
@@ -283,19 +346,28 @@ export default function InventoryDashboard() {
       alert("Please add at least one valid ingredient line");
       return;
     }
+    const selectedItem = items.find((i) => i.id === selectedMenuItemId);
+    const dishName = selectedItem ? selectedItem.menuItem.name : "Recipe BOM";
+
     try {
-      const res = await authedFetch("/recipes", {
+      const res = await authedFetch("/inventory/recipes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          name: dishName,
           menuItemId: selectedMenuItemId,
           ingredients: validLines,
         }),
       });
       if (res.ok) {
         setShowAddRecipeModal(false);
-        fetchRecipes();
+        setSelectedMenuItemId("");
+        setRecipeLines([{ ingredientId: "", quantity: 100, yieldPercent: 100 }]);
+        await fetchRecipes();
         alert("Recipe BOM linked successfully!");
+      } else {
+        const err = await res.json();
+        alert(err.error || "Failed to link recipe BOM");
       }
     } catch (e) {
       alert("Failed to link recipe BOM");
@@ -306,7 +378,7 @@ export default function InventoryDashboard() {
     e.preventDefault();
     if (!newVendorName.trim() || !newVendorPhone.trim()) return;
     try {
-      const res = await authedFetch("/vendors", {
+      const res = await authedFetch("/inventory/vendors", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -320,10 +392,70 @@ export default function InventoryDashboard() {
         setNewVendorName("");
         setNewVendorPhone("");
         setNewVendorEmail("");
-        fetchVendorsAndPOs();
+        await fetchVendorsAndPOs();
+      } else {
+        const err = await res.json();
+        alert(err.error || "Failed to create vendor");
       }
     } catch (e) {
       alert("Failed to create vendor");
+    }
+  };
+
+  const handleCreatePO = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPoVendorId) {
+      alert("Please select a supplier / vendor");
+      return;
+    }
+    const validLines = newPoLines.filter((l) => l.ingredientId && l.quantity > 0);
+    if (validLines.length === 0) {
+      alert("Please add at least one valid raw ingredient line item");
+      return;
+    }
+    try {
+      const res = await authedFetch("/inventory/purchase-orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vendorId: newPoVendorId,
+          items: validLines,
+        }),
+      });
+      if (res.ok) {
+        setShowAddPoModal(false);
+        setNewPoVendorId("");
+        setNewPoLines([{ ingredientId: "", quantity: 10, unitPrice: 50 }]);
+        await fetchVendorsAndPOs();
+        alert("✅ Purchase Order created successfully in DRAFT state!");
+      } else {
+        const err = await res.json();
+        alert(err.error || "Failed to create Purchase Order");
+      }
+    } catch (e) {
+      alert("Failed to create Purchase Order");
+    }
+  };
+
+  const handleReceivePO = async (poId: string) => {
+    if (!confirm("Receive physical goods for this PO? Raw material stock will be automatically incremented in the database.")) return;
+    setReceivingPoId(poId);
+    try {
+      const res = await authedFetch(`/inventory/purchase-orders/${poId}/receive`, {
+        method: "POST",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        alert(`✅ ${data.message || "Goods received and stock incremented!"}`);
+        await Promise.all([fetchVendorsAndPOs(), fetchIngredients()]);
+      } else {
+        const err = await res.json();
+        alert(err.error || "Failed to receive PO");
+      }
+    } catch (e) {
+      alert("Network error receiving PO");
+    } finally {
+      setReceivingPoId(null);
     }
   };
 
@@ -334,6 +466,29 @@ export default function InventoryDashboard() {
       return matchesSearch && matchesCategory;
     });
   }, [items, searchQuery, selectedCategory]);
+
+  const handleExport86 = () => {
+    const listToExport = filteredItems;
+    if (listToExport.length === 0) {
+      alert("No dishes found to export.");
+      return;
+    }
+    const lines = ["Dish Name,Category,Price,Status,Available Portions"];
+    for (const it of listToExport) {
+      const statusText = it.isStocked ? "IN_STOCK" : "86_OUT_OF_STOCK";
+      lines.push(`"${it.menuItem.name}","${it.category}","${it.menuItem.priceFormatted}","${statusText}",${it.stockQty}`);
+    }
+    const csvContent = lines.join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const downloadUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = `86_availability_${selectedCategory.toLowerCase()}_${new Date().toISOString().split("T")[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(downloadUrl);
+  };
 
   return (
     <div className="min-h-screen flex bg-slate-950 text-slate-100 font-sans">
@@ -418,6 +573,14 @@ export default function InventoryDashboard() {
                   </button>
                 ))}
               </div>
+
+              <button
+                onClick={handleExport86}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5"
+                title="Export filtered items to CSV / Excel sheet"
+              >
+                <span>📥</span> Export 86 Sheet (CSV)
+              </button>
             </div>
 
             {/* Dishes Grid */}
@@ -500,12 +663,13 @@ export default function InventoryDashboard() {
                     <th className="p-3">Reorder Threshold</th>
                     <th className="p-3">Current Stock</th>
                     <th className="p-3">Status</th>
+                    <th className="p-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 text-slate-300">
                   {ingredients.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="p-6 text-center text-slate-500">
+                      <td colSpan={7} className="p-6 text-center text-slate-500">
                         No raw ingredients configured. Click "+ Add Raw Material" above.
                       </td>
                     </tr>
@@ -529,6 +693,18 @@ export default function InventoryDashboard() {
                                 Healthy
                               </span>
                             )}
+                          </td>
+                          <td className="p-3 text-right">
+                            <button
+                              onClick={() => {
+                                setAdjustModalIng(ing);
+                                setAdjustQty("10");
+                                setAdjustType("ADD");
+                              }}
+                              className="bg-slate-800 hover:bg-slate-700 text-indigo-400 border border-slate-700 px-2.5 py-1 rounded-lg text-[10px] font-bold transition"
+                            >
+                              ± Adjust Stock
+                            </button>
                           </td>
                         </tr>
                       );
@@ -573,11 +749,11 @@ export default function InventoryDashboard() {
                       </div>
 
                       <div className="flex flex-col gap-1.5 mb-3">
-                        {rec.recipeIngredients.map((ri) => (
-                          <div key={ri.id} className="flex justify-between text-xs text-slate-300">
-                            <span>{ri.ingredient?.name}</span>
+                        {(rec.recipeIngredients || (rec as any).ingredients || []).map((ri: any) => (
+                          <div key={ri.id || ri.ingredientId} className="flex justify-between text-xs text-slate-300">
+                            <span>{ri.ingredient?.name || ri.ingredientName || "Ingredient"}</span>
                             <span className="font-bold text-indigo-400">
-                              {ri.quantity} {ri.ingredient?.unitOfMeasure} ({ri.yieldPercent}%)
+                              {ri.quantity} {ri.ingredient?.unitOfMeasure || ri.unit || "g"} ({ri.yieldPercent || 100}%)
                             </span>
                           </div>
                         ))}
@@ -598,26 +774,37 @@ export default function InventoryDashboard() {
         {/* TAB 4: VENDORS & PROCUREMENT */}
         {activeTab === "PROCUREMENT" && (
           <div className="flex flex-col gap-4">
-            <div className="flex justify-between items-center bg-slate-900 border border-slate-800 p-3 rounded-xl">
+            <div className="flex flex-wrap justify-between items-center bg-slate-900 border border-slate-800 p-3 rounded-xl gap-2">
               <div>
-                <h2 className="text-sm font-bold text-slate-100">Vendors & Purchase Orders</h2>
-                <p className="text-[11px] text-slate-400">Manage supplier directories and incoming stock goods</p>
+                <h2 className="text-sm font-bold text-slate-100">Vendors & Purchase Orders (Procurement)</h2>
+                <p className="text-[11px] text-slate-400">Manage supplier directories, create POs, and receive stock via Goods Received Notes (GRN)</p>
               </div>
-              <button
-                onClick={() => setShowAddVendorModal(true)}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5"
-              >
-                <span>+</span> Add Vendor
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowAddVendorModal(true)}
+                  className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5"
+                >
+                  <span>+</span> Register Vendor
+                </button>
+                <button
+                  onClick={() => setShowAddPoModal(true)}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5"
+                >
+                  <span>+</span> Create Purchase Order (PO)
+                </button>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               {/* Vendor List */}
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-                <h3 className="font-bold text-xs uppercase tracking-wider text-slate-400 mb-3">Active Suppliers</h3>
-                <div className="flex flex-col gap-2">
+                <h3 className="font-bold text-xs uppercase tracking-wider text-slate-400 mb-3 flex justify-between items-center">
+                  <span>Registered Suppliers</span>
+                  <span className="text-[10px] bg-slate-800 px-2 py-0.5 rounded text-slate-300">{vendors.length}</span>
+                </h3>
+                <div className="flex flex-col gap-2 max-h-96 overflow-y-auto">
                   {vendors.length === 0 ? (
-                    <p className="text-xs text-slate-500">No suppliers registered.</p>
+                    <p className="text-xs text-slate-500 p-4 text-center">No suppliers registered. Click "+ Register Vendor" above.</p>
                   ) : (
                     vendors.map((v) => (
                       <div key={v.id} className="bg-slate-950 p-3 rounded-lg border border-slate-800/80 flex justify-between items-center">
@@ -633,23 +820,76 @@ export default function InventoryDashboard() {
               </div>
 
               {/* Purchase Orders List */}
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-                <h3 className="font-bold text-xs uppercase tracking-wider text-slate-400 mb-3">Recent Purchase Orders</h3>
-                <div className="flex flex-col gap-2">
+              <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-xl p-4">
+                <h3 className="font-bold text-xs uppercase tracking-wider text-slate-400 mb-3 flex justify-between items-center">
+                  <span>Purchase Orders & Goods Receipt (GRN)</span>
+                  <span className="text-[10px] bg-slate-800 px-2 py-0.5 rounded text-slate-300">{purchaseOrders.length} POs</span>
+                </h3>
+                <div className="flex flex-col gap-3 max-h-[500px] overflow-y-auto">
                   {purchaseOrders.length === 0 ? (
-                    <p className="text-xs text-slate-500">No purchase orders created yet.</p>
+                    <div className="bg-slate-950 p-8 rounded-lg text-center text-slate-500 text-xs">
+                      No purchase orders recorded yet. Click "+ Create Purchase Order (PO)" above to create your first order.
+                    </div>
                   ) : (
-                    purchaseOrders.map((po) => (
-                      <div key={po.id} className="bg-slate-950 p-3 rounded-lg border border-slate-800/80 flex justify-between items-center">
-                        <div>
-                          <div className="font-bold text-xs text-slate-200">{po.poNumber} — {po.vendor?.name}</div>
-                          <div className="text-[11px] text-slate-400">Total: ₹{po.totalAmount} • {new Date(po.createdAt).toLocaleDateString()}</div>
+                    purchaseOrders.map((po) => {
+                      const isReceived = po.status === "RECEIVED";
+                      return (
+                        <div key={po.id} className="bg-slate-950 p-4 rounded-xl border border-slate-800 flex flex-col gap-3">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-sm text-slate-100">{po.poNumber}</span>
+                                <span className={`text-[10px] px-2 py-0.5 rounded font-bold border ${
+                                  isReceived 
+                                    ? "bg-emerald-950 text-emerald-400 border-emerald-500/30" 
+                                    : "bg-indigo-950 text-indigo-400 border-indigo-500/30"
+                                }`}>
+                                  {po.status}
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-400 mt-0.5">Supplier: <strong>{(po as any).vendorName || po.vendor?.name || "Vendor"}</strong> • {new Date(po.createdAt).toLocaleDateString()}</p>
+                            </div>
+
+                            <div className="text-right">
+                              <span className="text-xs text-slate-400 block">Total Amount</span>
+                              <span className="font-black text-sm text-emerald-400">₹{po.totalAmount.toFixed(2)}</span>
+                            </div>
+                          </div>
+
+                          {/* Items summary */}
+                          {po.items && po.items.length > 0 && (
+                            <div className="bg-slate-900/60 p-2.5 rounded-lg border border-slate-800/60 flex flex-col gap-1 text-xs">
+                              {po.items.map((it, idx) => (
+                                <div key={idx} className="flex justify-between text-slate-300">
+                                  <span>{it.quantity}x {(it as any).ingredientName || it.ingredient?.name || "Raw Material"}</span>
+                                  <span className="font-mono text-slate-400">@ ₹{(it as any).unitPrice || it.unitCost} = ₹{((it as any).total || it.totalCost || (it.quantity * ((it as any).unitPrice || it.unitCost || 0))).toFixed(2)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="flex justify-between items-center pt-2 border-t border-slate-800/80">
+                            <span className="text-[11px] text-slate-500">
+                              {isReceived ? "Stock updated and verified via GRN" : "Physical shipment pending receipt"}
+                            </span>
+
+                            {!isReceived ? (
+                              <button
+                                onClick={() => handleReceivePO(po.id)}
+                                disabled={receivingPoId === po.id}
+                                className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+                              >
+                                <span>📥</span> {receivingPoId === po.id ? "Receiving..." : "Receive Goods (GRN)"}
+                              </button>
+                            ) : (
+                              <span className="text-emerald-400 font-bold text-xs flex items-center gap-1">
+                                <span>✅</span> Goods Received & Stock Incremented
+                              </span>
+                            )}
+                          </div>
                         </div>
-                        <span className="text-[10px] bg-indigo-950 text-indigo-400 border border-indigo-500/30 px-2 py-0.5 rounded font-bold">
-                          {po.status}
-                        </span>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </div>
@@ -703,14 +943,26 @@ export default function InventoryDashboard() {
                 </div>
               </div>
 
-              <div>
-                <label className="text-[10px] text-slate-400 font-bold uppercase">Reorder Alert Threshold</label>
-                <input
-                  type="number"
-                  value={newIngReorder}
-                  onChange={(e) => setNewIngReorder(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white mt-1"
-                />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] text-slate-400 font-bold uppercase">Initial Stock</label>
+                  <input
+                    type="number"
+                    value={newIngStock}
+                    onChange={(e) => setNewIngStock(e.target.value)}
+                    placeholder="e.g. 100"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white mt-1"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-400 font-bold uppercase">Reorder Alert Threshold</label>
+                  <input
+                    type="number"
+                    value={newIngReorder}
+                    onChange={(e) => setNewIngReorder(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white mt-1"
+                  />
+                </div>
               </div>
 
               <div className="flex gap-2 mt-4">
@@ -726,6 +978,75 @@ export default function InventoryDashboard() {
                   className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-2 rounded-lg text-xs font-bold"
                 >
                   Save Ingredient
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: ADJUST STOCK */}
+      {adjustModalIng && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={() => setAdjustModalIng(null)}>
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h2 className="font-bold text-base text-slate-100 mb-1">Adjust Ingredient Stock</h2>
+            <p className="text-xs text-slate-400 mb-4">{adjustModalIng.name} (Current: {adjustModalIng.currentStock} {adjustModalIng.unitOfMeasure})</p>
+
+            <form onSubmit={handleAdjustStock} className="flex flex-col gap-3">
+              <div>
+                <label className="text-[10px] text-slate-400 font-bold uppercase">Adjustment Type</label>
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                  <button
+                    type="button"
+                    onClick={() => setAdjustType("ADD")}
+                    className={`py-1.5 rounded-lg text-xs font-bold transition border ${
+                      adjustType === "ADD"
+                        ? "bg-emerald-950 text-emerald-300 border-emerald-500/50"
+                        : "bg-slate-950 text-slate-400 border-slate-800 hover:bg-slate-800"
+                    }`}
+                  >
+                    + Add / Receive
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAdjustType("DEDUCT")}
+                    className={`py-1.5 rounded-lg text-xs font-bold transition border ${
+                      adjustType === "DEDUCT"
+                        ? "bg-rose-950 text-rose-300 border-rose-500/50"
+                        : "bg-slate-950 text-slate-400 border-slate-800 hover:bg-slate-800"
+                    }`}
+                  >
+                    − Deduct / Wastage
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] text-slate-400 font-bold uppercase">Quantity ({adjustModalIng.unitOfMeasure})</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  required
+                  placeholder="e.g. 10"
+                  value={adjustQty}
+                  onChange={(e) => setAdjustQty(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white mt-1"
+                />
+              </div>
+
+              <div className="flex gap-2 mt-4">
+                <button
+                  type="button"
+                  onClick={() => setAdjustModalIng(null)}
+                  className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 rounded-lg text-xs font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-2 rounded-lg text-xs font-bold"
+                >
+                  Confirm Adjustment
                 </button>
               </div>
             </form>
@@ -881,6 +1202,138 @@ export default function InventoryDashboard() {
                   className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-2 rounded-lg text-xs font-bold"
                 >
                   Register Vendor
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CREATE PURCHASE ORDER (PO) */}
+      {showAddPoModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={() => setShowAddPoModal(false)}>
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-lg shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h2 className="font-bold text-base text-slate-100 mb-1">Create Purchase Order (PO)</h2>
+            <p className="text-xs text-slate-400 mb-4">Select a supplier and add raw materials to order</p>
+
+            <form onSubmit={handleCreatePO} className="flex flex-col gap-3">
+              <div>
+                <label className="text-[10px] text-slate-400 font-bold uppercase">Select Supplier / Vendor</label>
+                <select
+                  required
+                  value={newPoVendorId}
+                  onChange={(e) => setNewPoVendorId(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white mt-1"
+                >
+                  <option value="">-- Choose Registered Vendor --</option>
+                  {vendors.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.name} ({v.phone})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] text-slate-400 font-bold uppercase mb-2 block">Order Line Items</label>
+                <div className="flex flex-col gap-2 max-h-48 overflow-y-auto">
+                  {newPoLines.map((line, idx) => (
+                    <div key={idx} className="flex items-center gap-2 bg-slate-950 p-2 rounded-lg border border-slate-800">
+                      <select
+                        value={line.ingredientId}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          const chosen = ingredients.find((ing) => ing.id === val);
+                          setNewPoLines((prev) =>
+                            prev.map((l, i) =>
+                              i === idx
+                                ? { ...l, ingredientId: val, unitPrice: chosen?.unitCost || l.unitPrice }
+                                : l
+                            )
+                          );
+                        }}
+                        className="flex-1 bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white"
+                      >
+                        <option value="">-- Raw Material --</option>
+                        {ingredients.map((ing) => (
+                          <option key={ing.id} value={ing.id}>
+                            {ing.name} ({ing.unitOfMeasure})
+                          </option>
+                        ))}
+                      </select>
+
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          placeholder="Qty"
+                          value={line.quantity}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value) || 0;
+                            setNewPoLines((prev) => prev.map((l, i) => (i === idx ? { ...l, quantity: val } : l)));
+                          }}
+                          className="w-16 bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white text-right"
+                        />
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          {ingredients.find((ing) => ing.id === line.ingredientId)?.unitOfMeasure || "u"}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px] text-slate-400">@₹</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          placeholder="Cost"
+                          value={line.unitPrice}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value) || 0;
+                            setNewPoLines((prev) => prev.map((l, i) => (i === idx ? { ...l, unitPrice: val } : l)));
+                          }}
+                          className="w-16 bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white text-right"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setNewPoLines((prev) => prev.filter((_, i) => i !== idx))}
+                        className="text-rose-400 hover:text-rose-300 px-1 font-bold text-xs"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex justify-between items-center mt-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setNewPoLines((prev) => [...prev, { ingredientId: "", quantity: 10, unitPrice: 50 }])
+                    }
+                    className="text-xs text-indigo-400 hover:text-indigo-300 font-bold"
+                  >
+                    + Add Item Line
+                  </button>
+
+                  <span className="text-xs font-bold text-slate-300">
+                    Est. Total: <strong className="text-emerald-400">₹{newPoLines.reduce((sum, l) => sum + (l.quantity || 0) * (l.unitPrice || 0), 0).toFixed(2)}</strong>
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex gap-2 mt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowAddPoModal(false)}
+                  className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 rounded-lg text-xs font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-2 rounded-lg text-xs font-bold"
+                >
+                  Create Purchase Order
                 </button>
               </div>
             </form>

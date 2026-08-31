@@ -42,7 +42,7 @@ interface CampaignRecipientApi {
 const TRIGGER_LABELS: Record<CampaignApi["triggerType"], string> = {
   MANUAL: "Manual (pick customers)",
   INACTIVE_CUSTOMER: "Inactive customers (no order in N days)",
-  BIRTHDAY: "Birthday (requires customer birthdate — not yet captured)",
+  BIRTHDAY: "Birthday (customers celebrating birthday this month)",
 };
 
 export default function MarketingPage() {
@@ -317,11 +317,9 @@ export default function MarketingPage() {
                 )}
 
                 {triggerType === "BIRTHDAY" && (
-                  <div className="not-available-box inline-warning">
+                  <div className="not-available-box" style={{ background: "#f0fdf4", borderColor: "#86efac", color: "#166534" }}>
                     <p>
-                      Requires a customer birthdate field, not yet captured in the schema. You can
-                      still create this campaign, but queueing it will report a gap instead of
-                      matching any customers.
+                      🎂 Automatically targets and queues all customers with birthdays occurring in the current calendar month.
                     </p>
                   </div>
                 )}

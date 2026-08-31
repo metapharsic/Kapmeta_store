@@ -1,7 +1,7 @@
 import { Router } from "express";
-import { prisma } from "../db";
 import { PrismaNotificationRepository } from "@kapmeta/notifications";
 import { requireAuth, type AuthedRequest } from "../middleware/require-auth";
+import { prisma } from "../prisma";
 
 const repo = new PrismaNotificationRepository(prisma);
 
@@ -28,6 +28,16 @@ notificationsRouter.patch("/notifications/:id/read", requireAuth, async (req: Au
       return;
     }
     res.status(200).json(updated);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "internal error" });
+  }
+});
+
+notificationsRouter.post("/notifications/read-all", requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    const count = await repo.markAllRead(req.auth!.outletId, req.auth!.userId);
+    res.status(200).json({ markedRead: count });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "internal error" });

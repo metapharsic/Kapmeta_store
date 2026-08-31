@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { prisma } from "../db";
+import { prisma } from "../prisma";
 import {
   signAccessToken,
   generateRefreshToken,
@@ -323,30 +323,34 @@ router.get("/me", requireAuth, async (req: AuthedRequest, res) => {
     const { roles, permissions } = await rbac.listPermissions(userId, outletId);
 
     // Real outlet identity fields for receipt/terminal display (name, address,
-    // FSSAI, UPI VPA) plus the org-level GSTIN — no hardcoded "Hotel Kapila"
-    // literals on the client per repo CLAUDE.md no-hardcode-data rule.
+    // FSSAI, UPI VPA) plus the org-level GSTIN
+    let outletData = null;
     const outlet = await prisma.outlet.findUnique({
       where: { id: outletId },
-      include: { organization: { select: { taxNumber: true } } },
     });
+
+    if (outlet) {
+      const organization = await prisma.organization.findUnique({
+        where: { id: outlet.organizationId },
+      });
+      outletData = {
+        id: outlet.id,
+        name: outlet.name,
+        address: (outlet as any).address || null,
+        fssaiNumber: (outlet as any).fssaiNumber || null,
+        upiVpa: (outlet as any).upiVpa || null,
+        taxNumber: (organization as any)?.taxNumber || (organization as any)?.tax_id || null,
+      };
+    }
 
     res.status(200).json({
       userId: user.id,
       email: user.email,
-      name: `${user.firstName} ${user.lastName}`,
+      name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.full_name || 'Admin',
       outletId,
       roles,
       permissions,
-      outlet: outlet
-        ? {
-            id: outlet.id,
-            name: outlet.name,
-            address: outlet.address,
-            fssaiNumber: outlet.fssaiNumber,
-            upiVpa: outlet.upiVpa,
-            taxNumber: outlet.organization?.taxNumber ?? null,
-          }
-        : null,
+      outlet: outletData,
     });
   } catch (err) {
     console.error(err);

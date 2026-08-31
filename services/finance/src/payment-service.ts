@@ -4,20 +4,24 @@ export class PrismaPaymentRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
   async getOrderBalance(orderId: string, outletId: string) {
-    const order = await this.prisma.order.findUnique({
-      where: { id: orderId, outletId },
-      include: { payments: true }
-    });
+    const [order, payments] = await Promise.all([
+      this.prisma.order.findUnique({
+        where: { id: orderId, outletId },
+      }),
+      this.prisma.payment.findMany({
+        where: { orderId, outletId },
+      }),
+    ]);
     if (!order) throw new Error("Order not found");
 
-    const totalPaid = order.payments
-      .filter(p => p.status === "CAPTURED")
-      .reduce((acc, p) => acc + p.amount, 0n);
+    const totalPaid = payments
+      .filter((p: any) => p.status === "CAPTURED" || p.status === "SUCCESS")
+      .reduce((acc: bigint, p: any) => acc + BigInt(p.amount), 0n);
 
     return {
       grandTotal: order.grandTotal,
       totalPaid,
-      balance: order.grandTotal - totalPaid
+      balance: order.grandTotal - totalPaid,
     };
   }
 

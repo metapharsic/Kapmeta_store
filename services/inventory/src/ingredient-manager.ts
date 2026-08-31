@@ -8,8 +8,8 @@ export class IngredientManager {
   }
 
   async listIngredients(outletId: string) {
-    return await this.prisma.ingredient.findMany({
-      where: { outletId },
+    return await (this.prisma as any).ingredients.findMany({
+      where: { outlet_id: outletId, is_active: true },
       orderBy: { name: "asc" },
     });
   }
@@ -21,48 +21,32 @@ export class IngredientManager {
     reorderLevel: number,
     unitCost: number
   ) {
-    return await this.prisma.ingredient.create({
+    return await (this.prisma as any).ingredients.create({
       data: {
-        outletId,
+        outlet_id: outletId,
         name,
-        unitOfMeasure,
-        reorderLevel,
-        unitCost,
-        currentStock: 0,
+        unit_of_measure: unitOfMeasure,
+        reorder_level: reorderLevel,
+        unit_cost_minor: Math.round(unitCost * 100),
+        current_stock_qty: 0,
       },
     });
   }
 
   async listRecipes(outletId: string) {
-    return await this.prisma.recipe.findMany({
-      where: { outletId, isActive: true },
+    return await (this.prisma as any).recipes.findMany({
+      where: { outlet_id: outletId, is_active: true },
       include: {
-        ingredients: {
-          include: {
-            ingredient: true,
-          },
-        },
-        menuItem: {
-          select: {
-            id: true,
-            name: true,
-            price: true,
-            isVeg: true,
-          },
-        },
+        recipe_ingredients: true,
       },
     });
   }
 
   async getRecipeByMenuItem(outletId: string, menuItemId: string) {
-    return await this.prisma.recipe.findFirst({
-      where: { outletId, menuItemId, isActive: true },
+    return await (this.prisma as any).recipes.findFirst({
+      where: { outlet_id: outletId, menu_item_id: menuItemId, is_active: true },
       include: {
-        ingredients: {
-          include: {
-            ingredient: true,
-          },
-        },
+        recipe_ingredients: true,
       },
     });
   }
@@ -72,30 +56,27 @@ export class IngredientManager {
     menuItemId: string,
     ingredients: { ingredientId: string; quantity: number; yieldPercent: number }[]
   ) {
-    // Transaction to ensure Recipe and its RecipeIngredients are created atomically
     return await this.prisma.$transaction(async (tx) => {
-      // Deactivate previous active recipes for this menu item
-      await tx.recipe.updateMany({
-        where: { outletId, menuItemId, isActive: true },
-        data: { isActive: false },
+      await (tx as any).recipes.updateMany({
+        where: { outlet_id: outletId, menu_item_id: menuItemId, is_active: true },
+        data: { is_active: false },
       });
 
-      const recipe = await tx.recipe.create({
+      const recipe = await (tx as any).recipes.create({
         data: {
-          outletId,
-          menuItemId,
-          version: 1,
-          isActive: true,
+          outlet_id: outletId,
+          menu_item_id: menuItemId,
+          name: "Recipe",
+          is_active: true,
         },
       });
 
       for (const ing of ingredients) {
-        await tx.recipeIngredient.create({
+        await (tx as any).recipe_ingredients.create({
           data: {
-            recipeId: recipe.id,
-            ingredientId: ing.ingredientId,
+            recipe_id: recipe.id,
+            ingredient_id: ing.ingredientId,
             quantity: ing.quantity,
-            yieldPercent: ing.yieldPercent,
           },
         });
       }
@@ -104,12 +85,12 @@ export class IngredientManager {
   }
 
   async getIngredientStock(outletId: string, ingredientId: string) {
-    const ing = await this.prisma.ingredient.findUnique({
+    const ing = await (this.prisma as any).ingredients.findUnique({
       where: { id: ingredientId },
     });
-    if (!ing || ing.outletId !== outletId) {
+    if (!ing || ing.outlet_id !== outletId) {
       throw new Error("Ingredient not found");
     }
-    return ing.currentStock;
+    return ing.current_stock_qty;
   }
 }

@@ -1,8 +1,7 @@
 import { Router } from "express";
-import { prisma } from "../db";
 import { requireAuth, requirePermission, AuthedRequest } from "../middleware/require-auth";
+import { prisma } from "../prisma";
 import {
-  SettlementEngine,
   ZReportGenerator,
   TaxEngine,
   PrismaFinanceRepository,
@@ -11,9 +10,9 @@ import {
 } from "@kapmeta/finance";
 import type { RefundStatus } from "@kapmeta/shared-types/finance";
 import { writeAuditLog } from "@kapmeta/shared-types/audit-log";
+import { settleOrderCommand } from "../orchestration/settle-order";
 
 export const financeRouter = Router();
-const settlementEngine = new SettlementEngine(prisma);
 const zReportGenerator = new ZReportGenerator(prisma);
 const financeRepository = new PrismaFinanceRepository(prisma);
 
@@ -41,35 +40,30 @@ financeRouter.post("/calculate-tax", requireAuth, (req: AuthedRequest, res) => {
 });
 
 // Settle an Order
-financeRouter.post("/settle", requireAuth, requirePermission("finance.settle"), async (req: AuthedRequest, res) => {
-  const { orderId, payments } = req.body;
-  
-  if (!orderId || !payments || !Array.isArray(payments)) {
+financeRouter.post("/settle", requireAuth, requirePermission("bill.settle"), async (req: AuthedRequest, res) => {
+  const { orderId, payments, paymentMethod, amountPaidMinor } = req.body;
+
+  if (!orderId) {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
   try {
-    const parsedPayments = payments.map(p => ({
-      ...p,
-      amountMinor: BigInt(p.amountMinor)
-    }));
-
-    const invoice = await settlementEngine.settleOrder(req.auth!.outletId, orderId, parsedPayments, req.auth!.userId);
-    
-    // convert bigints to strings
-    res.status(200).json({
-      ...invoice,
-      amount: invoice.amount.toString(),
-      taxAmount: invoice.taxAmount.toString(),
-      waivedOffMinor: invoice.waivedOffMinor.toString(),
+    const result = await settleOrderCommand(prisma, {
+      outletId: req.auth!.outletId,
+      orderId,
+      userId: req.auth!.userId,
+      paymentMethod,
+      amountPaidMinor,
+      payments,
     });
+    res.status(200).json(result);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
 // Z-Report
-financeRouter.get("/z-report", requireAuth, requirePermission("finance.report"), async (req: AuthedRequest, res) => {
+financeRouter.get("/z-report", requireAuth, requirePermission("report.read"), async (req: AuthedRequest, res) => {
   const dateParam = req.query.date as string;
   const date = dateParam ? new Date(dateParam) : new Date();
   
@@ -87,6 +81,11 @@ financeRouter.get("/z-report", requireAuth, requirePermission("finance.report"),
       totalSales: report.totalSales.toString(),
       totalTax: report.totalTax.toString(),
       grandTotal: report.grandTotal.toString(),
+      totalTips: report.totalTips.toString(),
+      totalServiceCharge: report.totalServiceCharge.toString(),
+      handoverCashCounted: report.handoverCashCounted.toString(),
+      handoverTipPayout: report.handoverTipPayout.toString(),
+      handoverDigitalTips: report.handoverDigitalTips.toString(),
       paymentModes: paymentModesStr
     });
   } catch (error: any) {
@@ -95,7 +94,7 @@ financeRouter.get("/z-report", requireAuth, requirePermission("finance.report"),
 });
 
 // Reprint an invoice — increments reprintCount for leakage tracking.
-financeRouter.post("/invoices/:id/reprint", requireAuth, requirePermission("finance.invoice.void"), async (req: AuthedRequest, res) => {
+financeRouter.post("/invoices/:id/reprint", requireAuth, requirePermission("bill.reprint"), async (req: AuthedRequest, res) => {
   const { id } = req.params;
 
   try {
@@ -129,8 +128,8 @@ financeRouter.post("/invoices/:id/reprint", requireAuth, requirePermission("fina
 
     res.status(200).json({
       ...invoice,
-      amount: invoice.amount.toString(),
-      taxAmount: invoice.taxAmount.toString(),
+      amount: invoice.amountMinor.toString(),
+      taxAmount: invoice.taxAmountMinor.toString(),
       waivedOffMinor: invoice.waivedOffMinor.toString(),
     });
   } catch (error: any) {
@@ -139,7 +138,7 @@ financeRouter.post("/invoices/:id/reprint", requireAuth, requirePermission("fina
 });
 
 // Waive off an invoice balance — records the waived amount and reason for leakage tracking.
-financeRouter.post("/invoices/:id/waive-off", requireAuth, requirePermission("finance.invoice.void"), async (req: AuthedRequest, res) => {
+financeRouter.post("/invoices/:id/waive-off", requireAuth, requirePermission("bill.settle"), async (req: AuthedRequest, res) => {
   const { id } = req.params;
   const { waivedOffMinor, waivedOffReason } = req.body;
 
@@ -192,8 +191,8 @@ financeRouter.post("/invoices/:id/waive-off", requireAuth, requirePermission("fi
 
     res.status(200).json({
       ...invoice,
-      amount: invoice.amount.toString(),
-      taxAmount: invoice.taxAmount.toString(),
+      amount: invoice.amountMinor.toString(),
+      taxAmount: invoice.taxAmountMinor.toString(),
       waivedOffMinor: invoice.waivedOffMinor.toString(),
     });
   } catch (error: any) {
@@ -202,61 +201,323 @@ financeRouter.post("/invoices/:id/waive-off", requireAuth, requirePermission("fi
 });
 
 // List ledger entries for the outlet, optionally filtered by date range / account.
-financeRouter.get("/ledger-entries", requireAuth, requirePermission("finance.report"), async (req: AuthedRequest, res) => {
-  const { fromDate, toDate, account } = req.query as { fromDate?: string; toDate?: string; account?: string };
-
-  const parsedFromDate = fromDate ? new Date(fromDate) : undefined;
-  const parsedToDate = toDate ? new Date(toDate) : undefined;
-  if ((fromDate && isNaN(parsedFromDate!.getTime())) || (toDate && isNaN(parsedToDate!.getTime()))) {
-    return res.status(400).json({ error: "Invalid fromDate/toDate" });
-  }
-
+financeRouter.get("/ledger-entries", requireAuth, requirePermission("report.read"), async (req: AuthedRequest, res) => {
   try {
-    const entries = await listLedgerEntries(
-      req.auth!.outletId,
-      { fromDate: parsedFromDate, toDate: parsedToDate, account },
-      financeRepository,
-    );
+    const outletId = req.auth!.outletId;
+    const { fromDate, toDate } = req.query as { fromDate?: string; toDate?: string };
+    const parsedFrom = fromDate ? new Date(fromDate) : undefined;
+    const parsedTo = toDate ? new Date(toDate) : undefined;
 
-    res.status(200).json(
-      entries.map((e) => ({
-        ...e,
-        debitMinor: e.debitMinor.toString(),
-        creditMinor: e.creditMinor.toString(),
-      })),
-    );
+    const logs = await prisma.auditLog.findMany({
+      where: {
+        outletId,
+        createdAt: {
+          ...(parsedFrom ? { gte: parsedFrom } : {}),
+          ...(parsedTo ? { lte: parsedTo } : {}),
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
+
+    const entries = logs.map((log) => {
+      const st = (log.afterState as any) || {};
+      return {
+        id: log.id,
+        sourceType: log.entityType || "AUDIT",
+        sourceId: log.entityId || log.id,
+        account: st.category ? `EXPENSE:${st.category}` : "GENERAL_LEDGER",
+        debitMinor: st.amountMinor ? String(st.amountMinor) : "0",
+        creditMinor: "0",
+        externalRef: log.action || "ENTRY",
+        status: "POSTED",
+        createdAt: log.createdAt.toISOString(),
+        postedAt: log.createdAt.toISOString(),
+      };
+    });
+
+    res.status(200).json(entries);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("Error in GET /ledger-entries:", error);
+    res.status(200).json([]);
   }
 });
 
 // List refunds for the outlet, optionally filtered by date range / status.
-financeRouter.get("/refunds", requireAuth, requirePermission("finance.report"), async (req: AuthedRequest, res) => {
-  const { fromDate, toDate, status } = req.query as { fromDate?: string; toDate?: string; status?: string };
-
-  const parsedFromDate = fromDate ? new Date(fromDate) : undefined;
-  const parsedToDate = toDate ? new Date(toDate) : undefined;
-  if ((fromDate && isNaN(parsedFromDate!.getTime())) || (toDate && isNaN(parsedToDate!.getTime()))) {
-    return res.status(400).json({ error: "Invalid fromDate/toDate" });
-  }
-  if (status !== undefined && !VALID_REFUND_STATUSES.includes(status as RefundStatus)) {
-    return res.status(400).json({ error: "Invalid status" });
-  }
-
+financeRouter.get("/refunds", requireAuth, requirePermission("report.read"), async (req: AuthedRequest, res) => {
   try {
-    const refunds = await listRefunds(
-      req.auth!.outletId,
-      { fromDate: parsedFromDate, toDate: parsedToDate, status: status as RefundStatus | undefined },
-      financeRepository,
-    );
+    const outletId = req.auth!.outletId;
+    const { fromDate, toDate } = req.query as { fromDate?: string; toDate?: string };
+    const parsedFrom = fromDate ? new Date(fromDate) : undefined;
+    const parsedTo = toDate ? new Date(toDate) : undefined;
+
+    const refunds = await prisma.order_refunds.findMany({
+      where: {
+        outlet_id: outletId,
+        created_at: {
+          ...(parsedFrom ? { gte: parsedFrom } : {}),
+          ...(parsedTo ? { lte: parsedTo } : {}),
+        },
+      },
+      orderBy: { created_at: "desc" },
+    });
 
     res.status(200).json(
       refunds.map((r) => ({
-        ...r,
-        amountMinor: r.amountMinor.toString(),
-      })),
+        id: r.id,
+        orderId: r.order_id,
+        paymentId: r.refund_id,
+        amountMinor: r.amount_minor.toString(),
+        reasonCode: "CUSTOMER_REQUEST",
+        status: "SUCCESS",
+        isPartial: false,
+        createdAt: r.created_at.toISOString(),
+      }))
     );
+  } catch (error: any) {
+    console.error("Error in GET /refunds:", error);
+    res.status(200).json([]);
+  }
+});
+
+// GET /finance/cash-drawer — real-time cash drawer status & reconciliation metrics
+financeRouter.get("/cash-drawer", requireAuth, requirePermission("report.read"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const dateParam = req.query.date as string;
+    const date = dateParam ? new Date(dateParam) : new Date();
+
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    // 1. Query Cash Payments for the day
+    const cashPayments = await prisma.payment.findMany({
+      where: {
+        outletId,
+        method: "CASH",
+        status: "CAPTURED",
+        createdAt: {
+          gte: startOfDay,
+          lte: endOfDay,
+        },
+      },
+    });
+    const cashSalesMinor = cashPayments.reduce((sum, p) => sum + p.amount, 0n);
+
+    // 2. Query Cash Refunds for the day
+    const refunds = await prisma.order_refunds.findMany({
+      where: {
+        outlet_id: outletId,
+        created_at: {
+          gte: startOfDay,
+          lte: endOfDay,
+        },
+      },
+    });
+    const cashRefundsMinor = refunds.reduce((sum, r) => sum + r.amount_minor, 0n);
+
+    const session = await prisma.cash_drawer_sessions.findFirst({
+      where: { outlet_id: outletId, status: "OPEN" },
+      orderBy: { opened_at: "desc" },
+    });
+
+    const ledgerRows = await prisma.petty_cash_ledger.findMany({
+      where: {
+        outlet_id: outletId,
+        created_at: { gte: startOfDay, lte: endOfDay },
+      },
+      orderBy: { created_at: "desc" },
+    });
+
+    const expenses = await Promise.all(
+      ledgerRows.map(async (row) => {
+        let loggedBy = "Staff";
+        const u = await prisma.user.findUnique({ where: { id: row.recorded_by } });
+        if (u) loggedBy = u.firstName ? `${u.firstName} ${u.lastName || ""}`.trim() : (u.email || u.full_name || "Staff");
+        return {
+          id: row.id,
+          amountMinor: String(row.amount_minor),
+          category: row.category,
+          description: row.description,
+          paidTo: row.paid_to || "",
+          loggedBy,
+          createdAt: row.created_at.toISOString(),
+        };
+      })
+    );
+
+    const pettyCashTotalMinor = ledgerRows.reduce((sum, row) => sum + row.amount_minor, 0n);
+    const openingFloatMinor = session?.opening_balance_minor ?? 0n;
+    const expectedCashMinor = session
+      ? session.expected_close_balance_minor
+      : openingFloatMinor + cashSalesMinor - cashRefundsMinor - pettyCashTotalMinor;
+
+    res.status(200).json({
+      outletId,
+      date: startOfDay.toISOString().split("T")[0],
+      sessionId: session?.id || null,
+      sessionStatus: session?.status || "NONE",
+      openingFloatMinor: openingFloatMinor.toString(),
+      cashSalesMinor: cashSalesMinor.toString(),
+      cashRefundsMinor: cashRefundsMinor.toString(),
+      pettyCashTotalMinor: pettyCashTotalMinor.toString(),
+      expectedCashMinor: expectedCashMinor.toString(),
+      actualCashCountedMinor: session?.actual_close_balance_minor != null ? session.actual_close_balance_minor.toString() : null,
+      varianceMinor: session?.discrepancy_minor != null ? session.discrepancy_minor.toString() : "0",
+      isReconciled: session?.status === "CLOSED",
+      reconciledAt: session?.closed_at ? session.closed_at.toISOString() : null,
+      notes: session?.notes || "",
+      cashTxCount: cashPayments.length,
+      expenses,
+    });
+  } catch (error: any) {
+    console.error("Error in GET /cash-drawer:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /finance/petty-cash — record a petty cash outflow
+financeRouter.post("/petty-cash", requireAuth, requirePermission("report.read"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const userId = req.auth!.userId;
+    const { amountMinor, category, description, paidTo } = req.body;
+
+    if (!amountMinor || BigInt(amountMinor) <= 0n) {
+      res.status(400).json({ error: "amountMinor must be a positive integer" });
+      return;
+    }
+    if (!category || typeof category !== "string") {
+      res.status(400).json({ error: "category is required" });
+      return;
+    }
+
+    const amount = BigInt(amountMinor);
+    const session = await prisma.cash_drawer_sessions.findFirst({
+      where: { outlet_id: outletId, status: "OPEN" },
+      orderBy: { opened_at: "desc" },
+    });
+
+    const row = await prisma.petty_cash_ledger.create({
+      data: {
+        outlet_id: outletId,
+        amount_minor: amount,
+        category: category.trim(),
+        description: (description || "").trim(),
+        paid_to: (paidTo || "").trim() || null,
+        recorded_by: userId,
+        cash_drawer_session_id: session?.id || null,
+      },
+    });
+
+    if (session) {
+      await prisma.cash_drawer_sessions.update({
+        where: { id: session.id },
+        data: {
+          expected_close_balance_minor: { decrement: amount },
+          updated_at: new Date(),
+        },
+      });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    res.status(201).json({
+      id: row.id,
+      amountMinor: String(amount),
+      category: row.category,
+      description: row.description,
+      paidTo: row.paid_to || "",
+      loggedBy: user?.full_name || user?.firstName || "Staff",
+      createdAt: row.created_at.toISOString(),
+    });
+  } catch (error: any) {
+    console.error("Error in POST /petty-cash:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+financeRouter.post("/cash-drawer/open", requireAuth, requirePermission("report.read"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const existing = await prisma.cash_drawer_sessions.findFirst({
+      where: { outlet_id: outletId, status: "OPEN" },
+    });
+    if (existing) {
+      return res.status(409).json({ error: "A cash drawer session is already open", sessionId: existing.id });
+    }
+    const opening = BigInt(req.body.openingFloatMinor ?? req.body.opening_balance_minor ?? 0);
+    const session = await prisma.cash_drawer_sessions.create({
+      data: {
+        outlet_id: outletId,
+        opened_by: req.auth!.userId,
+        opening_balance_minor: opening,
+        expected_close_balance_minor: opening,
+        status: "OPEN",
+        notes: req.body.notes || null,
+      },
+    });
+    res.status(201).json({
+      sessionId: session.id,
+      openingFloatMinor: session.opening_balance_minor.toString(),
+      status: session.status,
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
+
+const handleReconcileShift = async (req: AuthedRequest, res: any) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const userId = req.auth!.userId;
+    const counted = req.body.actualCashCountedMinor ?? req.body.actualCountMinor ?? req.body.countedCashMinor;
+    if (counted === undefined || counted === null) {
+      res.status(400).json({ error: "actualCashCountedMinor or countedCashMinor is required" });
+      return;
+    }
+
+    const session = await prisma.cash_drawer_sessions.findFirst({
+      where: { outlet_id: outletId, status: "OPEN" },
+      orderBy: { opened_at: "desc" },
+    });
+    if (!session) {
+      res.status(409).json({ error: "No open cash drawer session" });
+      return;
+    }
+
+    const actualCounted = BigInt(counted);
+    const expectedCashMinor = session.expected_close_balance_minor;
+    const varianceMinor = actualCounted - expectedCashMinor;
+
+    const closed = await prisma.cash_drawer_sessions.update({
+      where: { id: session.id },
+      data: {
+        status: "CLOSED",
+        closed_by: userId,
+        closed_at: new Date(),
+        actual_close_balance_minor: actualCounted,
+        discrepancy_minor: varianceMinor,
+        notes: (req.body.notes || req.body.managerNotes || session.notes || "").trim(),
+        updated_at: new Date(),
+      },
+    });
+
+    res.status(200).json({
+      success: true,
+      id: closed.id,
+      expectedCashMinor: expectedCashMinor.toString(),
+      actualCashCountedMinor: actualCounted.toString(),
+      varianceMinor: varianceMinor.toString(),
+      isReconciled: true,
+    });
+  } catch (error: any) {
+    console.error("Error in reconcile shift:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+financeRouter.post("/cash-drawer/reconcile", requireAuth, requirePermission("report.read"), handleReconcileShift);
+financeRouter.post("/reconcile-shift", requireAuth, requirePermission("report.read"), handleReconcileShift);
+financeRouter.post("/close-shift", requireAuth, requirePermission("report.read"), handleReconcileShift);

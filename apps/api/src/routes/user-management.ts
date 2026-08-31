@@ -1,27 +1,29 @@
 import { Router } from "express";
-import { prisma } from "../db";
 import bcrypt from "bcryptjs";
 import { requireAuth, requirePermission, type AuthedRequest } from "../middleware/require-auth";
+import { prisma } from "../prisma";
 
 const router = Router();
 
-// Gated on "menu.category.manage" — there is no dedicated user-management
-// permission seeded in kapmeta/seed.ts yet, and per repo policy (CLAUDE.md
-// no-hardcode-data rule) we must not invent a fake permission action that
-// isn't backed by a real Permission row. "menu.category.manage" is the
-// permission apps/pos-web/lib/auth.ts useAuthGuard already treats as the
-// general "admin surface" grant (it's what redirects a user to /admin), so
-// it's the closest already-seeded action to gate another admin screen on.
-const USER_MANAGEMENT_PERMISSION = "menu.category.manage";
+// Gated on "users.manage" which is now seeded in seed_permissions.sql.
+const USER_MANAGEMENT_PERMISSION = "users.manage";
 
 // GET /users — list users with their current role assignments (+ outlet).
 router.get(
   "/users",
   requireAuth,
   requirePermission(USER_MANAGEMENT_PERMISSION),
-  async (_req: AuthedRequest, res) => {
+  async (req: AuthedRequest, res) => {
     try {
+      const outletId = req.auth!.outletId;
       const users = await prisma.user.findMany({
+        where: {
+          userRoles: {
+            some: {
+              OR: [{ outletId }, { outletId: null }],
+            },
+          },
+        },
         orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
         include: {
           userRoles: {
@@ -88,12 +90,12 @@ router.get(
   async (_req: AuthedRequest, res) => {
     try {
       const permissions = await prisma.permission.findMany({
-        orderBy: { action: "asc" },
+        orderBy: { code: "asc" },
       });
       res.status(200).json(
         permissions.map((p) => ({
           id: p.id,
-          action: p.action,
+          action: (p as any).code || (p as any).action,
           description: p.description,
         }))
       );
@@ -117,7 +119,7 @@ router.post(
         return;
       }
 
-      const existing = await prisma.role.findUnique({ where: { name: name.trim() } });
+      const existing = await prisma.role.findFirst({ where: { name: name.trim() } });
       if (existing) {
         res.status(400).json({ error: "role name already in use" });
         return;
@@ -126,8 +128,8 @@ router.post(
       const role = await prisma.role.create({
         data: {
           name: name.trim(),
+          code: name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_"),
           description: description ?? null,
-          createdBy: req.auth!.userId,
         },
       });
 
@@ -311,21 +313,32 @@ router.post(
         }
       }
 
-      const userRole = await prisma.userRole.upsert({
-        where: { userId_roleId: { userId, roleId } },
-        update: { outletId: outletId ?? null },
-        create: {
-          userId,
-          roleId,
-          outletId: outletId ?? null,
-          createdBy: req.auth!.userId,
-        },
-        include: { role: true, outlet: true },
+      const existingUserRole = await prisma.userRole.findFirst({
+        where: { userId, roleId },
       });
+
+      let userRole: any;
+      if (existingUserRole) {
+        userRole = await prisma.userRole.update({
+          where: { id: existingUserRole.id },
+          data: { outletId: outletId ?? null },
+          include: { role: true, outlet: true },
+        });
+      } else {
+        userRole = await prisma.userRole.create({
+          data: {
+            userId,
+            roleId,
+            outletId: outletId ?? null,
+            granted_by: req.auth!.userId,
+          },
+          include: { role: true, outlet: true },
+        });
+      }
 
       res.status(201).json({
         roleId: userRole.roleId,
-        roleName: userRole.role.name,
+        roleName: userRole.role?.name || "Role",
         outletId: userRole.outletId,
         outletName: userRole.outlet?.name ?? null,
       });
@@ -337,9 +350,6 @@ router.post(
 );
 
 // DELETE /users/:userId/roles/:userRoleId — revoke a role assignment.
-// UserRole's primary key is the composite (userId, roleId) — there is no
-// separate surrogate id column on the model — so :userRoleId here is the
-// roleId half of that composite key.
 router.delete(
   "/users/:userId/roles/:userRoleId",
   requireAuth,
@@ -348,8 +358,8 @@ router.delete(
     try {
       const { userId, userRoleId } = req.params;
 
-      const existing = await prisma.userRole.findUnique({
-        where: { userId_roleId: { userId, roleId: userRoleId } },
+      const existing = await prisma.userRole.findFirst({
+        where: { userId, OR: [{ id: userRoleId }, { roleId: userRoleId }] },
       });
       if (!existing) {
         res.status(404).json({ error: "role assignment not found" });
@@ -357,7 +367,7 @@ router.delete(
       }
 
       await prisma.userRole.delete({
-        where: { userId_roleId: { userId, roleId: userRoleId } },
+        where: { id: existing.id },
       });
 
       res.status(204).send();
@@ -489,7 +499,7 @@ router.post(
               userId: user.id,
               roleId,
               outletId: outletId ?? null,
-              createdBy: req.auth!.userId,
+              granted_by: req.auth!.userId,
             },
           });
         }

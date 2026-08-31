@@ -21,17 +21,19 @@ import { userManagementRouter } from './routes/user-management';
 import { waitersRouter } from './routes/waiters';
 import { tablesRouter } from './routes/tables';
 import { ordersRouter } from './routes/orders';
+import { settingsRouter } from './routes/settings';
 import { mapDomainError } from './errors';
 
 // Global BigInt JSON serialization support for Express
+// Uses String to prevent precision loss for amounts > 2^53
 (BigInt.prototype as any).toJSON = function () {
-  return typeof this === 'bigint' ? Number(this) : this;
+  return this.toString();
 };
 
 export function createApp(): Express {
   const app = express();
   app.use(cors({
-    origin: [process.env.POS_WEB_URL || 'http://localhost:4444', 'http://localhost:4445'],
+    origin: [process.env.POS_WEB_URL || 'http://localhost:4444', 'http://localhost:4445', 'http://localhost:3000'],
     credentials: true,
   }));
   app.use(express.json());
@@ -58,19 +60,23 @@ export function createApp(): Express {
   app.use(waitersRouter);
   app.use(tablesRouter);
   app.use(ordersRouter);
+  app.use(settingsRouter);
 
   app.get('/health', (_req, res) => res.json({ status: 'ok' }));
   app.get('/healthz', (_req, res) => res.json({ status: 'ok' }));
 
+  // Global error handler
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
-    const mapped = mapDomainError(err);
-    if (mapped) {
-      res.status(mapped.status).json(mapped.body);
-      return;
-    }
     // eslint-disable-next-line no-console
     console.error(err);
+    if (mapDomainError) {
+      const mapped = mapDomainError(err);
+      if (mapped) {
+        res.status(mapped.statusCode).json({ error: mapped.code, message: mapped.message });
+        return;
+      }
+    }
     const message = err instanceof Error ? err.message : 'Internal server error';
     res.status(500).json({ error: 'InternalServerError', message });
   });

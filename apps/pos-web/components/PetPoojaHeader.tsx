@@ -31,9 +31,13 @@ export default function PetPoojaHeader({
   const [kotSearchQuery, setKotSearchQuery] = useState("");
   const [isItemToggleOpen, setIsItemToggleOpen] = useState(false);
   const [isHoldOpen, setIsHoldOpen] = useState(false);
+  const [showStoreModal, setShowStoreModal] = useState(false);
+  const [showAlertsModal, setShowAlertsModal] = useState(false);
   const [isStoreOnline, setIsStoreOnline] = useState(true);
+  const [dineInActive, setDineInActive] = useState(true);
+  const [deliveryActive, setDeliveryActive] = useState(true);
+  const [takeawayActive, setTakeawayActive] = useState(true);
   const [liveViewActive, setLiveViewActive] = useState(true);
-  const [alertsCount, setAlertsCount] = useState(0);
   const [showSupportModal, setShowSupportModal] = useState(false);
   const [showMenuDrawer, setShowMenuDrawer] = useState(false);
 
@@ -42,6 +46,94 @@ export default function PetPoojaHeader({
   const [operationsExpanded, setOperationsExpanded] = useState(false);
   const [settingsExpanded, setSettingsExpanded] = useState(false);
   const [activeMenuItem, setActiveMenuItem] = useState<string>("Billing");
+
+  const [notifications, setNotifications] = useState<Array<{
+    id: string;
+    title: string;
+    message: string;
+    type: "WARNING" | "INFO" | "ORDER" | "FINANCE";
+    time: string;
+    isRead: boolean;
+  }>>([
+    {
+      id: "notif-1",
+      title: "Low Stock: Raw Ingredients",
+      message: "Saffron Pure Grade A is below threshold (20 g remaining)",
+      type: "WARNING",
+      time: "5m ago",
+      isRead: false,
+    },
+    {
+      id: "notif-2",
+      title: "Table 4 Bill Request",
+      message: "Guest requested bill for Table 4 (Bill Total: ₹1,250.00)",
+      type: "INFO",
+      time: "12m ago",
+      isRead: false,
+    },
+    {
+      id: "notif-3",
+      title: "Online Order #SW-1082 Synced",
+      message: "New Swiggy order placed and dispatched to KDS",
+      type: "ORDER",
+      time: "25m ago",
+      isRead: false,
+    },
+  ]);
+
+  useEffect(() => {
+    authedFetch("/notifications")
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data: any[]) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setNotifications(
+            data.map((n) => ({
+              id: n.id,
+              title: n.title || "Alert",
+              message: n.message || "",
+              type: (n.type as any) || "INFO",
+              time: new Date(n.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+              isRead: Boolean(n.isRead),
+            }))
+          );
+        }
+      })
+      .catch(() => {});
+
+    authedFetch("/settings/store-status")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && typeof data.isOnline === "boolean") {
+          setIsStoreOnline(data.isOnline);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const unreadAlertsCount = notifications.filter((n) => !n.isRead).length;
+
+  const markAllAlertsRead = () => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    authedFetch("/notifications/read-all", { method: "POST" }).catch(() => {});
+  };
+
+  const handleToggleStore = async () => {
+    const next = !isStoreOnline;
+    setIsStoreOnline(next);
+    try {
+      await authedFetch("/settings/store-status", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isOnline: next }),
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const dismissAlert = (id: string) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+  };
 
   const handleBillSearchSubmit = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && billSearchQuery.trim()) {
@@ -57,6 +149,7 @@ export default function PetPoojaHeader({
 
   const handleCheckUpdates = () => {
     alert("Checking kapMeta POS System Updates...\n\nCurrent Version: 126.0.1\nDatabase: Synchronized\nStatus: Up to date (Latest Stable Release).");
+  };
   };
 
   return (
@@ -170,6 +263,7 @@ export default function PetPoojaHeader({
           {/* 2. Store */}
           <button
             type="button"
+<<<<<<< HEAD
             className={`top-nav-action-btn ${isStoreOnline ? "is-online" : "is-offline"}`}
             onClick={() => setIsStoreOnline(!isStoreOnline)}
             title={isStoreOnline ? "Store is Online" : "Store is Offline"}
@@ -181,6 +275,14 @@ export default function PetPoojaHeader({
               </svg>
             </div>
             <span className="nav-caption">Store</span>
+=======
+            className={`header-icon-btn ${isStoreOnline ? "is-active" : "is-offline"}`}
+            onClick={() => setShowStoreModal(true)}
+            title="Store Status & Channel Control"
+          >
+            <span className="icon-glyph">{isStoreOnline ? "🏪" : "🛑"}</span>
+            <span className="icon-caption">Store {isStoreOnline ? "(Open)" : "(Paused)"}</span>
+>>>>>>> hamza/main
           </button>
 
           {/* 3. Live View */}
@@ -250,6 +352,7 @@ export default function PetPoojaHeader({
           {/* 7. Alerts */}
           <button
             type="button"
+<<<<<<< HEAD
             className="top-nav-action-btn alert-action-btn"
             onClick={() => setAlertsCount(0)}
             title="Alerts"
@@ -262,6 +365,15 @@ export default function PetPoojaHeader({
               {alertsCount > 0 && <span className="red-badge-dot"></span>}
             </div>
             <span className="nav-caption">Alerts</span>
+=======
+            className="header-icon-btn alert-btn"
+            onClick={() => setShowAlertsModal(true)}
+            title="Live Operational Alerts"
+          >
+            <span className="icon-glyph">🔔</span>
+            {unreadAlertsCount > 0 && <span className="alert-badge">{unreadAlertsCount}</span>}
+            <span className="icon-caption">Alerts</span>
+>>>>>>> hamza/main
           </button>
 
           {/* 8. Zomato Help */}
@@ -561,6 +673,190 @@ export default function PetPoojaHeader({
       {/* Hold Orders Drawer */}
       {isHoldOpen && (
         <HoldOrdersDrawer onClose={() => setIsHoldOpen(false)} />
+      )}
+
+      {/* INTERACTIVE STORE OPERATIONS CONTROL MODAL */}
+      {showStoreModal && (
+        <div className="petpooja-modal-backdrop" onClick={() => setShowStoreModal(false)}>
+          <div className="petpooja-modal-card store-modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="store-modal-header">
+              <div className="flex items-center gap-2">
+                <span style={{ fontSize: "1.3rem" }}>🏪</span>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 800, color: "#0f172a" }}>Store Operations Control</h3>
+                  <p style={{ margin: 0, fontSize: "0.72rem", color: "#64748b" }}>{outletName} ({outletCode}) • Register POS-01</p>
+                </div>
+              </div>
+              <button className="close-btn" onClick={() => setShowStoreModal(false)}>✕</button>
+            </div>
+
+            {/* Master Store Status Toggle */}
+            <div className={`store-master-box ${isStoreOnline ? "is-online" : "is-offline"}`}>
+              <div className="store-master-info">
+                <div className="store-status-title">
+                  <span className="status-dot"></span>
+                  <strong>{isStoreOnline ? "STORE IS ONLINE (OPEN)" : "STORE IS PAUSED (OFFLINE)"}</strong>
+                </div>
+                <p className="store-status-desc">
+                  {isStoreOnline
+                    ? "Currently accepting orders across all active sales channels."
+                    : "Store is paused. Incoming online aggregator orders and table ordering are temporarily suspended."}
+                </p>
+              </div>
+              <button
+                type="button"
+                className={`store-toggle-switch ${isStoreOnline ? "active" : ""}`}
+                onClick={handleToggleStore}
+              >
+                <span className="switch-slider"></span>
+              </button>
+            </div>
+
+            {/* Channel-Specific Operation Toggles */}
+            <div className="store-channels-section">
+              <h4 className="channels-heading">SALES CHANNELS & SERVICE MODES</h4>
+
+              <div className="channel-row">
+                <div className="channel-info">
+                  <span className="channel-icon">🍽️</span>
+                  <div>
+                    <div className="channel-name">Dine-In Operations</div>
+                    <div className="channel-sub">Table billing, captain ordering & floor services</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className={`channel-pill-btn ${dineInActive ? "active" : "inactive"}`}
+                  onClick={() => setDineInActive(!dineInActive)}
+                >
+                  {dineInActive ? "Active" : "Paused"}
+                </button>
+              </div>
+
+              <div className="channel-row">
+                <div className="channel-info">
+                  <span className="channel-icon">🛵</span>
+                  <div>
+                    <div className="channel-name">Delivery & Online Aggregators</div>
+                    <div className="channel-sub">Swiggy & Zomato direct order dispatch</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className={`channel-pill-btn ${deliveryActive ? "active" : "inactive"}`}
+                  onClick={() => setDeliveryActive(!deliveryActive)}
+                >
+                  {deliveryActive ? "Active" : "Paused"}
+                </button>
+              </div>
+
+              <div className="channel-row">
+                <div className="channel-info">
+                  <span className="channel-icon">🥡</span>
+                  <div>
+                    <div className="channel-name">Takeaway & Direct Pickup</div>
+                    <div className="channel-sub">Counter pickup & parcel orders</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className={`channel-pill-btn ${takeawayActive ? "active" : "inactive"}`}
+                  onClick={() => setTakeawayActive(!takeawayActive)}
+                >
+                  {takeawayActive ? "Active" : "Paused"}
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Links & Footer */}
+            <div className="store-modal-footer">
+              <Link href="/channel-availability" className="store-link-btn" onClick={() => setShowStoreModal(false)}>
+                📡 Aggregator Menu Status
+              </Link>
+              <Link href="/table-management" className="store-link-btn" onClick={() => setShowStoreModal(false)}>
+                🪑 Floor Plan
+              </Link>
+              <button type="button" className="store-save-btn" onClick={() => setShowStoreModal(false)}>
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* INTERACTIVE LIVE ALERTS & NOTIFICATIONS MODAL */}
+      {showAlertsModal && (
+        <div className="petpooja-modal-backdrop" onClick={() => setShowAlertsModal(false)}>
+          <div className="petpooja-modal-card alerts-modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="alerts-modal-header">
+              <div className="flex items-center gap-2">
+                <span style={{ fontSize: "1.2rem" }}>🔔</span>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 800, color: "#0f172a" }}>Operational Alerts</h3>
+                  <p style={{ margin: 0, fontSize: "0.72rem", color: "#64748b" }}>
+                    {unreadAlertsCount > 0 ? `${unreadAlertsCount} unread alerts requiring attention` : "All notifications caught up"}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {unreadAlertsCount > 0 && (
+                  <button type="button" className="mark-all-read-btn" onClick={markAllAlertsRead}>
+                    Mark all read
+                  </button>
+                )}
+                <button className="close-btn" onClick={() => setShowAlertsModal(false)}>✕</button>
+              </div>
+            </div>
+
+            {/* Alerts List Feed */}
+            <div className="alerts-feed-list">
+              {notifications.length === 0 ? (
+                <div className="alerts-empty-state">
+                  <span style={{ fontSize: "2rem" }}>🎉</span>
+                  <p style={{ fontWeight: 600, color: "#334155", margin: "8px 0 0" }}>All clear!</p>
+                  <p style={{ fontSize: "0.75rem", color: "#94a3b8", margin: 0 }}>No active operational alerts for this outlet.</p>
+                </div>
+              ) : (
+                notifications.map((notif) => (
+                  <div key={notif.id} className={`alert-item-card ${notif.isRead ? "is-read" : "is-unread"}`}>
+                    <div className="alert-item-icon">
+                      {notif.type === "WARNING" ? "⚠️" : notif.type === "ORDER" ? "🛵" : notif.type === "FINANCE" ? "💸" : "🛎️"}
+                    </div>
+                    <div className="alert-item-content">
+                      <div className="alert-item-top">
+                        <span className="alert-item-title">{notif.title}</span>
+                        <span className="alert-item-time">{notif.time}</span>
+                      </div>
+                      <p className="alert-item-message">{notif.message}</p>
+                    </div>
+                    <button
+                      type="button"
+                      className="alert-dismiss-btn"
+                      onClick={() => dismissAlert(notif.id)}
+                      title="Dismiss alert"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="alerts-modal-footer">
+              <button
+                type="button"
+                className="alerts-clear-btn"
+                onClick={() => setNotifications([])}
+                disabled={notifications.length === 0}
+              >
+                Clear All
+              </button>
+              <button type="button" className="store-save-btn" onClick={() => setShowAlertsModal(false)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Support Dialog */}
@@ -1029,7 +1325,307 @@ export default function PetPoojaHeader({
           padding: 24px;
           max-width: 440px;
           width: 90%;
+<<<<<<< HEAD
           box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+=======
+          max-width: 440px;
+          box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+        .store-modal-card {
+          max-width: 480px;
+          padding: 20px;
+        }
+        .store-modal-header, .alerts-modal-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding-bottom: 14px;
+          border-bottom: 1px solid #e2e8f0;
+          margin-bottom: 14px;
+        }
+        .store-master-box {
+          padding: 14px;
+          border-radius: 10px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 16px;
+          transition: all 0.2s ease;
+        }
+        .store-master-box.is-online {
+          background: #f0fdf4;
+          border: 1px solid #bbf7d0;
+        }
+        .store-master-box.is-offline {
+          background: #fef2f2;
+          border: 1px solid #fecaca;
+        }
+        .store-master-info {
+          flex: 1;
+        }
+        .store-status-title {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 0.85rem;
+        }
+        .store-master-box.is-online .store-status-title {
+          color: #166534;
+        }
+        .store-master-box.is-offline .store-status-title {
+          color: #991b1b;
+        }
+        .status-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          display: inline-block;
+        }
+        .store-master-box.is-online .status-dot {
+          background: #22c55e;
+          box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2);
+        }
+        .store-master-box.is-offline .status-dot {
+          background: #ef4444;
+          box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
+        }
+        .store-status-desc {
+          margin: 4px 0 0;
+          font-size: 0.72rem;
+          color: #64748b;
+          line-height: 1.35;
+        }
+        .store-toggle-switch {
+          width: 48px;
+          height: 26px;
+          background: #cbd5e1;
+          border: none;
+          border-radius: 999px;
+          padding: 2px;
+          cursor: pointer;
+          position: relative;
+          transition: background 0.2s ease;
+          flex-shrink: 0;
+        }
+        .store-toggle-switch.active {
+          background: #22c55e;
+        }
+        .switch-slider {
+          display: block;
+          width: 22px;
+          height: 22px;
+          background: #ffffff;
+          border-radius: 50%;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+          transition: transform 0.2s ease;
+          transform: translateX(0);
+        }
+        .store-toggle-switch.active .switch-slider {
+          transform: translateX(22px);
+        }
+        .store-channels-section {
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+          border-radius: 10px;
+          padding: 12px;
+          margin-bottom: 16px;
+        }
+        .channels-heading {
+          margin: 0 0 10px;
+          font-size: 0.68rem;
+          font-weight: 800;
+          color: #64748b;
+          letter-spacing: 0.04em;
+        }
+        .channel-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 8px 0;
+          border-bottom: 1px solid #f1f5f9;
+        }
+        .channel-row:last-child {
+          border-bottom: none;
+        }
+        .channel-info {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        .channel-icon {
+          font-size: 1.1rem;
+        }
+        .channel-name {
+          font-size: 0.8rem;
+          font-weight: 700;
+          color: #1e293b;
+        }
+        .channel-sub {
+          font-size: 0.68rem;
+          color: #94a3b8;
+        }
+        .channel-pill-btn {
+          padding: 4px 10px;
+          border-radius: 6px;
+          font-size: 0.72rem;
+          font-weight: 700;
+          cursor: pointer;
+          border: none;
+          transition: all 0.15s ease;
+        }
+        .channel-pill-btn.active {
+          background: #dcfce7;
+          color: #15803d;
+          border: 1px solid #86efac;
+        }
+        .channel-pill-btn.inactive {
+          background: #f1f5f9;
+          color: #94a3b8;
+          border: 1px solid #e2e8f0;
+        }
+        .store-modal-footer, .alerts-modal-footer {
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 8px;
+          padding-top: 10px;
+          border-top: 1px solid #e2e8f0;
+        }
+        .store-link-btn {
+          font-size: 0.72rem;
+          font-weight: 600;
+          color: #2563eb;
+          text-decoration: none;
+          padding: 6px 10px;
+          background: #eff6ff;
+          border-radius: 6px;
+          transition: background 0.15s;
+        }
+        .store-link-btn:hover {
+          background: #dbeafe;
+        }
+        .store-save-btn {
+          background: #0f172a;
+          color: #ffffff;
+          border: none;
+          padding: 6px 14px;
+          border-radius: 6px;
+          font-size: 0.75rem;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        .store-save-btn:hover {
+          background: #1e293b;
+        }
+
+        /* Alerts Modal */
+        .alerts-modal-card {
+          max-width: 480px;
+          padding: 20px;
+        }
+        .mark-all-read-btn {
+          background: none;
+          border: none;
+          color: #2563eb;
+          font-size: 0.72rem;
+          font-weight: 700;
+          cursor: pointer;
+          padding: 4px 6px;
+        }
+        .mark-all-read-btn:hover {
+          text-decoration: underline;
+        }
+        .alerts-feed-list {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          max-height: 320px;
+          overflow-y: auto;
+          margin-bottom: 14px;
+        }
+        .alerts-empty-state {
+          padding: 28px;
+          text-align: center;
+        }
+        .alert-item-card {
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+          padding: 10px 12px;
+          border-radius: 8px;
+          border: 1px solid #e2e8f0;
+          background: #ffffff;
+          transition: all 0.15s ease;
+        }
+        .alert-item-card.is-unread {
+          background: #f8fafc;
+          border-left: 3px solid #3b82f6;
+        }
+        .alert-item-icon {
+          font-size: 1.1rem;
+          flex-shrink: 0;
+          margin-top: 1px;
+        }
+        .alert-item-content {
+          flex: 1;
+          min-width: 0;
+        }
+        .alert-item-top {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 6px;
+        }
+        .alert-item-title {
+          font-size: 0.78rem;
+          font-weight: 700;
+          color: #0f172a;
+        }
+        .alert-item-time {
+          font-size: 0.65rem;
+          color: #94a3b8;
+          white-space: nowrap;
+        }
+        .alert-item-message {
+          margin: 3px 0 0;
+          font-size: 0.72rem;
+          color: #475569;
+          line-height: 1.35;
+        }
+        .alert-dismiss-btn {
+          background: none;
+          border: none;
+          color: #94a3b8;
+          cursor: pointer;
+          font-size: 1rem;
+          line-height: 1;
+          padding: 2px 4px;
+          border-radius: 4px;
+          flex-shrink: 0;
+        }
+        .alert-dismiss-btn:hover {
+          color: #ef4444;
+          background: #fee2e2;
+        }
+        .alerts-clear-btn {
+          background: none;
+          border: 1px solid #e2e8f0;
+          color: #64748b;
+          font-size: 0.72rem;
+          font-weight: 600;
+          padding: 6px 12px;
+          border-radius: 6px;
+          cursor: pointer;
+        }
+        .alerts-clear-btn:hover:not(:disabled) {
+          background: #f1f5f9;
+          color: #0f172a;
+        }
+        .alerts-clear-btn:disabled {
+          opacity: 0.5;
+          cursor: default;
+>>>>>>> hamza/main
         }
         .btn-close-modal {
           background: #f1f5f9;

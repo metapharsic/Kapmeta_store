@@ -95,7 +95,28 @@ export interface LeakageReport {
   invoiceReprintCount: number; // count of invoices with reprintCount > 0
   totalReprints: number; // sum of reprintCount across all invoices
   invoiceWaivedOffCount: number; // count of invoices with waivedOffMinor > 0
-  totalWaivedOffMinor: bigint; // sum of waivedOffMinor across all invoices
+  totalWaivedOffMinor?: bigint;
   kotsNotBilledCount: number;
   estimatedRevenueAtRiskMinor: bigint;
 }
+
+export interface TaxComponentBreakdown {
+  componentName: string; // e.g. "CGST", "SGST", "IGST"
+  ratePercent: number; // e.g. 2.5
+  taxableAmountMinor: bigint; // net taxable sales basis
+  taxCollectedMinor: bigint; // tax amount in minor units
+  percentageShare: number; // percentage of total tax collected (0-100)
+}
+
+export interface TaxBreakdown {
+  outletId: string;
+  fromDate: Date;
+  toDate: Date;
+  formulaVersion: number;
+  totalTaxableSalesMinor: bigint;
+  totalTaxCollectedMinor: bigint;
+  effectiveTaxRatePercent: number;
+  orderCount: number;
+  components: TaxComponentBreakdown[];
+}
+

@@ -33,6 +33,7 @@ export class PrismaSessionStore {
         userId,
         outletId,
         tokenHash: hashToken(refreshToken),
+        refresh_token_hash: hashToken(refreshToken),
         expiresAt,
         userAgent,
         ipAddress,
@@ -42,7 +43,7 @@ export class PrismaSessionStore {
     return {
       id: session.id,
       userId: session.userId,
-      outletId: session.outletId,
+      outletId: session.outletId || "",
       expiresAt: session.expiresAt,
     };
   }
@@ -59,7 +60,7 @@ export class PrismaSessionStore {
     return {
       id: session.id,
       userId: session.userId,
-      outletId: session.outletId,
+      outletId: session.outletId || "",
       expiresAt: session.expiresAt,
     };
   }
