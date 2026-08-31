@@ -230,10 +230,14 @@ model DiningTable {
   section     String?  // e.g. "Indoor AC", "Terrace", "Bar"
   status      String   @default("VACANT") // VACANT, OCCUPIED, BILLING, DIRTY
   isActive    Boolean  @default(true) @map("is_active")
+  posX        Int?     @map("pos_x")
+  posY        Int?     @map("pos_y")
+  currentOrderId String? @map("current_order_id")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
   outlet      Outlet   @relation(fields: [outletId], references: [id], onDelete: Cascade)
-  orders      Order[]
+  orders      Order[]  @relation("TableOrders")
+  currentOrder Order?  @relation("TableCurrentOrder", fields: [currentOrderId], references: [id])
 
   @@unique([outletId, tableNumber])
   @@map("dining_tables")
@@ -444,7 +448,8 @@ model Order {
   createdAt      DateTime             @default(now()) @map("created_at")
   updatedAt      DateTime             @updatedAt @map("updated_at")
   outlet         Outlet               @relation(fields: [outletId], references: [id], onDelete: Cascade)
-  diningTable    DiningTable?         @relation(fields: [diningTableId], references: [id])
+  diningTable    DiningTable?         @relation("TableOrders", fields: [diningTableId], references: [id])
+  currentForTables DiningTable[]      @relation("TableCurrentOrder")
   orderItems     OrderItem[]
   orderDiscounts OrderDiscount[]
   statusHistory  OrderStatusHistory[]
