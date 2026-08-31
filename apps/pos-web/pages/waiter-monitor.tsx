@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import Head from "next/head";
 import { authedFetch, useAuthGuard } from "../lib/auth";
 import Nav from "../components/Nav";
+import { useKapmetaSocket } from "../lib/useKapmetaSocket";
 
 interface ActiveWaiter {
   userId: string;
@@ -32,6 +33,14 @@ export default function WaiterMonitor() {
     const interval = setInterval(fetchActive, 10000);
     return () => clearInterval(interval);
   }, [authLoading]);
+
+  useKapmetaSocket(
+    () => {
+      fetchActive();
+    },
+    !authLoading,
+    "waiter-monitor"
+  );
 
   if (authLoading) return null;
 

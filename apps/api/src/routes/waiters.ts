@@ -1,10 +1,29 @@
 import { Router } from "express";
-import { PrismaClient } from "@prisma/client";
 import { TERMINAL_ORDER_STATUSES } from "@kapmeta/orders";
 import { requireAuth, requirePermission, type AuthedRequest } from "../middleware/require-auth";
-
-const prisma = new PrismaClient();
+import { writeAuditLog } from "@kapmeta/shared-types/audit-log";
+import { prisma } from "../prisma";
 const router = Router();
+
+async function waiterBusinessDayStart(outletId: string): Promise<Date> {
+  const outlet = await prisma.outlet.findUnique({
+    where: { id: outletId },
+    select: { dayStartTime: true },
+  });
+  const now = new Date();
+  const start = new Date(now);
+  const src = outlet?.dayStartTime as Date | string | null | undefined;
+  if (src instanceof Date) {
+    start.setHours(src.getUTCHours(), src.getUTCMinutes(), 0, 0);
+  } else if (typeof src === "string" && src.includes(":")) {
+    const [h, m] = src.split(":").map(Number);
+    start.setHours(h || 5, m || 0, 0, 0);
+  } else {
+    start.setHours(5, 0, 0, 0);
+  }
+  if (now < start) start.setDate(start.getDate() - 1);
+  return start;
+}
 
 // Called periodically by the waiter app while a waiter is on the floor —
 // touches their most recent active session so managers can see who's live.
@@ -35,9 +54,27 @@ router.get("/waiters/active", requireAuth, requirePermission("report.read"), asy
       }
     }
 
+    const openOrders = await prisma.order.findMany({
+      where: {
+        outletId: req.auth!.outletId,
+        created_by: { in: Array.from(byUser.keys()) },
+        status: { in: ["DRAFT", "PLACED", "CONFIRMED", "KOT_CREATED", "IN_PREPARATION", "READY", "SERVED", "HANDED_OVER"] },
+        diningTableId: { not: null },
+      },
+      include: { diningTable: { select: { tableNumber: true } } },
+    });
+    const tablesByWaiter = new Map<string, string[]>();
+    for (const o of openOrders) {
+      const num = o.diningTable?.tableNumber;
+      if (!num || !o.created_by) continue;
+      const list = tablesByWaiter.get(o.created_by) || [];
+      if (!list.includes(num)) list.push(num);
+      tablesByWaiter.set(o.created_by, list);
+    }
+
     const waiters = Array.from(byUser.values()).map((w) => ({
       ...w,
-      activeTables: ["T1", "B6"],
+      activeTables: tablesByWaiter.get(w.userId) || [],
     }));
 
     res.status(200).json(waiters);
@@ -53,27 +90,53 @@ router.get("/waiters/active", requireAuth, requirePermission("report.read"), asy
 // today's Order rows for req.auth.userId — no fabricated numbers.
 router.get("/waiters/me/stats", requireAuth, async (req: AuthedRequest, res) => {
   try {
-    const dayStart = new Date();
-    dayStart.setHours(0, 0, 0, 0);
+    const dayStart = await waiterBusinessDayStart(req.auth!.outletId);
 
     const orders = await prisma.order.findMany({
-      where: { outletId: req.auth!.outletId, waiterId: req.auth!.userId, createdAt: { gte: dayStart } },
-      include: { statusHistory: { where: { status: "COMPLETED" }, take: 1 } },
+      where: {
+        outletId: req.auth!.outletId,
+        createdAt: { gte: dayStart },
+        created_by: req.auth!.userId,
+      },
     });
 
     const tablesServed = new Set(orders.map((o) => o.diningTableId).filter(Boolean)).size;
-    const completedOrders = orders.filter((o) => o.statusHistory.length > 0);
+    const completedOrders = orders.filter((o) => o.status === "COMPLETED");
     const avgOrderMinutes =
       completedOrders.length === 0
         ? null
         : Math.round(
-            (completedOrders.reduce((sum, o) => sum + (o.statusHistory[0].createdAt.getTime() - o.createdAt.getTime()), 0) /
+            (completedOrders.reduce((sum, o) => sum + (o.updatedAt.getTime() - o.createdAt.getTime()), 0) /
               completedOrders.length /
               60000) *
               10
           ) / 10;
-    const tipsMinor = orders.reduce((sum, o) => sum + o.tipTotal, 0n);
-    const revenueMinor = orders.reduce((sum, o) => sum + o.grandTotal, 0n);
+    const tipsMinor = orders.reduce((sum, o) => sum + (o.tipTotal || 0n), 0n);
+    const serviceChargeMinor = orders.reduce((sum, o) => sum + (o.serviceChargeTotal || 0n), 0n);
+    const revenueMinor = orders.reduce((sum, o) => sum + BigInt(o.grandTotal || 0), 0n);
+
+    // #region agent log
+    fetch("http://127.0.0.1:7323/ingest/28c85a32-5ef1-4fe5-9437-78139f7a5bfb", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c675b" },
+      body: JSON.stringify({
+        sessionId: "9c675b",
+        runId: "waiter-charges",
+        hypothesisId: "L",
+        location: "waiters.ts:GET /waiters/me/stats",
+        message: "waiter stats aggregate",
+        data: {
+          orderCount: orders.length,
+          completedOrders: completedOrders.length,
+          tablesServed,
+          tipsMinor: tipsMinor.toString(),
+          serviceChargeMinor: serviceChargeMinor.toString(),
+          revenueMinor: revenueMinor.toString(),
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
 
     res.status(200).json({
       ordersToday: orders.length,
@@ -81,11 +144,12 @@ router.get("/waiters/me/stats", requireAuth, async (req: AuthedRequest, res) => 
       completedOrders: completedOrders.length,
       avgOrderMinutes,
       tipsMinor: tipsMinor.toString(),
+      serviceChargeMinor: serviceChargeMinor.toString(),
       revenueMinor: revenueMinor.toString(),
     });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "internal error" });
+  } catch (err: any) {
+    console.error("Error fetching waiter stats:", err);
+    res.status(500).json({ error: err.message || "internal error" });
   }
 });
 
@@ -93,29 +157,37 @@ router.get("/waiters/me/stats", requireAuth, async (req: AuthedRequest, res) => 
 // Aggregates real cash, card, and UPI payment transactions + bill tips.
 router.get("/waiters/me/shift-reconciliation", requireAuth, async (req: AuthedRequest, res) => {
   try {
-    const dayStart = new Date();
-    dayStart.setHours(0, 0, 0, 0);
+    const dayStart = await waiterBusinessDayStart(req.auth!.outletId);
 
-    const user = await prisma.user.findUnique({
-      where: { id: req.auth!.userId },
-      select: { id: true, firstName: true, lastName: true, email: true },
-    });
+    const [user, orders, payments] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: req.auth!.userId },
+        select: { id: true, firstName: true, lastName: true, email: true },
+      }),
+      prisma.order.findMany({
+        where: {
+          outletId: req.auth!.outletId,
+          createdAt: { gte: dayStart },
+          created_by: req.auth!.userId,
+        },
+        include: {
+          diningTable: { select: { tableNumber: true, section: true } },
+        },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.payment.findMany({
+        where: {
+          outletId: req.auth!.outletId,
+          createdAt: { gte: dayStart },
+        },
+      }),
+    ]);
+    const myOrderIds = new Set(orders.map((o) => o.id));
+    const myPayments = payments.filter((p) => myOrderIds.has(p.orderId));
 
-    const orders = await prisma.order.findMany({
-      where: {
-        outletId: req.auth!.outletId,
-        waiterId: req.auth!.userId,
-        createdAt: { gte: dayStart },
-      },
-      include: {
-        payments: true,
-        diningTable: { select: { tableNumber: true, section: true } },
-      },
-      orderBy: { createdAt: "desc" },
-    });
-
-    const allPayments = orders.flatMap((o) => o.payments);
-    const successfulPayments = allPayments.filter((p) => p.status === "SUCCESS");
+    const successfulPayments = myPayments.filter(
+      (p) => p.status === "SUCCESS" || p.status === "CAPTURED" || p.status === "COMPLETED"
+    );
 
     const cashSalesMinor = successfulPayments
       .filter((p) => p.method === "CASH")
@@ -129,7 +201,8 @@ router.get("/waiters/me/shift-reconciliation", requireAuth, async (req: AuthedRe
       .filter((p) => p.method === "UPI")
       .reduce((sum, p) => sum + p.amount, 0n);
 
-    const totalTipsMinor = orders.reduce((sum, o) => sum + o.tipTotal, 0n);
+    const totalTipsMinor = orders.reduce((sum, o) => sum + (o.tipTotal || 0n), 0n);
+    const totalServiceChargeMinor = orders.reduce((sum, o) => sum + (o.serviceChargeTotal || 0n), 0n);
     const totalGrandMinor = orders.reduce((sum, o) => sum + o.grandTotal, 0n);
 
     res.status(200).json({
@@ -144,6 +217,7 @@ router.get("/waiters/me/shift-reconciliation", requireAuth, async (req: AuthedRe
       cardSalesMinor: cardSalesMinor.toString(),
       upiSalesMinor: upiSalesMinor.toString(),
       digitalTipsMinor: totalTipsMinor.toString(),
+      serviceChargeMinor: totalServiceChargeMinor.toString(),
       totalRevenueMinor: totalGrandMinor.toString(),
       recentOrders: orders.slice(0, 10).map((o) => ({
         id: o.id,
@@ -151,15 +225,119 @@ router.get("/waiters/me/shift-reconciliation", requireAuth, async (req: AuthedRe
         tableNumber: o.diningTable?.tableNumber || "Direct",
         section: o.diningTable?.section || "Non AC",
         grandTotalMinor: o.grandTotal.toString(),
-        tipTotalMinor: o.tipTotal.toString(),
+        tipTotalMinor: (o.tipTotal || 0n).toString(),
+        serviceChargeTotalMinor: (o.serviceChargeTotal || 0n).toString(),
         status: o.status,
         createdAt: o.createdAt.toISOString(),
-        paymentMethods: o.payments.map((p) => p.method),
+        paymentMethods: myPayments.filter((p) => p.orderId === o.id).map((p) => p.method),
       })),
     });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "internal error" });
+  } catch (err: any) {
+    console.error("Error generating shift reconciliation:", err);
+    res.status(500).json({ error: err.message || "internal error" });
+  }
+});
+
+// Captain handover: persist this waiter's counted cash + tips. Does NOT close the outlet cash drawer.
+router.post("/waiters/me/shift-handover", requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.auth!.userId },
+      select: { firstName: true, lastName: true, email: true },
+    });
+    const waiterName = user
+      ? `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email || "Captain"
+      : "Captain";
+    const dayStart = await waiterBusinessDayStart(req.auth!.outletId);
+    const payload = {
+      actualCashCountedMinor: Number(req.body.actualCashCountedMinor || 0),
+      openingFloatMinor: Number(req.body.openingFloatMinor || 0),
+      netTipPayoutMinor: Number(req.body.netTipPayoutMinor || 0),
+      digitalTipsMinor: Number(req.body.digitalTipsMinor || 0),
+      serviceChargeMinor: Number(req.body.serviceChargeMinor || 0),
+      cashSalesMinor: Number(req.body.cashSalesMinor || 0),
+      managerNotes: String(req.body.managerNotes || "").slice(0, 2000),
+      waiterName,
+    };
+    // #region agent log
+    fetch("http://127.0.0.1:7323/ingest/28c85a32-5ef1-4fe5-9437-78139f7a5bfb", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c675b" },
+      body: JSON.stringify({
+        sessionId: "9c675b",
+        runId: "waiter-lifecycle",
+        hypothesisId: "I",
+        location: "waiters.ts:POST /waiters/me/shift-handover",
+        message: "captain handover persisted without closing drawer",
+        data: { waiterId: req.auth!.userId, ...payload },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+    const row = await prisma.waiterShiftHandover.create({
+      data: {
+        outletId: req.auth!.outletId,
+        waiterId: req.auth!.userId,
+        waiterName,
+        businessDate: dayStart,
+        actualCashCountedMinor: BigInt(payload.actualCashCountedMinor),
+        openingFloatMinor: BigInt(payload.openingFloatMinor),
+        netTipPayoutMinor: BigInt(payload.netTipPayoutMinor),
+        digitalTipsMinor: BigInt(payload.digitalTipsMinor),
+        serviceChargeMinor: BigInt(payload.serviceChargeMinor),
+        cashSalesMinor: BigInt(payload.cashSalesMinor),
+        managerNotes: payload.managerNotes || null,
+      },
+    });
+    await writeAuditLog(prisma as any, {
+      outletId: req.auth!.outletId,
+      userId: req.auth!.userId,
+      action: "waiter.shift_handover",
+      entityType: "USER",
+      entityId: req.auth!.userId,
+      afterState: { ...payload, handoverId: row.id },
+      reasonCode: "SHIFT_HANDOVER",
+    });
+    import("../websockets").then(({ broadcast }) => {
+      broadcast("finance.waiter_shift_handover", {
+        waiterId: req.auth!.userId,
+        outletId: req.auth!.outletId,
+        ...payload,
+      });
+    }).catch(() => {});
+    res.status(200).json({ ok: true, ...payload });
+  } catch (err: any) {
+    console.error("Error recording waiter shift handover:", err);
+    res.status(500).json({ error: err.message || "internal error" });
+  }
+});
+
+router.get("/waiters/shift-handovers", requireAuth, requirePermission("report.read"), async (req: AuthedRequest, res) => {
+  try {
+    const rows = await prisma.waiterShiftHandover.findMany({
+      where: { outletId: req.auth!.outletId },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    });
+    res.status(200).json(
+      rows.map((row) => ({
+        id: row.id,
+        waiterId: row.waiterId,
+        waiterName: row.waiterName,
+        createdAt: row.createdAt.toISOString(),
+        businessDate: row.businessDate.toISOString().slice(0, 10),
+        actualCashCountedMinor: Number(row.actualCashCountedMinor),
+        openingFloatMinor: Number(row.openingFloatMinor),
+        netTipPayoutMinor: Number(row.netTipPayoutMinor),
+        digitalTipsMinor: Number(row.digitalTipsMinor),
+        serviceChargeMinor: Number(row.serviceChargeMinor),
+        cashSalesMinor: Number(row.cashSalesMinor),
+        managerNotes: row.managerNotes || "",
+      }))
+    );
+  } catch (err: any) {
+    console.error("Error listing waiter shift handovers:", err);
+    res.status(500).json({ error: err.message || "internal error" });
   }
 });
 

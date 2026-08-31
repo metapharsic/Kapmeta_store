@@ -1,13 +1,11 @@
 import { Router } from "express";
-import { PrismaClient } from "@prisma/client";
 import { requireAuth, type AuthedRequest } from "../middleware/require-auth";
-
-const prisma = new PrismaClient();
+import { prisma } from "../prisma";
 
 export const settingsRouter = Router();
 
-// GET /settings/outlet-status
-settingsRouter.get("/settings/outlet-status", requireAuth, async (req: AuthedRequest, res) => {
+// GET /settings/outlet-status & GET /settings/store-status
+const handleGetOutletStatus = async (req: AuthedRequest, res: any) => {
   try {
     const outletId = req.auth!.outletId;
     const status = await (prisma as any).outlet_status.findUnique({
@@ -22,11 +20,14 @@ settingsRouter.get("/settings/outlet-status", requireAuth, async (req: AuthedReq
     console.error(err);
     res.status(500).json({ error: "internal error" });
   }
-});
+};
 
-// POST /settings/outlet-status
-settingsRouter.post("/settings/outlet-status", requireAuth, async (req: AuthedRequest, res) => {
-  const { isOnline } = req.body;
+settingsRouter.get("/settings/outlet-status", requireAuth, handleGetOutletStatus);
+settingsRouter.get("/settings/store-status", requireAuth, handleGetOutletStatus);
+
+// POST & PATCH /settings/outlet-status & /settings/store-status
+const handleUpdateOutletStatus = async (req: AuthedRequest, res: any) => {
+  const isOnline = req.body.isOnline ?? req.body.isOpen ?? req.body.active;
 
   if (typeof isOnline !== "boolean") {
     return res.status(400).json({ error: "isOnline must be boolean" });
@@ -50,6 +51,13 @@ settingsRouter.post("/settings/outlet-status", requireAuth, async (req: AuthedRe
       },
     });
 
+    import("../websockets").then(({ broadcast }) => {
+      broadcast("outlet.store_status_updated", {
+        outletId,
+        isOnline: status.is_online,
+      });
+    }).catch(() => {});
+
     res.status(200).json({
       isOnline: status.is_online,
       updatedAt: status.updated_at.toISOString(),
@@ -58,4 +66,9 @@ settingsRouter.post("/settings/outlet-status", requireAuth, async (req: AuthedRe
     console.error(err);
     res.status(500).json({ error: "internal error" });
   }
-});
+};
+
+settingsRouter.post("/settings/outlet-status", requireAuth, handleUpdateOutletStatus);
+settingsRouter.patch("/settings/outlet-status", requireAuth, handleUpdateOutletStatus);
+settingsRouter.post("/settings/store-status", requireAuth, handleUpdateOutletStatus);
+settingsRouter.patch("/settings/store-status", requireAuth, handleUpdateOutletStatus);

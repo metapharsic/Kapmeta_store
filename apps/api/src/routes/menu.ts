@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../prisma";
 import {
   PrismaAvailabilityRepository,
   PrismaMenuCatalogRepository,
@@ -7,8 +7,6 @@ import {
   listAvailability,
 } from "@kapmeta/menu";
 import { requireAuth, requirePermission, type AuthedRequest } from "../middleware/require-auth";
-
-const prisma = new PrismaClient();
 
 const router = Router();
 
@@ -293,14 +291,44 @@ router.get("/categories/:categoryId/items", requireAuth, requirePermission("menu
 router.get("/availability", requireAuth, requirePermission("menu.read"), async (req: AuthedRequest, res) => {
   try {
     const outletId = req.auth!.outletId;
+    const menuItems = await prisma.menuItem.findMany({
+      where: { outletId },
+      include: { category: true },
+      orderBy: { name: "asc" },
+    });
 
-    const availabilityRepository = new PrismaAvailabilityRepository(prisma);
-    const items = await listAvailability(outletId, availabilityRepository);
+    const availabilityRows = await prisma.item_availability.findMany({
+      where: { outlet_id: outletId },
+    });
+    const availByItem = new Map<string, { state: string; version: number }>();
+    for (const row of availabilityRows) {
+      const prev = availByItem.get(row.item_id);
+      if (!prev || row.version >= prev.version) {
+        availByItem.set(row.item_id, { state: row.state, version: row.version });
+      }
+    }
 
-    res.status(200).json(items);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "internal error" });
+    res.status(200).json(
+      menuItems.map((item) => {
+        const avail = availByItem.get(item.id);
+        const isStocked = avail ? avail.state !== "OFF" : item.isActive;
+        return {
+          id: item.id,
+          menuItemId: item.id,
+          name: item.name,
+          description: item.description || "",
+          categoryName: item.category?.name || "General",
+          category: item.category?.name || "General",
+          isStocked,
+          version: avail?.version ?? 1,
+          priceMinor: Math.round(Number(item.price || 0) * 100).toString(),
+          isVeg: item.isVeg,
+        };
+      })
+    );
+  } catch (err: any) {
+    console.error("Error fetching menu availability:", err);
+    res.status(500).json({ error: err.message || "Failed to fetch menu availability" });
   }
 });
 
@@ -309,36 +337,69 @@ router.patch("/items/:menuItemId/availability", requireAuth, requirePermission("
     const { isStocked, stockQty, expectedVersion } = req.body;
     const outletId = req.auth!.outletId;
 
-    const availabilityRepository = new PrismaAvailabilityRepository(prisma);
-    const result = await setAvailability(
-      req.params.menuItemId,
-      outletId,
-      isStocked,
-      stockQty,
-      expectedVersion,
-      availabilityRepository,
-      req.auth!.userId
-    );
+    const item = await prisma.menuItem.findUnique({
+      where: { id: req.params.menuItemId },
+    });
 
-    if (!result.ok) {
-      res.status(409).json({ error: "stale version", currentVersion: result.currentVersion });
+    if (!item) {
+      res.status(404).json({ error: "menu item not found" });
       return;
     }
 
-    import("../websockets").then(({ broadcast }) => {
-      broadcast("menu.availability.updated", {
-        menuItemId: req.params.menuItemId,
-        outletId,
-        isStocked,
-        stockQty,
-        version: result.newVersion
+    const nextState = typeof isStocked === "boolean" && isStocked === false ? "OFF" : "ON";
+    const accounts = await prisma.channelAccount.findMany({
+      where: { outletId },
+      select: { id: true },
+    });
+    const channelIds = accounts.length > 0 ? accounts.map((a) => a.id) : [outletId];
+    let newVersion = 1;
+    for (const channelId of channelIds) {
+      const existing = await prisma.item_availability.findFirst({
+        where: { outlet_id: outletId, item_id: item.id, channel_id: channelId },
       });
+      if (existing) {
+        const updatedAvail = await prisma.item_availability.update({
+          where: { id: existing.id },
+          data: { state: nextState, version: { increment: 1 }, updated_at: new Date(), updated_by: req.auth!.userId },
+        });
+        newVersion = updatedAvail.version;
+      } else {
+        const created = await prisma.item_availability.create({
+          data: {
+            outlet_id: outletId,
+            item_id: item.id,
+            channel_id: channelId,
+            state: nextState,
+            version: (expectedVersion || 1) + 1,
+            created_by: req.auth!.userId,
+            updated_by: req.auth!.userId,
+          },
+        });
+        newVersion = created.version;
+      }
+    }
+
+    const updated = await prisma.menuItem.update({
+      where: { id: req.params.menuItemId },
+      data: { isActive: nextState !== "OFF" },
     });
 
-    res.status(200).json({ newVersion: result.newVersion });
-  } catch (err) {
+    await prisma.auditLog.create({
+      data: {
+        outletId,
+        actor_id: req.auth!.userId,
+        action: "UPDATE",
+        entityType: "MENU_ITEM_86",
+        entityId: item.id,
+        beforeState: { isStocked: item.isActive },
+        afterState: { isStocked: nextState !== "OFF", version: newVersion },
+      },
+    }).catch(() => {});
+
+    res.status(200).json({ newVersion, isStocked: nextState !== "OFF" });
+  } catch (err: any) {
     console.error(err);
-    res.status(500).json({ error: "internal error" });
+    res.status(500).json({ error: err.message });
   }
 });
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import Head from "next/head";
 import { authedFetch, useAuthGuard } from "../lib/auth";
 import Nav from "../components/Nav";
+import { useKapmetaSocket } from "../lib/useKapmetaSocket";
 
 // Real response shape of GET /z-report (services/finance/src/z-report.ts
 // ZReportGenerator.generateDailyReport, serialized by apps/api/src/routes/finance.ts
@@ -12,6 +13,12 @@ interface ZReportApi {
   totalSales: string;
   totalTax: string;
   grandTotal: string;
+  totalTips: string;
+  totalServiceCharge: string;
+  handoverCount: number;
+  handoverCashCounted: string;
+  handoverTipPayout: string;
+  handoverDigitalTips: string;
   paymentModes: Record<string, string>;
   invoiceCount: number;
 }
@@ -123,6 +130,16 @@ export default function FinancePage() {
   const [reconcileNotes, setReconcileNotes] = useState("");
   const [savingReconcile, setSavingReconcile] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [waiterHandovers, setWaiterHandovers] = useState<
+    { id: string; waiterId: string; waiterName?: string; createdAt: string; actualCashCountedMinor: number; openingFloatMinor: number; netTipPayoutMinor: number; managerNotes: string }[]
+  >([]);
+
+  const fetchWaiterHandovers = () => {
+    authedFetch("/waiters/shift-handovers")
+      .then((res) => (res.ok ? res.json() : []))
+      .then((rows) => setWaiterHandovers(Array.isArray(rows) ? rows : []))
+      .catch(() => {});
+  };
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -178,8 +195,26 @@ export default function FinancePage() {
     if (authLoading) return;
     fetchReport();
     fetchCashDrawer();
+    fetchWaiterHandovers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, date]);
+
+  useKapmetaSocket(
+    (payload) => {
+      if (payload.topic === "finance.waiter_shift_handover" || payload.topic === "finance.order_settled") {
+        fetchWaiterHandovers();
+        fetchReport();
+        fetchCashDrawer();
+        fetchCashDrawer();
+        fetchReport();
+        if (payload.topic === "finance.waiter_shift_handover") {
+          showToast("Captain cash & tips handover received");
+        }
+      }
+    },
+    !authLoading,
+    "finance"
+  );
 
   const handleSavePettyCash = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -317,8 +352,10 @@ export default function FinancePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, fromDate, toDate]);
 
-  const formatMoney = (minor: string | number) => {
-    const paise = typeof minor === "string" ? Number(minor) : minor;
+  const formatMoney = (minor: any) => {
+    if (minor === undefined || minor === null || minor === "") return "₹0.00";
+    const paise = typeof minor === "bigint" ? Number(minor) : Number(minor);
+    if (isNaN(paise)) return "₹0.00";
     return "₹" + (paise / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
 
@@ -471,6 +508,42 @@ export default function FinancePage() {
                     </div>
                     <div className="kpi-main">
                       <h2 className="kpi-number">{report.invoiceCount}</h2>
+                    </div>
+                  </div>
+
+                  <div className="kpi-card">
+                    <div className="kpi-top">
+                      <div className="icon-badge green">
+                        <span>✦</span>
+                      </div>
+                      <span className="kpi-heading">TIPS (BILL)</span>
+                    </div>
+                    <div className="kpi-main">
+                      <h2 className="kpi-number">{formatMoney(report.totalTips || "0")}</h2>
+                    </div>
+                  </div>
+
+                  <div className="kpi-card">
+                    <div className="kpi-top">
+                      <div className="icon-badge amber">
+                        <span>%</span>
+                      </div>
+                      <span className="kpi-heading">SERVICE CHARGE</span>
+                    </div>
+                    <div className="kpi-main">
+                      <h2 className="kpi-number">{formatMoney(report.totalServiceCharge || "0")}</h2>
+                    </div>
+                  </div>
+
+                  <div className="kpi-card">
+                    <div className="kpi-top">
+                      <div className="icon-badge purple">
+                        <span>₹</span>
+                      </div>
+                      <span className="kpi-heading">CAPTAIN TIP PAYOUT</span>
+                    </div>
+                    <div className="kpi-main">
+                      <h2 className="kpi-number">{formatMoney(report.handoverTipPayout || "0")}</h2>
                     </div>
                   </div>
                 </section>
@@ -646,6 +719,47 @@ export default function FinancePage() {
                       </div>
                     </>
                   )}
+
+                      <div style={{ marginTop: "20px" }}>
+                        <h4 style={{ fontSize: "0.9375rem", fontWeight: 800, color: "#334155", margin: "0 0 10px" }}>
+                          Captain shift cash &amp; tips handovers
+                        </h4>
+                        <p style={{ fontSize: "0.75rem", color: "#64748b", margin: "0 0 10px" }}>
+                          From POST /waiters/me/shift-handover. Does not close the house cash drawer.
+                        </p>
+                        {waiterHandovers.length === 0 ? (
+                          <div className="not-available-box" style={{ padding: "16px" }}>
+                            <p>No captain handovers recorded yet.</p>
+                          </div>
+                        ) : (
+                          <div className="table-responsive">
+                            <table className="clean-table">
+                              <thead>
+                                <tr>
+                                  <th>Time</th>
+                                  <th>Captain</th>
+                                  <th style={{ textAlign: "right" }}>Counted cash</th>
+                                  <th style={{ textAlign: "right" }}>Opening float</th>
+                                  <th style={{ textAlign: "right" }}>Net tip payout</th>
+                                  <th>Notes</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {waiterHandovers.map((h) => (
+                                  <tr key={h.id}>
+                                    <td>{new Date(h.createdAt).toLocaleString("en-IN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "short" })}</td>
+                                    <td><strong>{h.waiterName || h.waiterId.slice(0, 8)}</strong></td>
+                                    <td className="amount-cell">{formatMoney(String(h.actualCashCountedMinor))}</td>
+                                    <td className="amount-cell">{formatMoney(String(h.openingFloatMinor))}</td>
+                                    <td className="amount-cell" style={{ color: "#0f766e", fontWeight: 800 }}>{formatMoney(String(h.netTipPayoutMinor))}</td>
+                                    <td style={{ color: "#64748b", fontSize: "0.75rem" }}>{h.managerNotes || "—"}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
                 </section>
 
                 <section className="panel-card invoices-table-card">

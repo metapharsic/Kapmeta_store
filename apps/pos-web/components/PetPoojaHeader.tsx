@@ -91,6 +91,15 @@ export default function PetPoojaHeader({
         }
       })
       .catch(() => {});
+
+    authedFetch("/settings/store-status")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && typeof data.isOnline === "boolean") {
+          setIsStoreOnline(data.isOnline);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const unreadAlertsCount = notifications.filter((n) => !n.isRead).length;
@@ -98,6 +107,20 @@ export default function PetPoojaHeader({
   const markAllAlertsRead = () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
     authedFetch("/notifications/read-all", { method: "POST" }).catch(() => {});
+  };
+
+  const handleToggleStore = async () => {
+    const next = !isStoreOnline;
+    setIsStoreOnline(next);
+    try {
+      await authedFetch("/settings/store-status", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isOnline: next }),
+      });
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   const dismissAlert = (id: string) => {
@@ -353,7 +376,7 @@ export default function PetPoojaHeader({
               <button
                 type="button"
                 className={`store-toggle-switch ${isStoreOnline ? "active" : ""}`}
-                onClick={() => setIsStoreOnline(!isStoreOnline)}
+                onClick={handleToggleStore}
               >
                 <span className="switch-slider"></span>
               </button>

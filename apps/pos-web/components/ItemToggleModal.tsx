@@ -55,10 +55,11 @@ export default function ItemToggleModal({ onClose }: ItemToggleModalProps) {
     try {
       const res = await authedFetch(`/menu/items/${item.id}/availability`, {
         method: "PATCH",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           isStocked: nextStocked,
           stockQty: nextStocked ? 100 : 0,
-          version: 1,
+          expectedVersion: 1,
         }),
       });
       if (res.ok) {

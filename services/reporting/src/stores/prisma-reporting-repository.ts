@@ -19,7 +19,14 @@ export class PrismaReportingRepository implements ReportingRepository {
 
   async listOrdersInRange(outletId: string, range: DateRange): Promise<OrderAggregateRow[]> {
     const rows = await this.prisma.order.findMany({
-      where: { outletId, createdAt: { gte: range.fromDate, lte: range.toDate } },
+      where: {
+        outletId,
+        status: "COMPLETED",
+        OR: [
+          { settledAt: { gte: range.fromDate, lte: range.toDate } },
+          { AND: [{ settledAt: null }, { createdAt: { gte: range.fromDate, lte: range.toDate } }] },
+        ],
+      },
       select: { status: true, grandTotal: true },
     });
 
@@ -31,7 +38,10 @@ export class PrismaReportingRepository implements ReportingRepository {
 
   async listOrderItemsInRange(outletId: string, range: DateRange): Promise<ItemSaleRow[]> {
     const rows = await this.prisma.orderItem.findMany({
-      where: { outletId, order: { createdAt: { gte: range.fromDate, lte: range.toDate } } },
+      where: { outletId, order: { status: "COMPLETED", OR: [
+        { settledAt: { gte: range.fromDate, lte: range.toDate } },
+        { AND: [{ settledAt: null }, { createdAt: { gte: range.fromDate, lte: range.toDate } }] },
+      ] } },
       select: {
         menuItemId: true,
         quantity: true,
@@ -42,7 +52,7 @@ export class PrismaReportingRepository implements ReportingRepository {
 
     return rows.map((row) => ({
       menuItemId: row.menuItemId,
-      quantity: row.quantity,
+      quantity: Number(row.quantity),
       subtotalMinor: row.subtotal,
       orderStatus: row.order.status as OrderStatus,
     }));
@@ -63,7 +73,14 @@ export class PrismaReportingRepository implements ReportingRepository {
 
   async listChannelOrdersInRange(outletId: string, range: DateRange): Promise<ChannelOrderRow[]> {
     const rows = await this.prisma.order.findMany({
-      where: { outletId, createdAt: { gte: range.fromDate, lte: range.toDate } },
+      where: {
+        outletId,
+        status: "COMPLETED",
+        OR: [
+          { settledAt: { gte: range.fromDate, lte: range.toDate } },
+          { AND: [{ settledAt: null }, { createdAt: { gte: range.fromDate, lte: range.toDate } }] },
+        ],
+      },
       select: { orderType: true, status: true, grandTotal: true },
     });
 
@@ -81,12 +98,16 @@ export class PrismaReportingRepository implements ReportingRepository {
         outletId,
         orderType: "DINE_IN",
         diningTableId: { not: null },
-        createdAt: { gte: range.fromDate, lte: range.toDate },
+        OR: [
+          { settledAt: { gte: range.fromDate, lte: range.toDate } },
+          { AND: [{ settledAt: null }, { createdAt: { gte: range.fromDate, lte: range.toDate } }] },
+        ],
       },
       select: {
         id: true,
         orderType: true,
         createdAt: true,
+        settledAt: true,
       },
     });
 
@@ -94,7 +115,7 @@ export class PrismaReportingRepository implements ReportingRepository {
       orderId: row.id,
       orderType: row.orderType,
       createdAt: row.createdAt,
-      settledAt: null,
+      settledAt: row.settledAt,
     }));
   }
 
@@ -117,8 +138,22 @@ export class PrismaReportingRepository implements ReportingRepository {
   }
 
   // Invoice-level reprint/waive-off figures for invoices created in range.
-  async listInvoiceLeakageInRange(_outletId: string, _range: DateRange): Promise<InvoiceLeakageRow[]> {
-    return [];
+  async listInvoiceLeakageInRange(outletId: string, range: DateRange): Promise<InvoiceLeakageRow[]> {
+    const rows = await this.prisma.invoice.findMany({
+      where: {
+        outletId,
+        createdAt: { gte: range.fromDate, lte: range.toDate },
+        OR: [
+          { reprintCount: { gt: 0 } },
+          { waivedOffMinor: { gt: 0 } },
+        ],
+      },
+      select: { reprintCount: true, waivedOffMinor: true },
+    });
+    return rows.map((row) => ({
+      reprintCount: row.reprintCount,
+      waivedOffMinor: row.waivedOffMinor,
+    }));
   }
 
   // KOT tickets in range whose parent order has zero linked Invoice rows —
@@ -133,17 +168,23 @@ export class PrismaReportingRepository implements ReportingRepository {
     const orderIds = Array.from(new Set(kots.map((k) => k.orderId)));
     const orders = await this.prisma.order.findMany({
       where: { id: { in: orderIds } },
-      select: { id: true, grandTotal: true },
+      select: { id: true, grandTotal: true, status: true },
     });
     const orderById = new Map(orders.map((o) => [o.id, o]));
+    const billed = await this.prisma.invoice.findMany({
+      where: { orderId: { in: orderIds } },
+      select: { orderId: true },
+    });
+    const billedIds = new Set(billed.map((i) => i.orderId));
+    const completed = new Set(orders.filter((o) => (o as { status?: string }).status === "COMPLETED").map((o) => o.id));
 
     const result: UnbilledKotRow[] = [];
     for (const kot of kots) {
+      if (billedIds.has(kot.orderId) || completed.has(kot.orderId)) continue;
       const order = orderById.get(kot.orderId);
       if (order) {
         result.push({
           kotTicketId: kot.id,
-          orderId: kot.orderId,
           orderGrandTotalMinor: order.grandTotal,
         });
       }
@@ -156,7 +197,10 @@ export class PrismaReportingRepository implements ReportingRepository {
       where: {
         outletId,
         status: "COMPLETED",
-        createdAt: { gte: range.fromDate, lte: range.toDate },
+        OR: [
+          { settledAt: { gte: range.fromDate, lte: range.toDate } },
+          { AND: [{ settledAt: null }, { createdAt: { gte: range.fromDate, lte: range.toDate } }] },
+        ],
       },
       select: {
         subtotal: true,

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/router";
 import { authedFetch } from "../lib/auth";
+import { useKapmetaSocket } from "../lib/useKapmetaSocket";
 import MoveKotModal from "./MoveKotModal";
 import AddTableModal from "./AddTableModal";
 
@@ -9,11 +10,17 @@ interface TableItem {
   tableNumber: string;
   capacity: number;
   section: string | null;
-  status: "VACANT" | "RUNNING" | "PRINTED" | "PAID" | "RUNNING_KOT";
+  status: "VACANT" | "RUNNING" | "PRINTED" | "PAID" | "RUNNING_KOT" | "DIRTY";
+  kitchenStage?: "QUEUED" | "COOKING" | "READY" | "SERVED" | null;
   activeOrderId?: string | null;
   totalMinor?: number;
   elapsedMinutes?: number;
   itemCount?: number;
+  currentOrder?: any;
+  mergeGroupId?: string | null;
+  mergePrimaryTableId?: string | null;
+  mergedWith?: string[];
+  isMergePrimary?: boolean;
 }
 
 interface TableViewFloorProps {
@@ -35,6 +42,7 @@ export default function TableViewFloor({
   const [isAddTableOpen, setIsAddTableOpen] = useState(false);
   const [inspectTable, setInspectTable] = useState<TableItem | null>(null);
   const [inspectOrderDetails, setInspectOrderDetails] = useState<any | null>(null);
+  const [actionFeedback, setActionFeedback] = useState<string | null>(null);
 
   const fetchTablesData = async () => {
     try {
@@ -42,42 +50,22 @@ export default function TableViewFloor({
       const res = await authedFetch("/tables");
       if (res.ok) {
         const data = await res.json();
-        // Also fetch live orders to map running amounts and elapsed times
-        const ordersRes = await authedFetch("/orders?status=ACTIVE,PREPARING,READY,SERVED,PRINTED");
-        const activeOrders = ordersRes.ok ? await ordersRes.json() : [];
-        const orderList = activeOrders.orders || (Array.isArray(activeOrders) ? activeOrders : []);
-
-        const tableMap = new Map<string, any>();
-        orderList.forEach((ord: any) => {
-          if (ord.diningTableId) {
-            tableMap.set(ord.diningTableId, ord);
-          }
-        });
-
         const mapped: TableItem[] = (data || []).map((tbl: any) => {
-          const matchedOrder = tableMap.get(tbl.id);
-          let status: TableItem["status"] = "VACANT";
-          let totalMinor = 0;
-          let elapsedMinutes = 0;
-          let itemCount = 0;
-          let activeOrderId = null;
-
-          if (matchedOrder) {
-            activeOrderId = matchedOrder.id;
-            totalMinor = Number(matchedOrder.grandTotalMinor || 0);
-            itemCount = matchedOrder.itemCount || (matchedOrder.items?.length || 0);
-            const created = new Date(matchedOrder.createdAt).getTime();
+          const currentOrder = tbl.currentOrder || null;
+          const status: TableItem["status"] = currentOrder
+            ? ((tbl.status as any) || "RUNNING")
+            : tbl.mergeGroupId
+              ? "RUNNING"
+              : "VACANT";
+          const queuedKot = (currentOrder?.kots || []).some((k: any) =>
+            k.status === "QUEUED" || k.status === "KOT_CREATED" || k.status === "PENDING"
+          );
+          let kitchenStage: TableItem["kitchenStage"] = currentOrder ? ((tbl.kitchenStage as any) || null) : null;
+          if (kitchenStage === "QUEUED" && !queuedKot) kitchenStage = null;
+          let elapsedMinutes: number | undefined;
+          if (currentOrder?.createdAt) {
+            const created = new Date(currentOrder.createdAt).getTime();
             elapsedMinutes = Math.max(1, Math.floor((Date.now() - created) / 60000));
-
-            if (matchedOrder.status === "PRINTED" || matchedOrder.status === "BILLING") {
-              status = "PRINTED";
-            } else if (matchedOrder.status === "PAID" || matchedOrder.status === "SETTLED") {
-              status = "PAID";
-            } else {
-              status = "RUNNING_KOT";
-            }
-          } else if (tbl.status === "OCCUPIED") {
-            status = "RUNNING";
           }
 
           return {
@@ -86,12 +74,51 @@ export default function TableViewFloor({
             capacity: tbl.capacity || 4,
             section: tbl.section || "Non AC",
             status,
-            activeOrderId,
-            totalMinor,
+            kitchenStage,
+            activeOrderId: currentOrder?.id || tbl.activeOrderId || null,
+            totalMinor: Number(currentOrder?.grandTotalPaise || 0),
             elapsedMinutes,
-            itemCount,
+            itemCount: currentOrder?.items?.length || 0,
+            currentOrder,
+            mergeGroupId: tbl.mergeGroupId || null,
+            mergePrimaryTableId: tbl.mergePrimaryTableId || null,
+            mergedWith: Array.isArray(tbl.mergedWith) ? tbl.mergedWith : [],
+            isMergePrimary: !!tbl.isMergePrimary,
           };
         });
+
+        // #region agent log
+        fetch("http://127.0.0.1:7323/ingest/28c85a32-5ef1-4fe5-9437-78139f7a5bfb", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c675b" },
+          body: JSON.stringify({
+            sessionId: "9c675b",
+            runId: "wave1-kot",
+            hypothesisId: "C",
+            location: "TableViewFloor.tsx:fetchTablesData",
+            message: "floor paint from GET /tables only",
+            data: {
+              queued: mapped
+                .filter((t) => t.kitchenStage === "QUEUED")
+                .map((t) => t.tableNumber),
+              occupied: mapped
+                .filter((t) => t.status !== "VACANT")
+                .map((t) => ({
+                  n: t.tableNumber,
+                  status: t.status,
+                  kitchenStage: t.kitchenStage,
+                  kots: (t.currentOrder?.kots || []).map((k: any) => k.status),
+                })),
+              serveCount: mapped.filter((t) => t.kitchenStage === "READY").length,
+              vacantCount: mapped.filter((t) => t.status === "VACANT").length,
+              mergeGroups: mapped
+                .filter((t) => t.mergeGroupId)
+                .map((t) => ({ n: t.tableNumber, mergedWith: t.mergedWith, orderId: t.activeOrderId })),
+            },
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion
 
         setTables(mapped);
       }
@@ -102,13 +129,128 @@ export default function TableViewFloor({
     }
   };
 
+  const handleServeTable = async (e: React.MouseEvent, tbl: TableItem) => {
+    e.stopPropagation();
+    try {
+      const res = await authedFetch(`/tables/${tbl.id}/serve`, { method: "POST" });
+      if (res.ok) {
+        setActionFeedback(`Table ${tbl.tableNumber} marked served.`);
+        setTimeout(() => setActionFeedback(null), 4000);
+        await fetchTablesData();
+        return;
+      }
+      const errJson = await res.json().catch(() => ({}));
+      setActionFeedback(errJson.error || `Could not serve table ${tbl.tableNumber}.`);
+      setTimeout(() => setActionFeedback(null), 5000);
+    } catch (err) {
+      console.error("Failed to serve table food", err);
+      setActionFeedback(`Network error serving table ${tbl.tableNumber}.`);
+      setTimeout(() => setActionFeedback(null), 5000);
+    }
+  };
+
+  const handleVacateTable = async (e: React.MouseEvent, tbl: TableItem) => {
+    e.stopPropagation();
+    try {
+      const res = await authedFetch(`/tables/${tbl.id}/vacant`, { method: "POST" });
+      if (res.ok) {
+        setActionFeedback(`Table ${tbl.tableNumber} marked vacant.`);
+        setTimeout(() => setActionFeedback(null), 4000);
+        await fetchTablesData();
+        return;
+      }
+      const errJson = await res.json().catch(() => ({}));
+      setActionFeedback(errJson.error || `Could not vacate table ${tbl.tableNumber}.`);
+      setTimeout(() => setActionFeedback(null), 5000);
+    } catch (err) {
+      console.error("Failed to vacate table", err);
+      setActionFeedback(`Network error vacating table ${tbl.tableNumber}.`);
+      setTimeout(() => setActionFeedback(null), 5000);
+    }
+  };
+
+  useKapmetaSocket(() => {
+    fetchTablesData();
+  }, true, "pos-floor");
+
   useEffect(() => {
     fetchTablesData();
-    const timer = setInterval(fetchTablesData, 10000); // 10s auto-refresh
-    return () => clearInterval(timer);
+    const timer = setInterval(fetchTablesData, 10000);
+    return () => {
+      clearInterval(timer);
+    };
   }, []);
 
+  const [mergeMode, setMergeMode] = useState(false);
+  const [mergeSourceIds, setMergeSourceIds] = useState<string[]>([]);
+  const [mergeFeedback, setMergeFeedback] = useState<string | null>(null);
+
+  const toggleMergeSource = (tbl: TableItem) => {
+    setMergeSourceIds((prev) =>
+      prev.includes(tbl.id) ? prev.filter((id) => id !== tbl.id) : [...prev, tbl.id]
+    );
+  };
+
+  const completeMerge = async (targetTable: TableItem) => {
+    if (mergeSourceIds.length === 0) {
+      alert("Please select at least one occupied source table to merge.");
+      return;
+    }
+    try {
+      const res = await authedFetch("/tables/merge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceTableIds: mergeSourceIds, targetTableId: targetTable.id }),
+      });
+      // #region agent log
+      fetch("http://127.0.0.1:7323/ingest/28c85a32-5ef1-4fe5-9437-78139f7a5bfb", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c675b" },
+        body: JSON.stringify({
+          sessionId: "9c675b",
+          runId: "merge-fix",
+          hypothesisId: "Q",
+          location: "TableViewFloor.tsx:completeMerge",
+          message: "POS merge POST /tables/merge",
+          data: {
+            ok: res.ok,
+            status: res.status,
+            sourceTableIds: mergeSourceIds,
+            targetTableId: targetTable.id,
+            targetNumber: targetTable.tableNumber,
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
+      if (res.ok) {
+        setMergeSourceIds([]);
+        setMergeMode(false);
+        setMergeFeedback(`Successfully merged tables into Table ${targetTable.tableNumber}!`);
+        setTimeout(() => setMergeFeedback(null), 5000);
+        await fetchTablesData();
+      } else {
+        const errJson = await res.json().catch(() => ({}));
+        alert(errJson.error || "Failed to merge tables");
+      }
+    } catch (e: any) {
+      alert("Network error merging tables");
+    }
+  };
+
   const handleTableClick = (tbl: TableItem) => {
+    if (mergeMode) {
+      if (mergeSourceIds.includes(tbl.id)) {
+        toggleMergeSource(tbl);
+      } else if (mergeSourceIds.length > 0 && !mergeSourceIds.includes(tbl.id)) {
+        // Tap this table as target destination
+        completeMerge(tbl);
+      } else {
+        toggleMergeSource(tbl);
+      }
+      return;
+    }
+
     if (onSelectTable) {
       onSelectTable(tbl);
     } else {
@@ -179,6 +321,17 @@ export default function TableViewFloor({
             onClick={() => setIsMoveKotOpen(true)}
           >
             Move KOT / Items
+          </button>
+          <button
+            type="button"
+            className={`btn-move-kot ${mergeMode ? "active-merge" : ""}`}
+            style={mergeMode ? { background: "#4f46e5", color: "#fff", borderColor: "#6366f1" } : {}}
+            onClick={() => {
+              setMergeMode((v) => !v);
+              setMergeSourceIds([]);
+            }}
+          >
+            {mergeMode ? "✕ Cancel Merge" : "🔀 Merge Tables"}
           </button>
 
           {/* Status Color Legend Pills */}
@@ -264,6 +417,36 @@ export default function TableViewFloor({
         </div>
       </div>
 
+      {mergeMode && (
+        <div style={{ background: "#312e81", color: "#e0e7ff", padding: "10px 20px", fontSize: "0.8125rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span>
+            {mergeSourceIds.length === 0
+              ? "🔀 Step 1: Click one or more occupied tables to select source orders."
+              : `🔀 Selected ${mergeSourceIds.length} source table(s). Step 2: Click the target table to merge all orders into.`}
+          </span>
+          <button
+            style={{ background: "#4338ca", color: "#fff", border: "none", padding: "4px 12px", borderRadius: "6px", cursor: "pointer", fontSize: "0.75rem" }}
+            onClick={() => {
+              setMergeMode(false);
+              setMergeSourceIds([]);
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {mergeFeedback && (
+        <div style={{ background: "#065f46", color: "#ecfdf5", padding: "10px 20px", fontSize: "0.8125rem", fontWeight: 600 }}>
+          {mergeFeedback}
+        </div>
+      )}
+      {actionFeedback && (
+        <div style={{ background: "#1e3a5f", color: "#e0f2fe", padding: "10px 20px", fontSize: "0.8125rem", fontWeight: 600 }}>
+          {actionFeedback}
+        </div>
+      )}
+
       {/* Floor Matrix Grid */}
       <div className="floor-matrix-scroll">
         {loading && tables.length === 0 ? (
@@ -292,19 +475,37 @@ export default function TableViewFloor({
                       ? "card-running"
                       : "card-blank";
 
+                  const isMergeSelected = mergeSourceIds.includes(tbl.id);
                   return (
                     <div
                       key={tbl.id}
-                      className={`table-card ${cardClass}`}
+                      className={`table-card ${cardClass} ${isMergeSelected ? "selected-merge-source" : ""}`}
+                      style={isMergeSelected ? { outline: "3px solid #6366f1", transform: "scale(1.03)", boxShadow: "0 0 15px rgba(99, 102, 241, 0.5)" } : {}}
                       onClick={() => handleTableClick(tbl)}
                     >
                       <div className="card-top-info">
-                        {isOccupied ? (
-                          <span className="elapsed-badge">{tbl.elapsedMinutes || 1} Min</span>
+                        {isOccupied && tbl.elapsedMinutes ? (
+                          <span className="elapsed-badge">{tbl.elapsedMinutes} Min</span>
                         ) : (
                           <span className="blank-spacer"></span>
                         )}
                         <span className="table-code-name">{tbl.tableNumber}</span>
+                        {tbl.mergedWith && tbl.mergedWith.length > 1 && (
+                          <span
+                            style={{
+                              fontSize: "9px",
+                              fontWeight: 700,
+                              color: "#c4b5fd",
+                              background: "rgba(99, 102, 241, 0.25)",
+                              border: "1px solid rgba(129, 140, 248, 0.5)",
+                              borderRadius: "4px",
+                              padding: "1px 5px",
+                              marginLeft: 4,
+                            }}
+                          >
+                            Merged {tbl.mergedWith.join(" + ")}
+                          </span>
+                        )}
                         {isOccupied && tbl.totalMinor ? (
                           <span className="table-amount">₹{(tbl.totalMinor / 100).toFixed(2)}</span>
                         ) : (
@@ -312,7 +513,54 @@ export default function TableViewFloor({
                         )}
                       </div>
 
+                      {isOccupied && tbl.kitchenStage && (
+                        <div style={{ margin: "2px 0 4px 0", textAlign: "center", display: "flex", justifyContent: "center" }}>
+                          {tbl.kitchenStage === "COOKING" && (
+                            <span style={{ fontSize: "10px", background: "rgba(245, 158, 11, 0.2)", color: "#fbbf24", border: "1px solid rgba(245, 158, 11, 0.5)", borderRadius: "4px", padding: "1px 6px", fontWeight: 700 }}>
+                              👨‍🍳 Cooking
+                            </span>
+                          )}
+                          {tbl.kitchenStage === "READY" && (
+                            <span style={{ fontSize: "10px", background: "rgba(16, 185, 129, 0.25)", color: "#34d399", border: "1px solid rgba(16, 185, 129, 0.6)", borderRadius: "4px", padding: "1px 6px", fontWeight: 800 }}>
+                              🔔 Food Ready
+                            </span>
+                          )}
+                          {tbl.kitchenStage === "QUEUED" && (
+                            <span style={{ fontSize: "10px", background: "rgba(14, 165, 233, 0.2)", color: "#38bdf8", border: "1px solid rgba(14, 165, 233, 0.4)", borderRadius: "4px", padding: "1px 6px", fontWeight: 700 }}>
+                              🟡 KOT Queued
+                            </span>
+                          )}
+                          {tbl.kitchenStage === "SERVED" && (
+                            <span style={{ fontSize: "10px", background: "rgba(99, 102, 241, 0.2)", color: "#a5b4fc", border: "1px solid rgba(99, 102, 241, 0.4)", borderRadius: "4px", padding: "1px 6px", fontWeight: 700 }}>
+                              🍽️ Served
+                            </span>
+                          )}
+                        </div>
+                      )}
+
                       <div className="card-bottom-actions">
+                        {tbl.kitchenStage === "READY" && (
+                          <button
+                            type="button"
+                            className="btn-card-serve"
+                            style={{ background: "#10b981", color: "#fff", border: "none", borderRadius: "4px", padding: "2px 6px", fontSize: "10px", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: "2px" }}
+                            onClick={(e) => handleServeTable(e, tbl)}
+                            title="Mark all ready food served to table"
+                          >
+                            🍽️ Serve
+                          </button>
+                        )}
+                        {(tbl.status === "PAID" || tbl.status === "PRINTED" || tbl.kitchenStage === "SERVED" || tbl.status === "DIRTY") && (
+                          <button
+                            type="button"
+                            className="btn-card-vacant"
+                            style={{ background: "#6366f1", color: "#fff", border: "none", borderRadius: "4px", padding: "2px 6px", fontSize: "10px", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: "2px" }}
+                            onClick={(e) => handleVacateTable(e, tbl)}
+                            title="Clear table and mark vacant for next guests"
+                          >
+                            🧹 Vacant
+                          </button>
+                        )}
                         <button
                           type="button"
                           className="card-action-icon"
@@ -366,17 +614,45 @@ export default function TableViewFloor({
             </div>
 
             <div style={{ marginTop: "12px", fontSize: "0.875rem" }}>
-              <div>Status: <strong>{inspectTable.status}</strong></div>
-              <div>Capacity: <strong>{inspectTable.capacity} guests</strong></div>
-              {inspectTable.elapsedMinutes ? (
-                <div>Seated Duration: <strong>{inspectTable.elapsedMinutes} mins</strong></div>
-              ) : null}
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>Status: <strong style={{ color: "#2563eb" }}>{inspectTable.status}</strong></span>
+                <span>Stage: <strong style={{ color: inspectTable.kitchenStage === "READY" ? "#d97706" : inspectTable.kitchenStage === "SERVED" ? "#059669" : "#64748b" }}>{inspectTable.kitchenStage || "N/A"}</strong></span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: "4px" }}>
+                <span>Capacity: <strong>{inspectTable.capacity} guests</strong></span>
+                {inspectTable.elapsedMinutes ? (
+                  <span>Seated: <strong>{inspectTable.elapsedMinutes} mins</strong></span>
+                ) : null}
+              </div>
             </div>
 
-            {inspectOrderDetails && inspectOrderDetails.items ? (
+            {/* Granular KOT Waves Breakdown */}
+            {inspectTable.currentOrder?.kots && inspectTable.currentOrder.kots.length > 0 ? (
+              <div style={{ marginTop: "14px" }}>
+                <h4 style={{ margin: "0 0 6px 0", fontSize: "0.8125rem", color: "#475569" }}>Kitchen Order Tickets (KOT Waves):</h4>
+                <div style={{ maxHeight: "160px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "6px" }}>
+                  {inspectTable.currentOrder.kots.map((k: any) => (
+                    <div key={k.id} style={{ background: "#f8fafc", padding: "6px 8px", borderRadius: "6px", border: "1px solid #e2e8f0", fontSize: "0.75rem" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, marginBottom: "3px" }}>
+                        <span>KOT #{k.ticketNumber}</span>
+                        <span style={{ color: k.status === "SERVED" ? "#059669" : k.status === "READY" ? "#d97706" : "#2563eb" }}>
+                          {k.status}
+                        </span>
+                      </div>
+                      {k.items?.map((it: any) => (
+                        <div key={it.id} style={{ display: "flex", justifyContent: "space-between", color: "#64748b" }}>
+                          <span>{it.quantity}x {it.name}</span>
+                          <span>{it.status}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : inspectOrderDetails && inspectOrderDetails.items ? (
               <div style={{ marginTop: "16px" }}>
                 <h4 style={{ margin: "0 0 8px 0", fontSize: "0.875rem" }}>Active Order Items:</h4>
-                <div style={{ maxHeight: "200px", overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: "6px" }}>
+                <div style={{ maxHeight: "160px", overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: "6px" }}>
                   {inspectOrderDetails.items.map((it: any) => (
                     <div key={it.id} style={{ display: "flex", justifyContent: "space-between", padding: "6px 10px", borderBottom: "1px solid #f1f5f9", fontSize: "0.8125rem" }}>
                       <span>{it.quantity}x {it.menuItemName || it.menuItem?.name}</span>
@@ -384,26 +660,56 @@ export default function TableViewFloor({
                     </div>
                   ))}
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between", marginTop: "10px", fontWeight: 700 }}>
-                  <span>Grand Total:</span>
-                  <span style={{ color: "#16a34a" }}>
-                    ₹{(Number(inspectOrderDetails.grandTotalMinor || 0) / 100).toFixed(2)}
-                  </span>
-                </div>
               </div>
             ) : null}
 
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "20px" }}>
-              <button className="btn-secondary" onClick={() => setInspectTable(null)}>Close</button>
-              <button
-                className="btn-primary"
-                onClick={() => {
-                  handleTableClick(inspectTable);
-                  setInspectTable(null);
-                }}
-              >
-                Open in POS Register →
-              </button>
+            {inspectTable.totalMinor ? (
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: "12px", fontWeight: 700, fontSize: "0.95rem" }}>
+                <span>Running Total:</span>
+                <span style={{ color: "#16a34a" }}>
+                  ₹{(Number(inspectTable.totalMinor || 0) / 100).toFixed(2)}
+                </span>
+              </div>
+            ) : null}
+
+            <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", marginTop: "20px", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: "6px" }}>
+                {inspectTable.kitchenStage === "READY" && (
+                  <button
+                    type="button"
+                    style={{ background: "#10b981", color: "#fff", border: "none", padding: "6px 12px", borderRadius: "6px", fontSize: "0.8125rem", fontWeight: 700, cursor: "pointer" }}
+                    onClick={async (e) => {
+                      await handleServeTable(e, inspectTable);
+                      setInspectTable(null);
+                    }}
+                  >
+                    🍽️ Mark All Served
+                  </button>
+                )}
+                <button
+                  type="button"
+                  style={{ background: "#6366f1", color: "#fff", border: "none", padding: "6px 12px", borderRadius: "6px", fontSize: "0.8125rem", fontWeight: 700, cursor: "pointer" }}
+                  onClick={async (e) => {
+                    await handleVacateTable(e, inspectTable);
+                    setInspectTable(null);
+                  }}
+                >
+                  🧹 Mark Vacant
+                </button>
+              </div>
+
+              <div style={{ display: "flex", gap: "6px" }}>
+                <button className="btn-secondary" onClick={() => setInspectTable(null)}>Close</button>
+                <button
+                  className="btn-primary"
+                  onClick={() => {
+                    handleTableClick(inspectTable);
+                    setInspectTable(null);
+                  }}
+                >
+                  Open in POS Register →
+                </button>
+              </div>
             </div>
           </div>
         </div>

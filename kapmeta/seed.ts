@@ -264,6 +264,7 @@ async function main() {
     "crm.anonymize",
     "integration.manage",
     "finance.invoice.void",
+    "kot.status.update",
   ]);
   await grant(kitchenRole.id, ["kot.read", "kot.status.update"]);
   await grant(financeRole.id, [

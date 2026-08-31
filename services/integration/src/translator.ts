@@ -20,12 +20,15 @@ export class IntegrationTranslator {
   ) {
     const channelAccount = await this.prisma.channelAccount.findUnique({
       where: { id: channelAccountId },
-      include: { itemMappings: true },
     });
 
     if (!channelAccount) {
       throw new Error(`Channel account ${channelAccountId} not found`);
     }
+
+    const itemMappings = await this.prisma.channelItemMapping.findMany({
+      where: { channelAccountId },
+    });
 
     const outletId = channelAccount.outletId;
     const orderLines: any[] = [];
@@ -34,7 +37,7 @@ export class IntegrationTranslator {
     let computedTotal = 0n;
 
     for (const extItem of payload.items) {
-      const mapping = channelAccount.itemMappings.find(
+      const mapping = itemMappings.find(
         (m) => m.externalItemId === extItem.item_id
       );
 
@@ -47,8 +50,9 @@ export class IntegrationTranslator {
       const subtotal = unitPrice * BigInt(extItem.quantity);
       computedTotal += subtotal;
 
+      const itemId = (mapping as any).item_id || (mapping as any).menuItemId;
       orderLines.push({
-        menuItemId: mapping.menuItemId,
+        menuItemId: itemId,
         quantity: extItem.quantity,
         unitPrice,
         subtotal,
@@ -56,7 +60,7 @@ export class IntegrationTranslator {
       });
 
       kotLines.push({
-        menuItemId: mapping.menuItemId,
+        menuItemId: itemId,
         quantity: extItem.quantity,
         notes: extItem.notes,
       });

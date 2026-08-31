@@ -183,9 +183,15 @@ export default function TableManagement() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isActive: !table.isActive }),
       });
-      if (res.ok) fetchTables();
+      if (res.ok) {
+        fetchTables();
+      } else {
+        const errJson = await res.json().catch(() => ({}));
+        alert(errJson.error || "Failed to update table status");
+      }
     } catch (e) {
       console.error(e);
+      alert("Network error updating table status");
     }
   };
 

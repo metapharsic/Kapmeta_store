@@ -1,9 +1,11 @@
 import { Router } from "express";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../prisma";
 import { createKot, transitionKot, recallKot, PrismaKotRepository, RECALL_GRACE_WINDOW_MS } from "@kapmeta/kitchen";
+import { transitionOrder, PrismaOrderRepository } from "@kapmeta/orders";
 import { requireAuth, requirePermission, checkPermissionDirect, type AuthedRequest } from "../middleware/require-auth";
+import { mergeGroupLabelMap } from "../orchestration/table-merge";
 
-const prisma = new PrismaClient();
+const orderRepo = new PrismaOrderRepository(prisma);
 
 const router = Router();
 
@@ -87,10 +89,15 @@ router.get("/kot", requireAuth, requirePermission("kot.read"), async (req: Authe
       include: {
         kotItems: { include: { menuItem: { select: { name: true } } } },
         station: { select: { name: true, slaWarningSeconds: true, slaBreachSeconds: true } },
-        order: { select: { orderType: true, diningTable: { select: { tableNumber: true } } } },
+        order: { select: { orderType: true, table_number: true, diningTable: { select: { id: true, tableNumber: true, mergeGroupId: true, mergePrimaryTableId: true } } } },
       },
       orderBy: { createdAt: "asc" },
     });
+
+    const groupIds = tickets
+      .map((t) => (t.order as any)?.diningTable?.mergeGroupId)
+      .filter((id: string | null | undefined): id is string => Boolean(id));
+    const labels = await mergeGroupLabelMap(prisma, req.auth!.outletId, groupIds);
 
     res.status(200).json(
       tickets.map((t) => ({
@@ -104,15 +111,19 @@ router.get("/kot", requireAuth, requirePermission("kot.read"), async (req: Authe
         status: t.status,
         createdAt: t.createdAt,
         servedAt: t.servedAt,
-        orderType: t.order.orderType,
-        tableNumber: t.order.diningTable?.tableNumber ?? null,
+        orderType: t.order!.orderType,
+        tableNumber:
+          (t.order as any)?.table_number ||
+          labels.get((t.order as any)?.diningTable?.mergeGroupId) ||
+          t.order!.diningTable?.tableNumber ||
+          null,
         kotItems: t.kotItems.map((ki) => ({
           id: ki.id,
           quantity: ki.quantity,
           notes: ki.notes,
           course: ki.course,
           servedAt: ki.servedAt,
-          menuItem: { name: ki.menuItem.name },
+          menuItem: { name: ki.menuItem!.name },
         })),
       }))
     );
@@ -144,10 +155,12 @@ router.patch("/kot/:kotTicketId/status", requireAuth, async (req: AuthedRequest,
     const { toStatus, reasonCode } = req.body;
 
     // Transitioning KOT status:
-    // - Chefs / Kitchen staff with "kot.status.update" can make any transition (QUEUED -> PREPARING -> READY -> SERVED).
-    // - Floor staff / Waiters with "order.create" or "kot.read" can mark a READY ticket as "SERVED" to confirm delivery to table.
+    // - Chefs / Kitchen staff / Admins with "kot.status.update", "order.create", or "kot.read" can update KOT status
     let permissionResult = await checkPermissionDirect(req.auth!.userId, req.auth!.outletId, "kot.status.update");
-    if (!permissionResult.allowed && toStatus === "SERVED") {
+    if (!permissionResult.allowed) {
+      permissionResult = await checkPermissionDirect(req.auth!.userId, req.auth!.outletId, "kot.read");
+    }
+    if (!permissionResult.allowed && (toStatus === "SERVED" || toStatus === "PREPARING" || toStatus === "READY")) {
       permissionResult = await checkPermissionDirect(req.auth!.userId, req.auth!.outletId, "order.create");
     }
 
@@ -169,9 +182,62 @@ router.patch("/kot/:kotTicketId/status", requireAuth, async (req: AuthedRequest,
       return;
     }
 
-    import("../websockets").then(({ broadcast }) => {
-      broadcast("kot.status_updated", { kotTicketId, status: result.newStatus });
+    // Cascade KOT status transition to parent Order
+    const ticket = await prisma.kOTTicket.findUnique({
+      where: { id: kotTicketId },
+      include: { order: true },
     });
+
+    if (ticket && ticket.orderId) {
+      let orderTargetStatus: any = null;
+      let stage = "QUEUED";
+
+      if (result.newStatus === "PREPARING") {
+        orderTargetStatus = "IN_PREPARATION";
+        stage = "COOKING";
+      } else if (result.newStatus === "READY") {
+        orderTargetStatus = "READY";
+        stage = "FOOD_READY";
+      } else if (result.newStatus === "SERVED") {
+        const siblings = await prisma.kOTTicket.findMany({
+          where: { orderId: ticket.orderId },
+        });
+        const remaining = siblings.filter(
+          (k) => k.id !== kotTicketId && k.status !== "CANCELLED" && k.status !== "SERVED"
+        );
+        if (remaining.length === 0) {
+          orderTargetStatus = "HANDED_OVER";
+          stage = "SERVED";
+        } else {
+          orderTargetStatus = null;
+          if (remaining.some((k) => k.status === "READY")) stage = "FOOD_READY";
+          else if (remaining.some((k) => k.status === "PREPARING" || k.status === "COOKING" || k.status === "IN_PREPARATION")) stage = "COOKING";
+          else stage = "QUEUED";
+        }
+      }
+
+      if (orderTargetStatus) {
+        await transitionOrder(ticket.orderId, orderTargetStatus, orderRepo, req.auth!.userId).catch((err) => {
+          console.error("KOT cascade transitionOrder failed:", err);
+        });
+      }
+
+      import("../websockets").then(({ broadcast }) => {
+        broadcast("kot.status_updated", { kotTicketId, status: result.newStatus });
+        broadcast("order.status_updated", {
+          orderId: ticket.orderId,
+          tableId: ticket.order?.diningTableId,
+          orderStatus: orderTargetStatus || ticket.order?.status,
+          kotStatus: result.newStatus,
+          stage,
+        });
+        broadcast("table.status_updated", {
+          tableId: ticket.order?.diningTableId,
+          orderId: ticket.orderId,
+          stage,
+        });
+      });
+    }
 
     res.status(200).json({ status: result.newStatus });
   } catch (err) {
@@ -272,8 +338,8 @@ router.get("/analytics", requireAuth, requirePermission("report.read"), async (r
     const byBucket = new Map<string, { totalMs: number; count: number }>();
 
     for (const t of tickets) {
-      const queuedAt = t.statusHistory.find((h) => h.status === "QUEUED")?.createdAt;
-      const readyAt = t.statusHistory.find((h) => h.status === "READY")?.createdAt;
+      const queuedAt = t.statusHistory.find((h) => h.status === "QUEUED")?.createdAt ?? t.createdAt;
+      const readyAt = t.statusHistory.find((h) => h.status === "READY" || h.status === "SERVED")?.createdAt ?? (t.servedAt || (t.status === "READY" ? t.updatedAt : null));
       if (!queuedAt || !readyAt) continue;
       const durationMs = readyAt.getTime() - queuedAt.getTime();
 
@@ -288,7 +354,7 @@ router.get("/analytics", requireAuth, requirePermission("report.read"), async (r
       byStation.set(stationKey, stationEntry);
 
       for (const ki of t.kotItems) {
-        const itemEntry = byItem.get(ki.menuItemId) ?? { name: ki.menuItem.name, durations: [] };
+        const itemEntry = byItem.get(ki.menuItemId) ?? { name: ki.menuItem!.name, durations: [] };
         itemEntry.durations.push(durationMs);
         byItem.set(ki.menuItemId, itemEntry);
       }

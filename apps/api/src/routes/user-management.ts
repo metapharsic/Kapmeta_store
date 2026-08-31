@@ -1,9 +1,7 @@
 import { Router } from "express";
-import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { requireAuth, requirePermission, type AuthedRequest } from "../middleware/require-auth";
-
-const prisma = new PrismaClient();
+import { prisma } from "../prisma";
 
 const router = Router();
 
@@ -22,7 +20,7 @@ router.get(
         where: {
           userRoles: {
             some: {
-              outletId: outletId,
+              OR: [{ outletId }, { outletId: null }],
             },
           },
         },
@@ -121,7 +119,7 @@ router.post(
         return;
       }
 
-      const existing = await prisma.role.findUnique({ where: { name: name.trim() } });
+      const existing = await prisma.role.findFirst({ where: { name: name.trim() } });
       if (existing) {
         res.status(400).json({ error: "role name already in use" });
         return;
@@ -130,8 +128,8 @@ router.post(
       const role = await prisma.role.create({
         data: {
           name: name.trim(),
+          code: name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_"),
           description: description ?? null,
-          createdBy: req.auth!.userId,
         },
       });
 
@@ -315,21 +313,32 @@ router.post(
         }
       }
 
-      const userRole = await prisma.userRole.upsert({
-        where: { userId_roleId: { userId, roleId } },
-        update: { outletId: outletId ?? null },
-        create: {
-          userId,
-          roleId,
-          outletId: outletId ?? null,
-          createdBy: req.auth!.userId,
-        },
-        include: { role: true, outlet: true },
+      const existingUserRole = await prisma.userRole.findFirst({
+        where: { userId, roleId },
       });
+
+      let userRole: any;
+      if (existingUserRole) {
+        userRole = await prisma.userRole.update({
+          where: { id: existingUserRole.id },
+          data: { outletId: outletId ?? null },
+          include: { role: true, outlet: true },
+        });
+      } else {
+        userRole = await prisma.userRole.create({
+          data: {
+            userId,
+            roleId,
+            outletId: outletId ?? null,
+            granted_by: req.auth!.userId,
+          },
+          include: { role: true, outlet: true },
+        });
+      }
 
       res.status(201).json({
         roleId: userRole.roleId,
-        roleName: userRole.role.name,
+        roleName: userRole.role?.name || "Role",
         outletId: userRole.outletId,
         outletName: userRole.outlet?.name ?? null,
       });
@@ -341,9 +350,6 @@ router.post(
 );
 
 // DELETE /users/:userId/roles/:userRoleId — revoke a role assignment.
-// UserRole's primary key is the composite (userId, roleId) — there is no
-// separate surrogate id column on the model — so :userRoleId here is the
-// roleId half of that composite key.
 router.delete(
   "/users/:userId/roles/:userRoleId",
   requireAuth,
@@ -352,8 +358,8 @@ router.delete(
     try {
       const { userId, userRoleId } = req.params;
 
-      const existing = await prisma.userRole.findUnique({
-        where: { userId_roleId: { userId, roleId: userRoleId } },
+      const existing = await prisma.userRole.findFirst({
+        where: { userId, OR: [{ id: userRoleId }, { roleId: userRoleId }] },
       });
       if (!existing) {
         res.status(404).json({ error: "role assignment not found" });
@@ -361,7 +367,7 @@ router.delete(
       }
 
       await prisma.userRole.delete({
-        where: { userId_roleId: { userId, roleId: userRoleId } },
+        where: { id: existing.id },
       });
 
       res.status(204).send();
@@ -493,7 +499,7 @@ router.post(
               userId: user.id,
               roleId,
               outletId: outletId ?? null,
-              createdBy: req.auth!.userId,
+              granted_by: req.auth!.userId,
             },
           });
         }

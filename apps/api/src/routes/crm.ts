@@ -1,12 +1,25 @@
 import { Router } from "express";
-import { PrismaClient } from "@prisma/client";
 import { requireAuth, requirePermission, AuthedRequest } from "../middleware/require-auth";
-import { CustomerManager, LoyaltyEngine } from "@kapmeta/crm";
+import { prisma } from "../prisma";
 
 export const crmRouter = Router();
-const prisma = new PrismaClient();
-const customerManager = new CustomerManager(prisma);
-const loyaltyEngine = new LoyaltyEngine(prisma);
+
+function mapCustomerResponse(c: any) {
+  return {
+    id: c.id,
+    outletId: c.outletId,
+    name: c.name || `${c.firstName || ""} ${c.lastName || ""}`.trim(),
+    firstName: c.firstName || (c.name ? c.name.split(" ")[0] : ""),
+    lastName: c.lastName || (c.name ? c.name.split(" ").slice(1).join(" ") : null),
+    phone: c.phone,
+    email: c.email || null,
+    loyaltyPoints: c.loyaltyPoints !== undefined ? Number(c.loyaltyPoints) : Number(c.loyalty_points || 0),
+    birthDate: c.birthDate ? new Date(c.birthDate).toISOString().split("T")[0] : (c.birth_date ? new Date(c.birth_date).toISOString().split("T")[0] : null),
+    isActive: c.isActive ?? c.is_active ?? true,
+    createdAt: c.createdAt ? new Date(c.createdAt).toISOString() : new Date().toISOString(),
+    updatedAt: c.updatedAt ? new Date(c.updatedAt).toISOString() : new Date().toISOString(),
+  };
+}
 
 // Create Customer
 crmRouter.post("/customers", requireAuth, requirePermission("crm.write"), async (req: AuthedRequest, res) => {
@@ -14,6 +27,7 @@ crmRouter.post("/customers", requireAuth, requirePermission("crm.write"), async 
   let lastName = req.body.lastName;
   const phone = req.body.phone;
   const email = req.body.email;
+  const birthDate = req.body.birthDate || req.body.dob;
 
   if (!firstName && req.body.name) {
     const parts = String(req.body.name).trim().split(" ");
@@ -26,9 +40,40 @@ crmRouter.post("/customers", requireAuth, requirePermission("crm.write"), async 
   }
 
   try {
-    const customer = await customerManager.createCustomer(req.auth!.outletId, { firstName, lastName, phone, email });
-    res.status(201).json(customer);
+    const outletId = req.auth!.outletId;
+    const outlet = await prisma.outlet.findUnique({
+      where: { id: outletId },
+      select: { organizationId: true },
+    });
+    const organization_id = outlet?.organizationId || "11111111-1111-1111-1111-111111111111";
+
+    const customer = await prisma.customer.create({
+      data: {
+        organization_id,
+        outletId,
+        firstName: String(firstName).trim(),
+        lastName: lastName ? String(lastName).trim() : undefined,
+        name: `${firstName} ${lastName || ""}`.trim(),
+        phone: String(phone).trim(),
+        email: email ? String(email).trim() : undefined,
+        birthDate: birthDate ? new Date(birthDate) : undefined,
+        loyaltyPoints: Number(req.body.loyaltyPoints || 0),
+        isActive: true,
+      },
+    });
+
+    // Create loyalty account record if needed
+    await (prisma as any).loyalty_accounts.create({
+      data: {
+        customer_id: customer.id,
+        balance: Number(req.body.loyaltyPoints || 0),
+        tier: "SILVER",
+      },
+    }).catch(() => {});
+
+    res.status(201).json(mapCustomerResponse(customer));
   } catch (error: any) {
+    console.error("Error creating customer:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -37,26 +82,67 @@ crmRouter.post("/customers", requireAuth, requirePermission("crm.write"), async 
 crmRouter.get("/customers", requireAuth, requirePermission("crm.read"), async (req: AuthedRequest, res) => {
   try {
     const { search, limit, offset } = req.query;
-    const result = await customerManager.listCustomers(req.auth!.outletId, {
-      search: typeof search === "string" ? search : undefined,
-      limit: limit !== undefined ? Number(limit) : undefined,
-      offset: offset !== undefined ? Number(offset) : undefined,
+    const outletId = req.auth!.outletId;
+
+    const take = limit ? Math.min(Number(limit), 100) : 25;
+    const skip = offset ? Number(offset) : 0;
+
+    const where: any = {
+      outletId,
+      isActive: true,
+    };
+
+    if (typeof search === "string" && search.trim().length > 0) {
+      const q = search.trim();
+      where.OR = [
+        { name: { contains: q, mode: "insensitive" } },
+        { firstName: { contains: q, mode: "insensitive" } },
+        { lastName: { contains: q, mode: "insensitive" } },
+        { phone: { contains: q } },
+        { email: { contains: q, mode: "insensitive" } },
+      ];
+    }
+
+    const [customers, total] = await Promise.all([
+      prisma.customer.findMany({
+        where,
+        take,
+        skip,
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.customer.count({ where }),
+    ]);
+
+    res.status(200).json({
+      customers: customers.map(mapCustomerResponse),
+      total,
+      limit: take,
+      offset: skip,
     });
-    res.status(200).json(result);
   } catch (error: any) {
+    console.error("Error listing customers:", error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Get Customer
+// Get Customer by ID
 crmRouter.get("/customers/:id", requireAuth, requirePermission("crm.read"), async (req: AuthedRequest, res) => {
   try {
-    const customer = await customerManager.getCustomerById(req.auth!.outletId, req.params.id);
+    const outletId = req.auth!.outletId;
+    const customer = await prisma.customer.findFirst({
+      where: {
+        id: req.params.id,
+        outletId,
+      },
+    });
+
     if (!customer) {
       return res.status(404).json({ error: "Customer not found" });
     }
-    res.status(200).json(customer);
+
+    res.status(200).json(mapCustomerResponse(customer));
   } catch (error: any) {
+    console.error("Error fetching customer:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -64,9 +150,21 @@ crmRouter.get("/customers/:id", requireAuth, requirePermission("crm.read"), asyn
 // Anonymize Customer (DPDP)
 crmRouter.post("/customers/:id/anonymize", requireAuth, requirePermission("crm.anonymize"), async (req: AuthedRequest, res) => {
   try {
-    const customer = await customerManager.anonymizeCustomer(req.auth!.outletId, req.params.id);
-    res.status(200).json(customer);
+    const outletId = req.auth!.outletId;
+    const customer = await prisma.customer.update({
+      where: { id: req.params.id },
+      data: {
+        name: "Anonymized Customer",
+        firstName: "Anonymized",
+        lastName: null,
+        phone: `ANON_${Date.now()}`,
+        email: null,
+        isActive: false,
+      },
+    });
+    res.status(200).json(mapCustomerResponse(customer));
   } catch (error: any) {
+    console.error("Error anonymizing customer:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -74,14 +172,44 @@ crmRouter.post("/customers/:id/anonymize", requireAuth, requirePermission("crm.a
 // Redeem Loyalty Points
 crmRouter.post("/loyalty/redeem", requireAuth, requirePermission("crm.write"), async (req: AuthedRequest, res) => {
   const { customerId, points } = req.body;
-  if (!customerId || points === undefined) {
-    return res.status(400).json({ error: "Missing required fields: customerId, points" });
+  if (!customerId || points === undefined || Number(points) <= 0) {
+    return res.status(400).json({ error: "Missing or invalid required fields: customerId, points (must be positive)" });
   }
 
   try {
-    const customer = await loyaltyEngine.redeemPoints(req.auth!.outletId, customerId, Number(points));
-    res.status(200).json(customer);
+    const outletId = req.auth!.outletId;
+    const pts = Number(points);
+
+    const customer = await prisma.customer.findFirst({
+      where: { id: customerId, outletId },
+    });
+
+    if (!customer) {
+      return res.status(404).json({ error: "Customer not found" });
+    }
+
+    if (customer.loyaltyPoints < pts) {
+      return res.status(400).json({ error: `Insufficient loyalty points: has ${customer.loyaltyPoints}, requested ${pts}` });
+    }
+
+    const updatedCustomer = await prisma.customer.update({
+      where: { id: customerId },
+      data: {
+        loyaltyPoints: { decrement: pts },
+      },
+    });
+
+    await (prisma as any).loyalty_accounts.updateMany({
+      where: { customer_id: customerId },
+      data: {
+        balance: { decrement: pts },
+        updated_at: new Date(),
+      },
+    }).catch(() => {});
+
+    res.status(200).json(mapCustomerResponse(updatedCustomer));
   } catch (error: any) {
+    console.error("Error redeeming loyalty points:", error);
     res.status(400).json({ error: error.message });
   }
 });

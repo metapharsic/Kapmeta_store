@@ -181,7 +181,7 @@ export function priceOrder(
     // item price is scaled below.
     let modifierSurchargeUnitMinor = 0n;
     const modifiers: PricedOrderLineModifier[] = [];
-    for (const modifierOptionId of line.modifierOptionIds) {
+    for (const modifierOptionId of (line.modifierOptionIds || [])) {
       const modifierPriceMinor = modifierPrices.get(modifierOptionId);
       if (modifierPriceMinor === undefined) {
         throw new Error(`no price found for modifier option ${modifierOptionId}`);
@@ -395,7 +395,11 @@ export async function addOrderItems(
     prices.set(line.menuItemId, price);
   }
 
-  const modifierOptionIds = Array.from(new Set(lines.flatMap((line) => line.modifierOptionIds)));
+  const modifierOptionIds = Array.from(
+    new Set(
+      lines.flatMap((line) => (Array.isArray(line.modifierOptionIds) ? line.modifierOptionIds : [])).filter(Boolean)
+    )
+  );
   const modifierPrices =
     modifierOptionIds.length > 0 && modifierPriceLookup
       ? await modifierPriceLookup.getPrices(modifierOptionIds, outletId)

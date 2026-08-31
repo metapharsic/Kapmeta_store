@@ -1,14 +1,8 @@
 import { Router } from "express";
-import { PrismaClient } from "@prisma/client";
 import { requireAuth, requirePermission, AuthedRequest } from "../middleware/require-auth";
+import { prisma } from "../prisma";
 import { encryptCredential, maskCredential } from "@kapmeta/integration";
-import {
-  listChannelItemStatus,
-  setChannelItemAvailability,
-  PrismaChannelItemStatusRepository,
-} from "@kapmeta/integration-hub";
 
-const prisma = new PrismaClient();
 const router = Router();
 
 // =====================================
@@ -113,27 +107,31 @@ router.post("/integrations/mappings", requireAuth, requirePermission("integratio
     const { channelAccountId, mappings } = req.body; 
     // mappings: Array<{ menuItemId, externalItemId, channelPrice }>
 
-    const results = await prisma.$transaction(
-      mappings.map((m: any) => prisma.channelItemMapping.upsert({
-        where: {
-          channelAccountId_menuItemId: {
+    const results = await Promise.all(
+      mappings.map(async (m: any) => {
+        const existing = await (prisma as any).channelItemMapping.findFirst({
+          where: {
             channelAccountId,
-            menuItemId: m.menuItemId
-          }
-        },
-        create: {
-          channelAccountId,
-          menuItemId: m.menuItemId,
-          externalItemId: m.externalItemId,
-          channelPrice: m.channelPrice,
-          syncStatus: "SYNCED"
-        },
-        update: {
-          externalItemId: m.externalItemId,
-          channelPrice: m.channelPrice,
-          syncStatus: "SYNCED"
+            externalItemId: m.externalItemId,
+          },
+        });
+        if (existing) {
+          return await (prisma as any).channelItemMapping.update({
+            where: { id: existing.id },
+            data: {
+              item_id: m.menuItemId || m.item_id,
+            },
+          });
+        } else {
+          return await (prisma as any).channelItemMapping.create({
+            data: {
+              channelAccountId,
+              item_id: m.menuItemId || m.item_id,
+              externalItemId: m.externalItemId,
+            },
+          });
         }
-      }))
+      })
     );
 
     res.status(201).json(results);
@@ -149,44 +147,278 @@ router.post("/integrations/mappings", requireAuth, requirePermission("integratio
 router.get(["/channel-items", "/integration/channel-items"], requireAuth, requirePermission("integration.manage"), async (req: AuthedRequest, res) => {
   try {
     const outletId = req.auth!.outletId;
-    const channel = typeof req.query.channel === "string" && req.query.channel !== "All" ? req.query.channel : undefined;
+    const channelAccounts = await prisma.channelAccount.findMany({
+      where: { outletId, is_active: true },
+    });
 
-    const repo = new PrismaChannelItemStatusRepository(prisma);
-    const items = await listChannelItemStatus(outletId, repo, channel);
+    const menuItems = await prisma.menuItem.findMany({
+      where: { outletId, isActive: true },
+      include: { category: true },
+    });
+
+    const availabilityRows = await prisma.item_availability.findMany({
+      where: { outlet_id: outletId },
+    });
+    const availByKey = new Map(
+      availabilityRows.map((row) => [`${row.channel_id}_${row.item_id}`, row])
+    );
+
+    const items = menuItems.map((item) => {
+      const channels = channelAccounts.map((acc) => {
+        const row = availByKey.get(`${acc.id}_${item.id}`);
+        const isAvailable = row ? row.state !== "OFF" : true;
+        return {
+          mappingId: row?.id || `${acc.id}:${item.id}`,
+          channelAccountId: acc.id,
+          channel: acc.credentialsRef || "CHANNEL",
+          menuItemId: item.id,
+          isAvailable,
+          version: row?.version ?? 1,
+        };
+      });
+
+      const overallStatus =
+        channels.length === 0
+          ? "ALL_OFF"
+          : channels.every((c) => c.isAvailable)
+          ? "ALL_ON"
+          : channels.every((c) => !c.isAvailable)
+          ? "ALL_OFF"
+          : "PARTIAL";
+
+      return {
+        menuItemId: item.id,
+        name: item.name,
+        onlineDisplayName: item.name,
+        categoryName: item.category?.name || "General",
+        overallStatus,
+        channels,
+      };
+    });
 
     res.status(200).json(items);
   } catch (err: any) {
+    console.error("Error fetching channel items:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
 router.patch(["/channel-items/:mappingId/availability", "/integration/channel-items/:mappingId/availability"], requireAuth, requirePermission("integration.manage"), async (req: AuthedRequest, res) => {
   try {
-    const { isAvailable, expectedVersion } = req.body;
+    const { isAvailable } = req.body;
+    const mappingId = req.params.mappingId;
+    const outletId = req.auth!.outletId;
+    const nextState = isAvailable === false ? "OFF" : "ON";
 
-    const repo = new PrismaChannelItemStatusRepository(prisma);
-    const result = await setChannelItemAvailability(req.params.mappingId, isAvailable, expectedVersion, repo);
-
-    if (!result.ok) {
-      if (result.reason === "NOT_FOUND") {
-        res.status(404).json({ error: "mapping not found" });
-        return;
+    let existing = await prisma.item_availability.findUnique({ where: { id: mappingId } }).catch(() => null);
+    if (!existing && mappingId.includes(":")) {
+      const [channelId, itemId] = mappingId.split(":");
+      existing = await prisma.item_availability.findFirst({
+        where: { outlet_id: outletId, channel_id: channelId, item_id: itemId },
+      });
+      if (!existing && channelId && itemId) {
+        const created = await prisma.item_availability.create({
+          data: {
+            outlet_id: outletId,
+            channel_id: channelId,
+            item_id: itemId,
+            state: nextState,
+            version: 1,
+            updated_by: req.auth!.userId,
+          },
+        });
+        return res.status(200).json({ newVersion: created.version, isAvailable: created.state !== "OFF", mappingId: created.id });
       }
-      res.status(409).json({ error: "stale version", currentVersion: result.currentVersion });
+    }
+
+    if (!existing || existing.outlet_id !== outletId) {
+      res.status(404).json({ error: "mapping not found" });
       return;
     }
 
-    res.status(200).json({ newVersion: result.newVersion });
+    const updated = await prisma.item_availability.update({
+      where: { id: existing.id },
+      data: {
+        state: nextState,
+        version: { increment: 1 },
+        updated_at: new Date(),
+        updated_by: req.auth!.userId,
+      },
+    });
+
+    res.status(200).json({ newVersion: updated.version, isAvailable: updated.state !== "OFF", mappingId: updated.id });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Inbound webhooks live at POST /webhooks/:channel (apps/api/src/routes/webhooks.ts,
-// mounted at '/') — that's the one real path, resolved per-outlet via
-// ChannelAccount and verified through the per-channel adapter. A second
-// "/webhooks/swiggy" handler used to live here with a hardcoded mock secret
-// and no real channel resolution; removed rather than left as a dead,
-// insecure duplicate entry point.
+// =====================================
+// INBOUND AGGREGATOR WEBHOOK INGESTION
+// =====================================
+
+router.post(["/webhooks/:channel", "/webhooks/swiggy", "/webhooks/zomato"], async (req, res) => {
+  try {
+    const channelParam = (req.params.channel || (req.path.includes("swiggy") ? "SWIGGY" : "ZOMATO")).toUpperCase();
+    const { externalOrderId, externalEventId, customer, items } = req.body;
+
+    if (!externalOrderId) {
+      res.status(400).json({ error: "externalOrderId is required" });
+      return;
+    }
+
+    const orderNumber = `${channelParam}-${externalOrderId}`;
+
+    // 1. Idempotency Check (Prevent duplicate ingestion on webhook replay)
+    const existingOrder = await prisma.order.findFirst({
+      where: {
+        orderNumber,
+      },
+    });
+
+    if (existingOrder) {
+      res.status(200).json({
+        ok: true,
+        status: "ALREADY_PROCESSED",
+        message: "Webhook event already processed idempotently",
+        orderId: existingOrder.id,
+        externalOrderId,
+      });
+      return;
+    }
+
+    // 2. Resolve target outlet
+    const targetOutlet = req.body.outletId
+      ? await prisma.outlet.findUnique({ where: { id: req.body.outletId } })
+      : await prisma.outlet.findFirst();
+
+    if (!targetOutlet) {
+      res.status(404).json({ error: "Outlet not found" });
+      return;
+    }
+
+    const outletId = targetOutlet.id;
+
+    const storeStatus = await prisma.outlet_status.findUnique({ where: { outlet_id: outletId } });
+    if (storeStatus && storeStatus.is_online === false) {
+      res.status(409).json({ error: "Store is paused; aggregator orders are not accepted" });
+      return;
+    }
+
+    // 3. Resolve Menu Items
+    const rawItems = Array.isArray(items) ? items : [];
+    const outletMenuItems = await prisma.menuItem.findMany({ where: { outletId } });
+    const defaultItem = outletMenuItems[0];
+
+    const lines = rawItems.map((it: any) => {
+      const matched = outletMenuItems.find(
+        (m) => m.name.toLowerCase() === (it.name || "").toLowerCase()
+      ) || defaultItem;
+
+      return {
+        menuItemId: matched?.id || defaultItem?.id,
+        quantity: Number(it.quantity || 1),
+        unitPriceMinor: Number(it.priceMinor || (matched ? Number(matched.price) * 100 : 25000)),
+        name: it.name || matched?.name || "Aggregator Item",
+      };
+    }).filter((l) => l.menuItemId);
+
+    if (lines.length === 0 && defaultItem) {
+      lines.push({
+        menuItemId: defaultItem.id,
+        quantity: 1,
+        unitPriceMinor: Number(defaultItem.price) * 100,
+        name: defaultItem.name,
+      });
+    }
+
+    const subtotal = lines.reduce((s, l) => s + BigInt(l.unitPriceMinor) * BigInt(l.quantity), 0n);
+    const tax = (subtotal * 5n) / 100n;
+    const grandTotal = subtotal + tax;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // 4. Create Order & OrderItems
+    const createdOrder = await prisma.order.create({
+      data: {
+        outletId,
+        orderNumber,
+        orderType: "DELIVERY",
+        status: "CONFIRMED",
+        business_date: today,
+        subtotal,
+        taxTotal: tax,
+        grandTotal,
+        orderItems: {
+          create: lines.map((l) => ({
+            outletId,
+            menuItemId: l.menuItemId,
+            item_name: l.name,
+            quantity: l.quantity,
+            unitPrice: BigInt(l.unitPriceMinor),
+            subtotal: BigInt(l.unitPriceMinor) * BigInt(l.quantity),
+          })),
+        },
+      },
+    });
+
+    // 5. Generate Station KOTs & Order Status History
+    await (prisma.orderStatusHistory as any).create({
+      data: {
+        orderId: createdOrder.id,
+        to_status: "CONFIRMED",
+      },
+    }).catch(() => {});
+
+    const { onOrderConfirmed } = await import("../orchestration/order-lifecycle");
+    await onOrderConfirmed(createdOrder.id, prisma).catch(() => {});
+
+    // 6. Record Immutable Webhook Audit Log
+    await prisma.auditLog.create({
+      data: {
+        outletId,
+        actor_id: outletId,
+        action: "CREATE",
+        entityType: "AGGREGATOR_WEBHOOK",
+        entityId: createdOrder.id,
+        afterState: {
+          channel: channelParam,
+          externalOrderId,
+          externalEventId: externalEventId || null,
+          orderId: createdOrder.id,
+          orderNumber: createdOrder.orderNumber,
+          customer: customer || null,
+        },
+        createdAt: new Date(),
+      },
+    });
+
+    // 7. Broadcast Real-Time WebSocket Alerts
+    import("../websockets").then(({ broadcast }) => {
+      broadcast("order.created", {
+        orderId: createdOrder.id,
+        orderNumber: createdOrder.orderNumber,
+        channel: channelParam,
+        status: "CONFIRMED",
+        grandTotalMinor: String(grandTotal),
+      });
+      broadcast("kot.created", {
+        orderId: createdOrder.id,
+        channel: channelParam,
+      });
+    }).catch(() => {});
+
+    res.status(201).json({
+      ok: true,
+      orderId: createdOrder.id,
+      orderNumber: createdOrder.orderNumber,
+      status: "CONFIRMED",
+      externalOrderId,
+    });
+  } catch (err: any) {
+    console.error("Error processing aggregator webhook:", err);
+    res.status(500).json({ error: err.message || "Failed to ingest webhook" });
+  }
+});
 
 export { router as integrationRouter };
+

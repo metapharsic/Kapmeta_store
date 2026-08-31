@@ -84,15 +84,30 @@ export class PrismaMarketingRepository implements MarketingRepository {
     const customers = await this.prisma.customer.findMany({
       where: {
         outletId,
-        orders: {
-          none: {
-            createdAt: { gte: cutoff },
-          },
-        },
+        isActive: true,
       },
       select: { id: true },
     });
     return customers.map((c) => c.id);
+  }
+
+  async findBirthdayCustomerIds(outletId: string): Promise<string[]> {
+    const customers = await this.prisma.customer.findMany({
+      where: {
+        outletId,
+        isActive: true,
+        birthDate: { not: null },
+      },
+      select: { id: true, birthDate: true },
+    });
+
+    const currentMonth = new Date().getMonth();
+    const matches = customers.filter((c) => {
+      if (!c.birthDate) return false;
+      return new Date(c.birthDate).getMonth() === currentMonth;
+    });
+
+    return matches.map((c) => c.id);
   }
 
   async filterExistingCustomerIds(outletId: string, customerIds: string[]): Promise<string[]> {
@@ -116,9 +131,12 @@ export class PrismaMarketingRepository implements MarketingRepository {
   async listRecipients(campaignId: string): Promise<CampaignRecipientRecord[]> {
     const rows = await this.prisma.campaignRecipient.findMany({
       where: { campaignId },
-      orderBy: { queuedAt: "desc" },
+      orderBy: { createdAt: "desc" },
     });
-    return rows as CampaignRecipientRecord[];
+    return rows.map((r) => ({
+      ...r,
+      queuedAt: r.createdAt,
+    })) as any;
   }
 
   async setCampaignStatus(campaignId: string, status: CampaignStatus): Promise<void> {

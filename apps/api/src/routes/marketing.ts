@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { PrismaClient } from "@prisma/client";
 import { requireAuth, requirePermission, AuthedRequest } from "../middleware/require-auth";
+import { prisma } from "../prisma";
 import {
   createCampaign,
   listCampaigns,
@@ -11,7 +11,6 @@ import {
 } from "@kapmeta/marketing";
 
 export const marketingRouter = Router();
-const prisma = new PrismaClient();
 const marketingRepo = new PrismaMarketingRepository(prisma);
 
 const VALID_TRIGGER_TYPES: CampaignTriggerType[] = ["MANUAL", "INACTIVE_CUSTOMER", "BIRTHDAY"];

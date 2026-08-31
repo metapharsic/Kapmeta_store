@@ -11,11 +11,28 @@ export class PrismaKotRepository implements KotRepository {
   async getMenuStationIds(menuItemIds: string[]): Promise<Map<string, string | null>> {
     const items = await this.prisma.menuItem.findMany({
       where: { id: { in: menuItemIds } },
-      select: { id: true, stationId: true },
+      include: { category: true },
     });
+
+    const firstOutletId = items[0]?.outletId;
+    let defaultStationId: string | null = null;
+    let stations: any[] = [];
+    if (firstOutletId) {
+      stations = await this.prisma.station.findMany({
+        where: { outletId: firstOutletId },
+      });
+      defaultStationId = stations[0]?.id ?? null;
+    }
+
     const map = new Map<string, string | null>();
     for (const item of items) {
-      map.set(item.id, item.stationId);
+      const catName = item.category?.name?.toLowerCase() || "";
+      const matched = stations.find(
+        (s) =>
+          s.name.toLowerCase().includes(catName) ||
+          (catName && catName.includes(s.name.toLowerCase()))
+      );
+      map.set(item.id, matched ? matched.id : defaultStationId);
     }
     return map;
   }
@@ -53,6 +70,7 @@ export class PrismaKotRepository implements KotRepository {
               quantity: line.quantity,
               notes: line.notes,
               course: line.course,
+              orderItemId: line.orderItemId ?? null,
             })),
           });
         }

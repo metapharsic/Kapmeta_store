@@ -5,7 +5,7 @@
   "description": "Composition-root HTTP API wiring services/{orders,tables,tax,settings,printing,admin} together via dependency injection.",
   "main": "src/index.ts",
   "scripts": {
-    "dev": "ts-node-dev --respawn --transpile-only -r tsconfig-paths/register src/index.ts",
+    "dev": "tsx watch src/index.ts",
     "start": "ts-node src/index.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

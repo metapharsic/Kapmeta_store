@@ -9,7 +9,7 @@ export default function LanServerDiscoveryModal({
   onClose,
   onServerConfigured,
 }: LanServerDiscoveryModalProps) {
-  const [serverIp, setServerIp] = useState("http://192.168.1.100:4000");
+  const [serverIp, setServerIp] = useState("http://localhost:4001");
   const [testing, setTesting] = useState(false);
   const [pingStatus, setPingStatus] = useState<string | null>(null);
 

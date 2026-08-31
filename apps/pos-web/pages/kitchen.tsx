@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import Head from "next/head";
 import Link from "next/link";
 import { authedFetch, useAuthGuard, verifyPin } from "../lib/auth";
+import { useKapmetaSocket } from "../lib/useKapmetaSocket";
 import Nav from "../components/Nav";
 
 interface KOTItem {
@@ -177,34 +178,21 @@ export default function KitchenMonitor() {
 
   // Long-lived socket + backup poller + clock tick — set up once, independent
   // of station-tab switching so we don't thrash the WS connection.
+  useKapmetaSocket(
+    () => {
+      fetchTickets();
+    },
+    !authLoading,
+    "kitchen"
+  );
+
   useEffect(() => {
     if (authLoading) return;
 
-    const ws = new WebSocket("ws://localhost:4001/ws");
-
-    ws.onopen = () => {
-      console.log("[KDS] Connected to Gateway WebSocket");
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        if (payload.topic === "kot.created" || payload.topic === "kot.status_updated") {
-          console.log("[KDS] Real-time KOT update received, re-fetching...");
-          fetchTickets();
-        }
-      } catch (err) {
-        console.error("[KDS] Failed to parse WebSocket message:", err);
-      }
-    };
-
-    // Keep a slower backup interval polling in case of WS connection failure
     const interval = setInterval(fetchTickets, 30000);
-    // Ticks the clock so ticket age/SLA colors advance even with no new data
     const clock = setInterval(() => setNow(Date.now()), 15000);
 
     return () => {
-      ws.close();
       clearInterval(interval);
       clearInterval(clock);
     };

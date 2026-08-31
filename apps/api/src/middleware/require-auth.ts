@@ -1,8 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
-import { PrismaClient } from "@prisma/client";
 import { verifyAccessToken, PrismaRbacChecker } from "@kapmeta/auth";
+import { prisma } from "../prisma";
 
-const prisma = new PrismaClient();
 const rbac = new PrismaRbacChecker(prisma);
 
 const JWT_SECRET_ENV = process.env.JWT_SECRET;

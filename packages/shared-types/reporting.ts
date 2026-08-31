@@ -95,6 +95,7 @@ export interface LeakageReport {
   invoiceReprintCount: number; // count of invoices with reprintCount > 0
   totalReprints: number; // sum of reprintCount across all invoices
   invoiceWaivedOffCount: number; // count of invoices with waivedOffMinor > 0
+  totalWaivedOffMinor?: bigint;
   kotsNotBilledCount: number;
   estimatedRevenueAtRiskMinor: bigint;
 }

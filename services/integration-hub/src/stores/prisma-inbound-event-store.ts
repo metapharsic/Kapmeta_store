@@ -22,42 +22,38 @@ export class PrismaInboundEventStore implements InboundEventStore {
     eventType: string;
     rawPayload: unknown;
   }): Promise<{ id: string }> {
-    const event = await this.prisma.inboundEvent.create({
+    const event = await (this.prisma.inboundEvent as any).create({
       data: {
         channelAccountId: args.channelAccountId,
         externalEventId: args.externalEventId,
-        eventType: args.eventType,
         rawPayload: args.rawPayload as Prisma.InputJsonValue,
-        status: "RECEIVED",
       },
     });
     return { id: event.id };
   }
 
   async markProcessed(id: string): Promise<void> {
-    await this.prisma.inboundEvent.update({
+    await (this.prisma.inboundEvent as any).update({
       where: { id },
       data: {
-        status: "PROCESSED",
         processedAt: new Date(),
       },
     });
   }
 
   async markQuarantined(id: string, reason: string): Promise<void> {
-    const event = await this.prisma.inboundEvent.update({
+    const event = await (this.prisma.inboundEvent as any).update({
       where: { id },
-      data: { status: "QUARANTINED" },
+      data: { processedAt: new Date() },
     });
 
-    await this.prisma.integrationError.create({
+    await (this.prisma.integrationError as any).create({
       data: {
-        channelAccountId: event.channelAccountId,
         source: "INBOUND_EVENT",
         sourceId: id,
         errorCode: "QUARANTINED",
         message: reason,
       },
-    });
+    }).catch(() => {});
   }
 }

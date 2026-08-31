@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../prisma";
 import {
   getSalesSummary,
   getItemPerformance,
@@ -10,9 +10,8 @@ import {
   getTaxBreakdown,
   PrismaReportingRepository,
 } from "@kapmeta/reporting";
+import { getRevenueTrend, PrismaOrderRepository } from "@kapmeta/orders";
 import { requireAuth, requirePermission, type AuthedRequest } from "../middleware/require-auth";
-
-const prisma = new PrismaClient();
 
 const router = Router();
 
@@ -28,6 +27,18 @@ function parseRange(req: AuthedRequest): { fromDate: Date; toDate: Date } {
   const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
   return { fromDate: start, toDate: end };
 }
+
+router.get("/revenue-trend", requireAuth, requirePermission("report.read"), async (req: AuthedRequest, res) => {
+  try {
+    const range = parseRange(req);
+    const orderRepo = new PrismaOrderRepository(prisma);
+    const points = await getRevenueTrend(req.auth!.outletId, range.fromDate, range.toDate, orderRepo);
+    res.status(200).json(points);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "internal error" });
+  }
+});
 
 router.get("/sales-summary", requireAuth, requirePermission("report.read"), async (req: AuthedRequest, res) => {
   try {
@@ -84,7 +95,24 @@ router.get("/item-performance", requireAuth, requirePermission("report.read"), a
     const repo = new PrismaReportingRepository(prisma);
     const rows = await getItemPerformance(outletId, range, repo);
 
-    res.status(200).json(rows.map((row) => ({ ...row, netSalesMinor: String(row.netSalesMinor) })));
+    // Fetch names for all menu items
+    const itemIds = rows.map((r) => r.menuItemId);
+    const menuItems = itemIds.length > 0
+      ? await prisma.menuItem.findMany({
+          where: { id: { in: itemIds } },
+          select: { id: true, name: true, code: true },
+        })
+      : [];
+    const nameMap = new Map(menuItems.map((m) => [m.id, m.name]));
+
+    res.status(200).json(
+      rows.map((row) => ({
+        ...row,
+        menuItemName: nameMap.get(row.menuItemId) || `Dish (${row.menuItemId.slice(0, 6)})`,
+        name: nameMap.get(row.menuItemId) || `Dish (${row.menuItemId.slice(0, 6)})`,
+        netSalesMinor: String(row.netSalesMinor),
+      }))
+    );
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "internal error" });
@@ -223,15 +251,16 @@ router.get("/invoices", requireAuth, requirePermission("report.read"), async (re
     };
 
     if (fromDate || toDate) {
-      where.createdAt = {};
-      if (fromDate) where.createdAt.gte = fromDate;
-      if (toDate) where.createdAt.lte = toDate;
+      where.OR = [
+        { settledAt: { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } },
+        { AND: [{ settledAt: null }, { createdAt: { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } }] },
+      ];
     }
 
     const orders = await prisma.order.findMany({
       where,
       take: limit,
-      orderBy: { createdAt: "desc" },
+      orderBy: { orderNumber: "desc" },
       include: {
         diningTable: {
           select: {
@@ -268,6 +297,11 @@ router.get("/invoices", requireAuth, requirePermission("report.read"), async (re
       paymentsByOrder.get(p.orderId)!.push(p);
     }
 
+    const dbInvoices = orderIds.length > 0
+      ? await prisma.invoice.findMany({ where: { orderId: { in: orderIds } } })
+      : [];
+    const invoiceByOrder = new Map(dbInvoices.map((inv) => [inv.orderId, inv]));
+
     const invoices = orders.map((o) => {
       const orderPayments = paymentsByOrder.get(o.id) || [];
       const primaryPayment = orderPayments[0];
@@ -283,15 +317,15 @@ router.get("/invoices", requireAuth, requirePermission("report.read"), async (re
       const items = o.orderItems.map((item) => ({
         id: item.id,
         name: item.menuItem?.name || `Item ${item.menuItemId || ""}`.trim() || "Menu Item",
-        quantity: item.quantity,
+        quantity: Number(item.quantity),
         priceMinor: String(item.unitPrice ?? 0n),
-        totalMinor: String(item.totalPrice ?? (item.unitPrice ? BigInt(item.quantity) * item.unitPrice : 0n)),
+        totalMinor: String((item as any).totalPrice ?? (item.unitPrice ? BigInt(Math.round(Number(item.quantity))) * item.unitPrice : 0n)),
         isVeg: item.menuItem?.isVeg ?? true,
       }));
 
       return {
         id: o.id,
-        invoiceNumber: `INV-${o.orderNumber || o.id.slice(0, 8).toUpperCase()}`,
+        invoiceNumber: invoiceByOrder.get(o.id)?.invoiceNumber || `INV-${o.orderNumber || o.id.slice(0, 8).toUpperCase()}`,
         orderNumber: o.orderNumber,
         orderType: o.orderType,
         status: o.status,
@@ -303,9 +337,9 @@ router.get("/invoices", requireAuth, requirePermission("report.read"), async (re
         grandTotalMinor: String(o.grandTotal),
         paymentMethod,
         paymentStatus,
-        itemCount: o.orderItems.reduce((sum, it) => sum + it.quantity, 0),
+        itemCount: o.orderItems.reduce((sum, it) => sum + Number(it.quantity), 0),
         items,
-        createdAt: o.createdAt.toISOString(),
+        createdAt: (o.settledAt || o.createdAt).toISOString(),
       };
     });
 

@@ -33,19 +33,22 @@ export class PrismaModifierPriceLookup implements ModifierPriceLookup {
 
   async getPrices(modifierOptionIds: string[], outletId: string): Promise<Map<string, bigint>> {
     const map = new Map<string, bigint>();
-    if (modifierOptionIds.length === 0) {
+    const validIds = (modifierOptionIds || []).filter(Boolean);
+    if (validIds.length === 0 || !(this.prisma as any).modifierOption) {
       return map;
     }
 
-    const rows = await this.prisma.modifierOption.findMany({
-      where: { id: { in: modifierOptionIds }, outletId },
-    });
+    try {
+      const rows = await (this.prisma as any).modifierOption.findMany({
+        where: { id: { in: validIds }, outletId },
+      });
 
-    for (const row of rows) {
-      const num = Number(row.price || 0);
-      const priceMinor = BigInt(Math.round(num * 100));
-      map.set(row.id, priceMinor);
-    }
+      for (const row of rows) {
+        const num = Number(row.price || 0);
+        const priceMinor = BigInt(Math.round(num * 100));
+        map.set(row.id, priceMinor);
+      }
+    } catch {}
 
     return map;
   }
@@ -88,6 +91,8 @@ export class PrismaOrderRepository implements OrderRepository {
         where: { id: { in: itemIds } },
       });
       const nameMap = new Map(menuItems.map((m) => [m.id, m.name]));
+      const orderTypeStr = String(input.orderType);
+      const dbOrderType = (orderTypeStr === "TAKEAWAY" || orderTypeStr === "PICKUP") ? "PICKUP" : (orderTypeStr === "DELIVERY" ? "DELIVERY" : "DINE_IN");
 
       await tx.order.create({
         data: {
@@ -95,7 +100,7 @@ export class PrismaOrderRepository implements OrderRepository {
           outletId: input.outletId,
           orderNumber,
           status: "PLACED",
-          orderType: input.orderType as any,
+          orderType: dbOrderType as any,
           business_date: new Date(),
           subtotal: priced.subtotalMinor,
           taxTotal: priced.taxTotalMinor,
@@ -226,11 +231,13 @@ export class PrismaOrderRepository implements OrderRepository {
       }
     }
     if (filter.orderType) {
-      if (typeof filter.orderType === "string" && filter.orderType.includes(",")) {
-        const types = filter.orderType.split(",").map((t) => t.trim()).filter((t) => t);
-        where.orderType = { in: types };
-      } else {
-        where.orderType = filter.orderType;
+      const validTypes = new Set(["DINE_IN", "TAKEAWAY", "DELIVERY", "PICKUP", "DRIVE_THRU", "ROOM_SERVICE", "CATERING", "CURBSIDE"]);
+      const rawTypes = typeof filter.orderType === "string" ? filter.orderType.split(",") : [String(filter.orderType)];
+      const filtered = rawTypes.map((t) => t.trim().toUpperCase()).filter((t) => validTypes.has(t));
+      if (filtered.length === 1) {
+        where.orderType = filtered[0];
+      } else if (filtered.length > 1) {
+        where.orderType = { in: filtered };
       }
     }
     if (filter.orderNumberSearch) {
@@ -254,15 +261,18 @@ export class PrismaOrderRepository implements OrderRepository {
     const orders = await this.prisma.order.findMany({
       where: {
         outletId,
-        createdAt: { gte: fromDate, lte: toDate },
-        status: { notIn: ["CANCELLED", "FAILED"] },
+        status: "COMPLETED",
+        OR: [
+          { settledAt: { gte: fromDate, lte: toDate } },
+          { AND: [{ settledAt: null }, { createdAt: { gte: fromDate, lte: toDate } }] },
+        ],
       },
-      select: { createdAt: true, grandTotal: true },
+      select: { createdAt: true, settledAt: true, grandTotal: true },
     });
 
     const byDay = new Map<string, bigint>();
     for (const o of orders) {
-      const key = o.createdAt.toISOString().slice(0, 10);
+      const key = (o.settledAt || o.createdAt).toISOString().slice(0, 10);
       byDay.set(key, (byDay.get(key) ?? 0n) + o.grandTotal);
     }
 
@@ -314,16 +324,22 @@ export class PrismaOrderRepository implements OrderRepository {
   }
 
   async getOrderDetail(outletId: string, orderId: string): Promise<OrderDetail | null> {
-    const row = await this.prisma.order.findFirst({
-      where: { id: orderId, outletId },
-      include: {
-        orderItems: {
-          include: {
-            menuItem: { select: { name: true } },
+    const [row, payments] = await Promise.all([
+      this.prisma.order.findFirst({
+        where: { id: orderId, outletId },
+        include: {
+          orderItems: {
+            include: {
+              menuItem: { select: { name: true } },
+            },
           },
         },
-      },
-    });
+      }),
+      this.prisma.payment.findMany({
+        where: { orderId, outletId },
+        orderBy: { createdAt: "asc" },
+      }).catch(() => []),
+    ]);
 
     if (!row) {
       return null;
@@ -346,7 +362,7 @@ export class PrismaOrderRepository implements OrderRepository {
       customerId: row.customerId,
       customerName: null,
       waiterName: null,
-      paymentMethod: null,
+      paymentMethod: payments.length > 0 ? payments[0].method : null,
       createdAt: row.createdAt,
       itemCount: row.orderItems.length,
       items: row.orderItems.map((item) => ({
@@ -362,7 +378,14 @@ export class PrismaOrderRepository implements OrderRepository {
         seatNumber: item.seatNumber,
         modifiers: [],
       })),
-      payments: [],
+      payments: payments.map((p) => ({
+        id: p.id,
+        amountMinor: p.amount,
+        method: p.method,
+        status: p.status,
+        transactionId: (p as any).transaction_id || p.id,
+        createdAt: p.createdAt instanceof Date ? p.createdAt : new Date(p.createdAt),
+      })),
       statusHistory: [],
     };
   }
@@ -385,26 +408,29 @@ export class PrismaOrderRepository implements OrderRepository {
     const added: { id: string; menuItemId: string; quantity: number }[] = [];
 
     await this.prisma.$transaction(async (tx) => {
+      const itemIds = priced.lines.map((l) => l.menuItemId);
+      const menuItems = await tx.menuItem.findMany({
+        where: { id: { in: itemIds } },
+      });
+      const nameMap = new Map(menuItems.map((m) => [m.id, m.name]));
+
       for (const line of priced.lines) {
+        const itemName = nameMap.get(line.menuItemId) || "Dish";
         const item = await tx.orderItem.create({
           data: {
             outletId,
             orderId,
             menuItemId: line.menuItemId,
+            item_name: itemName,
             quantity: line.quantity,
             unitPrice: line.unitPriceMinor,
             subtotal: line.subtotalMinor,
             course: line.course,
             seatNumber: line.seatNumber,
-            modifiers: {
-              create: line.modifiers.map((modifier) => ({
-                modifierOptionId: modifier.modifierOptionId,
-                price: modifier.priceMinor,
-              })),
-            },
+            notes: (line as any).notes || null,
           },
         });
-        added.push({ id: item.id, menuItemId: item.menuItemId, quantity: item.quantity });
+        added.push({ id: item.id, menuItemId: item.menuItemId, quantity: Number(item.quantity) });
       }
 
       await tx.order.update({
@@ -446,7 +472,7 @@ export class PrismaOrderRepository implements OrderRepository {
 
       await tx.orderItem.update({
         where: { id: orderItemId },
-        data: { isVoided: true, voidReason: reasonCode, voidedBy: userId },
+        data: { isVoided: true, updated_by: userId },
       });
 
       await tx.order.update({
@@ -472,34 +498,47 @@ export class PrismaOrderRepository implements OrderRepository {
   }
 
   async getBill(outletId: string, orderId: string): Promise<BillSummary | null> {
-    const order = await this.prisma.order.findFirst({
-      where: { id: orderId, outletId },
-      include: { payments: { where: { status: "CAPTURED" } } },
-    });
+    const [order, payments] = await Promise.all([
+      this.prisma.order.findFirst({ where: { id: orderId, outletId } }),
+      this.prisma.payment.findMany({
+        where: {
+          outletId,
+          orderId,
+          status: { in: ["CAPTURED", "SUCCESS", "COMPLETED"] },
+        },
+      }),
+    ]);
     if (!order) {
       return null;
     }
 
-    const paidMinor = order.payments.reduce((acc, p) => acc + p.amount, 0n);
+    const paidMinor = payments.reduce((acc, p) => acc + p.amount, 0n);
+    const dueMinor = order.grandTotal > paidMinor ? order.grandTotal - paidMinor : 0n;
 
     return {
       orderId: order.id,
       orderNumber: order.orderNumber,
       subtotalMinor: order.subtotal,
-      discountTotalMinor: order.discountTotal,
-      taxTotalMinor: order.taxTotal,
-      tipTotalMinor: order.tipTotal,
-      serviceChargeTotalMinor: order.serviceChargeTotal,
+      discountTotalMinor: order.discountTotal || 0n,
+      taxTotalMinor: order.taxTotal || 0n,
+      tipTotalMinor: order.tipTotal || 0n,
+      serviceChargeTotalMinor: order.serviceChargeTotal || 0n,
       grandTotalMinor: order.grandTotal,
       paidMinor,
-      dueMinor: order.grandTotal - paidMinor,
+      dueMinor,
     };
   }
 
   async getBillBySeat(outletId: string, orderId: string): Promise<{ seatNumber: number | null; subtotalMinor: string; paidMinor: string }[]> {
     const [items, payments] = await Promise.all([
       this.prisma.orderItem.findMany({ where: { outletId, orderId, isVoided: false } }),
-      this.prisma.payment.findMany({ where: { outletId, orderId, status: "CAPTURED" } }),
+      this.prisma.payment.findMany({
+        where: {
+          outletId,
+          orderId,
+          status: { in: ["CAPTURED", "SUCCESS", "COMPLETED"] },
+        },
+      }),
     ]);
 
     const bySeat = new Map<number | null, { subtotal: bigint; paid: bigint }>();
@@ -531,8 +570,10 @@ export class PrismaOrderRepository implements OrderRepository {
   ): Promise<{ tipTotalMinor: bigint; serviceChargeTotalMinor: bigint; grandTotalMinor: bigint }> {
     return this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findFirstOrThrow({ where: { id: orderId, outletId } });
-      const tipDelta = tipMinor - order.tipTotal;
-      const serviceDelta = serviceChargeMinor - order.serviceChargeTotal;
+      const currentTip = order.tipTotal || 0n;
+      const currentService = order.serviceChargeTotal || 0n;
+      const tipDelta = tipMinor - currentTip;
+      const serviceDelta = serviceChargeMinor - currentService;
 
       const updated = await tx.order.update({
         where: { id: orderId },
@@ -542,6 +583,29 @@ export class PrismaOrderRepository implements OrderRepository {
           grandTotal: { increment: tipDelta + serviceDelta },
         },
       });
+
+      // #region agent log
+      fetch("http://127.0.0.1:7323/ingest/28c85a32-5ef1-4fe5-9437-78139f7a5bfb", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c675b" },
+        body: JSON.stringify({
+          sessionId: "9c675b",
+          runId: "waiter-charges",
+          hypothesisId: "J",
+          location: "prisma-order-repository.ts:setCharges",
+          message: "charges persisted on order",
+          data: {
+            orderId,
+            tipMinor: tipMinor.toString(),
+            serviceChargeMinor: serviceChargeMinor.toString(),
+            persistedTip: updated.tipTotal.toString(),
+            persistedService: updated.serviceChargeTotal.toString(),
+            grandTotal: updated.grandTotal.toString(),
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
 
       return { tipTotalMinor: updated.tipTotal, serviceChargeTotalMinor: updated.serviceChargeTotal, grandTotalMinor: updated.grandTotal };
     });
@@ -556,18 +620,54 @@ export class PrismaOrderRepository implements OrderRepository {
     seatNumber?: number
   ): Promise<{ id: string; amountMinor: bigint; method: string; status: string }> {
     return this.prisma.$transaction(async (tx) => {
-      const paymentId = crypto.randomUUID();
+      const payment = await tx.payment.create({
+        data: {
+          outletId,
+          orderId,
+          paymentId: crypto.randomUUID(),
+          amount: amountMinor,
+          method,
+          status: "CAPTURED",
+          seatNumber: seatNumber ?? null,
+        },
+      });
+
+      // Update order status to COMPLETED if fully paid, adhering to state machine transition graph
+      const order = await tx.order.findUnique({ where: { id: orderId } });
+      if (order && order.status !== "COMPLETED" && order.status !== "CANCELLED" && order.status !== "FAILED") {
+        const allPayments = await tx.payment.findMany({
+          where: { orderId, outletId, status: "CAPTURED" },
+        });
+        const totalPaid = allPayments.reduce((sum, p) => sum + p.amount, 0n);
+        if (totalPaid >= order.grandTotal) {
+          const transitions: string[] = [];
+          if (order.status === "DRAFT") transitions.push("PLACED", "CONFIRMED", "KOT_CREATED", "IN_PREPARATION", "READY", "SERVED", "COMPLETED");
+          else if (order.status === "PLACED") transitions.push("CONFIRMED", "KOT_CREATED", "IN_PREPARATION", "READY", "SERVED", "COMPLETED");
+          else if (order.status === "CONFIRMED") transitions.push("KOT_CREATED", "IN_PREPARATION", "READY", "SERVED", "COMPLETED");
+          else if (order.status === "KOT_CREATED") transitions.push("IN_PREPARATION", "READY", "SERVED", "COMPLETED");
+          else if (order.status === "IN_PREPARATION") transitions.push("READY", "SERVED", "COMPLETED");
+          else if (order.status === "READY") transitions.push("SERVED", "COMPLETED");
+          else if (order.status === "SERVED" || order.status === "HANDED_OVER" || order.status === "OUT_FOR_DELIVERY") transitions.push("COMPLETED");
+
+          for (const nextStatus of transitions) {
+            await tx.order.update({
+              where: { id: orderId },
+              data: { status: nextStatus as any },
+            });
+          }
+        }
+      }
 
       await writeAuditLog(tx, {
         outletId,
         userId,
         action: "PAYMENT_RECORDED",
         entityType: "PAYMENT",
-        entityId: orderId,
+        entityId: payment.id,
         afterState: { orderId, amountMinor: amountMinor.toString(), method, seatNumber },
       });
 
-      return { id: paymentId, amountMinor, method, status: "CAPTURED" };
+      return { id: payment.id, amountMinor, method, status: payment.status };
     });
   }
 }

@@ -36,18 +36,23 @@ function mapToPrismaAction(action: string): "CREATE" | "UPDATE" | "DELETE" | "AP
  */
 export async function writeAuditLog(client: AuditLogWriter, input: AuditLogInput): Promise<void> {
   const actionEnum = mapToPrismaAction(input.action);
+  const afterStateObj = {
+    originalAction: input.action,
+    reasonCode: input.reasonCode,
+    approverUserId: input.approverUserId,
+    ipAddress: input.ipAddress,
+    ...(typeof input.afterState === "object" && input.afterState !== null ? (input.afterState as object) : input.afterState !== undefined ? { value: input.afterState } : {}),
+  };
+
   await client.auditLog.create({
     data: {
       outletId: input.outletId,
       actor_id: input.userId,
-      approverUserId: input.approverUserId,
       action: actionEnum,
       entityType: input.entityType,
       entityId: input.entityId,
-      beforeState: input.beforeState ?? undefined,
-      afterState: input.afterState ? { originalAction: input.action, ...(typeof input.afterState === "object" ? (input.afterState as object) : { value: input.afterState }) } : { originalAction: input.action },
-      reasonCode: input.reasonCode,
-      ipAddress: input.ipAddress,
+      beforeState: (input.beforeState as any) ?? undefined,
+      afterState: afterStateObj,
     },
   });
 }

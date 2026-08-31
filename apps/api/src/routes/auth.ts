@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../prisma";
 import {
   signAccessToken,
   generateRefreshToken,
@@ -11,7 +11,6 @@ import {
 import type { LoginFailure } from "@kapmeta/shared-types/auth";
 import { requireAuth, type AuthedRequest } from "../middleware/require-auth";
 
-const prisma = new PrismaClient();
 const rbac = new PrismaRbacChecker(prisma);
 
 const JWT_SECRET = process.env.JWT_SECRET;

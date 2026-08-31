@@ -24,8 +24,9 @@ import { ordersRouter } from './routes/orders';
 import { settingsRouter } from './routes/settings';
 
 // Global BigInt JSON serialization support for Express
+// Uses String to prevent precision loss for amounts > 2^53
 (BigInt.prototype as any).toJSON = function () {
-  return typeof this === 'bigint' ? Number(this) : this;
+  return this.toString();
 };
 
 export function createApp(): Express {
@@ -51,29 +52,20 @@ export function createApp(): Express {
   // /users, /waiters/...), so they're mounted at root rather than under an
   // extra prefix.
   app.use(integrationRouter);
-  app.use('/integration', integrationRouter);
-  app.use('/integrations', integrationRouter);
   app.use(notificationsRouter);
   app.use(publicOrderRouter);
   app.use(purchaseRouter);
-  app.use(inventoryRouter);
   app.use(userManagementRouter);
-  app.use('/user-management', userManagementRouter);
   app.use(waitersRouter);
-  app.use('/waiters', waitersRouter);
   app.use(tablesRouter);
   app.use(ordersRouter);
   app.use(settingsRouter);
 
   app.get('/healthz', (_req, res) => res.json({ status: 'ok' }));
+  app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
-    const mapped = mapDomainError(err);
-    if (mapped) {
-      res.status(mapped.status).json(mapped.body);
-      return;
-    }
     // eslint-disable-next-line no-console
     console.error(err);
     const message = err instanceof Error ? err.message : 'Internal server error';

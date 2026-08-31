@@ -31,9 +31,9 @@ export class StockDeductionWorker {
 
       for (const item of orderItems) {
         // Find active recipe for this menu item
-        const recipe = await this.prisma.recipe.findFirst({
-          where: { outletId: event.outletId, menuItemId: item.menuItemId, isActive: true },
-          include: { ingredients: true }
+        const recipe = await (this.prisma as any).recipes.findFirst({
+          where: { outlet_id: event.outletId, menu_item_id: item.menuItemId, is_active: true },
+          include: { recipe_ingredients: true }
         });
 
         if (!recipe) {
@@ -42,32 +42,24 @@ export class StockDeductionWorker {
 
         // Deduct stock for each ingredient in the recipe
         await this.prisma.$transaction(async (tx) => {
-          for (const recipeIngredient of recipe.ingredients) {
+          for (const recipeIngredient of (recipe.recipe_ingredients || [])) {
             // Calculate total quantity to deduct based on order item quantity
-            const totalQuantityToDeduct = Number(recipeIngredient.quantity) * item.quantity;
+            const totalQuantityToDeduct = Number(recipeIngredient.quantity) * Number(item.quantity);
 
-            // Update ingredient current stock
-            const ingredient = await tx.ingredient.update({
-              where: { id: recipeIngredient.ingredientId },
-              data: { currentStock: { decrement: totalQuantityToDeduct } }
+            const existing = await (tx as any).ingredients.findUnique({
+              where: { id: recipeIngredient.ingredient_id }
             });
 
-            // Create stock movement record
-            await tx.stockMovement.create({
-              data: {
-                outletId: event.outletId,
-                ingredientId: ingredient.id,
-                movementType: "CONSUMPTION",
-                quantity: -totalQuantityToDeduct,
-                referenceType: "ORDER",
-                referenceId: event.orderId,
-                reasonCode: "SALE"
+            if (existing) {
+              const newStock = Math.max(0, Number(existing.current_stock_qty) - totalQuantityToDeduct);
+              await (tx as any).ingredients.update({
+                where: { id: recipeIngredient.ingredient_id },
+                data: { current_stock_qty: newStock }
+              });
+
+              if (newStock <= Number(existing.reorder_level)) {
+                console.log(`[StockAlert] Ingredient ${existing.name} is below reorder level in outlet ${event.outletId}`);
               }
-            });
-
-            // Reorder level alert check could be added here
-            if (Number(ingredient.currentStock) <= Number(ingredient.reorderLevel)) {
-              console.log(`[StockAlert] Ingredient ${ingredient.name} (${ingredient.id}) is below reorder level (${ingredient.reorderLevel}) in outlet ${event.outletId}`);
             }
           }
         });

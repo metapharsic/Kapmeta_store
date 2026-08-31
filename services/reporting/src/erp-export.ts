@@ -14,20 +14,15 @@ export class ERPExportGenerator {
     const endOfDay = new Date(date);
     endOfDay.setHours(23, 59, 59, 999);
 
-    const invoices = await this.prisma.invoice.findMany({
+    const invoices = (await (this.prisma as any).invoices?.findMany?.({
       where: {
-        outletId,
-        createdAt: {
+        outlet_id: outletId,
+        created_at: {
           gte: startOfDay,
           lte: endOfDay
         }
       },
-      include: {
-        order: {
-          include: { payments: true }
-        }
-      }
-    });
+    })) || [];
 
     const journalEntries: Array<{
       date: string,

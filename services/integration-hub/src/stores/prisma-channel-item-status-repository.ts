@@ -5,56 +5,66 @@ export class PrismaChannelItemStatusRepository implements ChannelItemStatusRepos
   constructor(private readonly prisma: PrismaClient) {}
 
   async listMappings(outletId: string, channel?: string) {
-    // Fetch channel item mappings from real table
-    const mappings = await (this.prisma as any).channel_item_mapping.findMany({
+    const accounts = await this.prisma.channelAccount.findMany({
+      where: { outletId, is_active: true },
+    });
+    const filtered = channel
+      ? accounts.filter((a) => (a.credentialsRef || "").toUpperCase() === channel.toUpperCase())
+      : accounts;
+    const accountIds = filtered.map((a) => a.id);
+    const accountById = new Map(filtered.map((a) => [a.id, a]));
+
+    const menuItems = await this.prisma.menuItem.findMany({
+      where: { outletId, isActive: true },
+      include: { category: true },
+    });
+    const itemById = new Map(menuItems.map((i) => [i.id, i]));
+
+    const rows = await this.prisma.item_availability.findMany({
       where: {
         outlet_id: outletId,
-        is_active: true,
-        ...(channel ? { channel_code: channel.toUpperCase() } : {}),
+        ...(accountIds.length > 0 ? { channel_id: { in: accountIds } } : {}),
       },
-      include: {
-        menu_items: {
-          include: {
-            category: true,
-          },
-        },
-      },
-      orderBy: { created_at: "desc" },
     });
 
-    return mappings.map((m: any) => ({
-      mappingId: m.id,
-      channelAccountId: m.channel_account_id,
-      channel: m.channel_code,
-      menuItemId: m.menu_item_id,
-      name: m.menu_items.name,
-      onlineDisplayName: m.display_name || m.menu_items.name,
-      categoryName: m.menu_items.category?.name ?? "General",
-      isAvailable: m.is_available,
-      version: m.version,
-    }));
+    return rows
+      .map((row) => {
+        const item = itemById.get(row.item_id);
+        const account = accountById.get(row.channel_id);
+        if (!item || !account) return null;
+        return {
+          mappingId: row.id,
+          channelAccountId: account.id,
+          channel: account.credentialsRef || "CHANNEL",
+          menuItemId: item.id,
+          name: item.name,
+          onlineDisplayName: item.name,
+          categoryName: item.category?.name ?? "General",
+          isAvailable: row.state !== "OFF",
+          version: row.version,
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => row !== null);
   }
 
   async updateIfVersionMatches(mappingId: string, expectedVersion: number, isAvailable: boolean): Promise<boolean> {
-    // Use real table with optimistic locking
-    const result = await (this.prisma as any).channel_item_mapping.updateMany({
+    const result = await this.prisma.item_availability.updateMany({
       where: {
         id: mappingId,
         version: expectedVersion,
       },
       data: {
-        is_available: isAvailable,
+        state: isAvailable ? "ON" : "OFF",
         version: { increment: 1 },
         updated_at: new Date(),
       },
     });
 
     if (result.count === 0) {
-      return false; // Version mismatch or not found
+      return false;
     }
 
-    // Still write audit log for compliance
-    const mapping = await (this.prisma as any).channel_item_mapping.findUnique({
+    const mapping = await this.prisma.item_availability.findUnique({
       where: { id: mappingId },
     });
     if (mapping) {
@@ -65,7 +75,7 @@ export class PrismaChannelItemStatusRepository implements ChannelItemStatusRepos
           entityType: "CHANNEL_ITEM_AVAILABILITY",
           entityId: mappingId,
           beforeState: { isAvailable: !isAvailable },
-          afterState: { channel: mapping.channel_code, isAvailable, version: expectedVersion + 1 },
+          afterState: { isAvailable, version: expectedVersion + 1 },
           createdAt: new Date(),
         },
       });
@@ -75,14 +85,10 @@ export class PrismaChannelItemStatusRepository implements ChannelItemStatusRepos
   }
 
   async getMapping(mappingId: string): Promise<{ version: number } | null> {
-    const mapping = await (this.prisma as any).channel_item_mapping.findUnique({
+    const mapping = await this.prisma.item_availability.findUnique({
       where: { id: mappingId },
     });
-
-    if (!mapping) {
-      return null;
-    }
-
+    if (!mapping) return null;
     return { version: mapping.version };
   }
 }

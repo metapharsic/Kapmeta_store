@@ -26,20 +26,27 @@ export default function AggregatorOrdersView() {
   const [selectedOrder, setSelectedOrder] = useState<OnlineOrder | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
-  const fetchOnlineOrders = async () => {
+  const fetchOrders = async () => {
     try {
       setLoading(true);
-      const res = await authedFetch("/orders?orderType=AGGREGATOR,DELIVERY");
+      let endpoint = "/orders?orderType=AGGREGATOR,DELIVERY";
+      if (topTab === "ADVANCE") {
+        endpoint = "/orders/advance";
+      } else if (topTab === "CURRENT") {
+        endpoint = "/orders/live";
+      }
+
+      const res = await authedFetch(endpoint);
       if (res.ok) {
         const data = await res.json();
         const list = data.orders || (Array.isArray(data) ? data : []);
         const mapped: OnlineOrder[] = list.map((ord: any) => {
           let status: OnlineOrder["status"] = "PENDING";
-          if (ord.status === "CONFIRMED" || ord.status === "ACTIVE" || ord.status === "PREPARING") {
+          if (ord.status === "CONFIRMED" || ord.status === "ACTIVE" || ord.status === "PREPARING" || ord.status === "IN_PREPARATION" || ord.status === "KOT_CREATED") {
             status = "ACCEPTED";
           } else if (ord.status === "READY" || ord.status === "FOOD_READY") {
             status = "FOOD_READY";
-          } else if (ord.status === "DISPATCHED" || ord.status === "OUT_FOR_DELIVERY") {
+          } else if (ord.status === "DISPATCHED" || ord.status === "OUT_FOR_DELIVERY" || ord.status === "HANDED_OVER" || ord.status === "SERVED") {
             status = "DISPATCHED";
           } else if (ord.status === "DELIVERED" || ord.status === "COMPLETED") {
             status = "DELIVERED";
@@ -51,49 +58,50 @@ export default function AggregatorOrdersView() {
             id: ord.id,
             orderNumber: ord.orderNumber,
             externalOrderId: ord.externalOrderId || ord.orderNumber,
-            channel: (ord.channel as any) || (Math.random() > 0.5 ? "SWIGGY" : "ZOMATO"),
+            channel: (ord.channel as any) || (topTab === "ADVANCE" ? "ADVANCE" : "SWIGGY"),
             status,
-            customerName: ord.customerName || "Customer",
-            customerPhone: ord.customerPhone || "+91 98765 43210",
-            riderName: ord.riderName || "Delivery Partner",
+            customerName: ord.customerName || ord.customer?.name || "Customer",
+            customerPhone: ord.customerPhone || ord.customer?.phone || "+91 98765 43210",
+            riderName: ord.riderName || (topTab === "ADVANCE" ? "Scheduled Pickup" : "Delivery Partner"),
             riderPhone: "+91 91234 56789",
-            grandTotalMinor: Number(ord.grandTotalMinor || 0),
-            itemCount: ord.itemCount || (ord.items?.length || 1),
+            grandTotalMinor: Number(ord.grandTotalMinor || ord.grandTotal || 0),
+            itemCount: ord.itemCount || (ord.orderItems?.length || ord.items?.length || 1),
             createdAt: ord.createdAt || new Date().toISOString(),
-            items: (ord.items || []).map((it: any) => ({
-              name: it.menuItemName || it.name || "Item",
-              quantity: it.quantity || 1,
-              priceMinor: Number(it.unitPriceMinor || it.subtotalMinor || 0),
+            items: (ord.orderItems || ord.items || []).map((it: any) => ({
+              name: it.item_name || it.menuItemName || it.name || it.menuItem?.name || "Item",
+              quantity: Number(it.quantity || 1),
+              priceMinor: Number(it.unitPriceMinor || it.unitPrice || it.subtotalMinor || it.subtotal || 0),
             })),
           };
         });
         setOrders(mapped);
       }
     } catch (e) {
-      console.error(e);
+      console.error("Failed to fetch orders:", e);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchOnlineOrders();
-    const interval = setInterval(fetchOnlineOrders, 12000);
+    fetchOrders();
+    const interval = setInterval(fetchOrders, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [topTab]);
 
   const handleUpdateStatus = async (orderId: string, nextStatus: OnlineOrder["status"]) => {
     setUpdatingId(orderId);
     try {
-      let apiStatus = "ACTIVE";
+      let apiStatus = "CONFIRMED";
       if (nextStatus === "FOOD_READY") apiStatus = "READY";
-      if (nextStatus === "DISPATCHED") apiStatus = "DISPATCHED";
-      if (nextStatus === "DELIVERED") apiStatus = "DELIVERED";
+      if (nextStatus === "DISPATCHED") apiStatus = "HANDED_OVER";
+      if (nextStatus === "DELIVERED") apiStatus = "COMPLETED";
       if (nextStatus === "CANCELLED") apiStatus = "CANCELLED";
 
       const res = await authedFetch(`/orders/${orderId}/status`, {
-        method: "PUT",
-        body: JSON.stringify({ status: apiStatus }),
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toStatus: apiStatus, status: apiStatus }),
       });
       if (res.ok) {
         setOrders((prev) =>
@@ -107,8 +115,26 @@ export default function AggregatorOrdersView() {
     }
   };
 
+  const handleFireAdvance = async (orderId: string) => {
+    setUpdatingId(orderId);
+    try {
+      const res = await authedFetch(`/orders/${orderId}/fire-advance`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (res.ok) {
+        alert("Advance order successfully fired to Kitchen KDS!");
+        fetchOrders();
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
   const handleMarkAllFoodReady = async () => {
-    const accepted = orders.filter((o) => o.status === "ACCEPTED");
+    const accepted = orders.filter((o) => o.status === "ACCEPTED" || o.status === "PENDING");
     for (const ord of accepted) {
       await handleUpdateStatus(ord.id, "FOOD_READY");
     }
@@ -288,7 +314,19 @@ export default function AggregatorOrdersView() {
                       View Details
                     </button>
 
-                    {ord.status === "PENDING" && (
+                    {topTab === "ADVANCE" && ord.status === "PENDING" && (
+                      <button
+                        type="button"
+                        className="btn-action-ready"
+                        style={{ background: "#ea580c" }}
+                        disabled={updatingId === ord.id}
+                        onClick={() => handleFireAdvance(ord.id)}
+                      >
+                        🔥 Fire to KDS
+                      </button>
+                    )}
+
+                    {ord.status === "PENDING" && topTab !== "ADVANCE" && (
                       <button
                         type="button"
                         className="btn-action-accept"

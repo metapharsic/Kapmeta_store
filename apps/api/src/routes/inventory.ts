@@ -1,9 +1,8 @@
 import { Router } from "express";
 import { requireAuth, requirePermission, type AuthedRequest } from "../middleware/require-auth";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../prisma";
 
 export const inventoryRouter = Router();
-const prisma = new PrismaClient();
 
 // List ingredients for active outlet
 inventoryRouter.get("/ingredients", requireAuth, requirePermission("inventory.read"), async (req: AuthedRequest, res) => {
@@ -35,7 +34,7 @@ inventoryRouter.post("/ingredients", requireAuth, requirePermission("inventory.w
   const unitOfMeasure = req.body.unitOfMeasure || req.body.unit;
   const reorderLevel = req.body.reorderLevel !== undefined ? req.body.reorderLevel : req.body.minThreshold;
   const unitCost = req.body.unitCost !== undefined ? req.body.unitCost : (req.body.costPerUnitMinor !== undefined ? req.body.costPerUnitMinor / 100 : undefined);
-  const currentStock = req.body.currentStock !== undefined ? Number(req.body.currentStock) : 0;
+  const currentStock = req.body.currentStock !== undefined ? Number(req.body.currentStock) : (req.body.initialStock !== undefined ? Number(req.body.initialStock) : (req.body.stock !== undefined ? Number(req.body.stock) : 0));
 
   if (!name || !unitOfMeasure || reorderLevel === undefined || unitCost === undefined) {
     return res.status(400).json({ error: "Missing required fields" });
@@ -165,7 +164,7 @@ inventoryRouter.post("/stock/deduct", requireAuth, requirePermission("inventory.
       data: {
         outletId,
         actor_id: userId,
-        action: "DEDUCT",
+        action: "UPDATE",
         entityType: "INVENTORY_INGREDIENT",
         entityId: ingredientId,
         beforeState: { currentStock: Number(existing.current_stock_qty) },
@@ -197,35 +196,75 @@ inventoryRouter.get("/recipes", requireAuth, requirePermission("inventory.read")
       orderBy: { created_at: "desc" },
     });
 
-    res.status(200).json(recipes.map((rec: any) => ({
-      id: rec.id,
-      name: rec.name,
-      menuItemId: rec.menu_item_id,
-      yieldPortions: Number(rec.yield_portions),
-      ingredients: rec.recipe_ingredients.map((ri: any) => ({
+    // Lookup menu items for names
+    const menuItemIds = recipes.map((r: any) => r.menu_item_id).filter(Boolean);
+    const menuItems = await prisma.menuItem.findMany({
+      where: { id: { in: menuItemIds } },
+    });
+    const menuItemMap = new Map(menuItems.map((m) => [m.id, m]));
+
+    res.status(200).json(recipes.map((rec: any) => {
+      const mi = menuItemMap.get(rec.menu_item_id);
+      const mappedIngredients = (rec.recipe_ingredients || []).map((ri: any) => ({
+        id: ri.id,
         ingredientId: ri.ingredient_id,
-        ingredientName: ri.ingredients.name,
+        ingredientName: ri.ingredients?.name || "Ingredient",
         quantity: Number(ri.quantity),
-        unit: ri.ingredients.unit_of_measure,
-      })),
-    })));
+        yieldPercent: 100,
+        unit: ri.ingredients?.unit_of_measure || "g",
+        ingredient: {
+          id: ri.ingredient_id,
+          name: ri.ingredients?.name || "Ingredient",
+          unitOfMeasure: ri.ingredients?.unit_of_measure || "g",
+          reorderLevel: Number(ri.ingredients?.reorder_level || 0),
+          unitCost: Number(ri.ingredients?.unit_cost_minor || 0) / 100,
+          currentStock: Number(ri.ingredients?.current_stock_qty || 0),
+        },
+      }));
+
+      return {
+        id: rec.id,
+        name: rec.name || (mi?.name ? `${mi.name} Recipe` : "Dish Recipe"),
+        menuItemId: rec.menu_item_id,
+        version: 1,
+        isActive: rec.is_active ?? true,
+        yieldPortions: Number(rec.yield_portions || 1),
+        menuItem: mi ? {
+          id: mi.id,
+          name: mi.name,
+          priceMinor: Math.round(Number(mi.price || 0) * 100).toString(),
+          isVeg: mi.isVeg,
+        } : { id: rec.menu_item_id, name: rec.name || "Dish", priceMinor: "0", isVeg: true },
+        recipeIngredients: mappedIngredients,
+        ingredients: mappedIngredients,
+      };
+    }));
   } catch (error: any) {
     console.error("Error listing recipes:", error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Create a recipe
+// Create a recipe / BOM
 inventoryRouter.post("/recipes", requireAuth, requirePermission("inventory.write"), async (req: AuthedRequest, res) => {
-  const { name, menuItemId, ingredients, yieldPortions } = req.body;
+  let { name, menuItemId, ingredients, yieldPortions } = req.body;
 
-  if (!name || !ingredients || !Array.isArray(ingredients)) {
-    return res.status(400).json({ error: "Missing name or ingredients" });
+  if (!ingredients || !Array.isArray(ingredients) || ingredients.length === 0) {
+    return res.status(400).json({ error: "Please provide at least one ingredient for the recipe BOM" });
   }
 
   try {
     const outletId = req.auth!.outletId;
     const userId = req.auth!.userId;
+
+    if (!name && menuItemId) {
+      const menuItem = await prisma.menuItem.findFirst({
+        where: { id: menuItemId, outletId },
+      });
+      name = menuItem?.name || "Recipe BOM";
+    } else if (!name) {
+      name = "Recipe BOM";
+    }
 
     const recipe = await (prisma as any).recipes.create({
       data: {
@@ -242,8 +281,8 @@ inventoryRouter.post("/recipes", requireAuth, requirePermission("inventory.write
       await (prisma as any).recipe_ingredients.create({
         data: {
           recipe_id: recipe.id,
-          ingredient_id: ing.ingredientId,
-          quantity: Number(ing.quantity),
+          ingredient_id: ing.ingredientId || ing.id,
+          quantity: Number(ing.quantity || 1),
         },
       });
     }
@@ -441,6 +480,152 @@ inventoryRouter.post("/purchase-orders", requireAuth, requirePermission("invento
     res.status(201).json({ id: po.id, poNumber, vendorId, items, totalAmount: total, status: "DRAFT" });
   } catch (error: any) {
     console.error("Error creating purchase order:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /inventory/purchase-orders/:id/receive - Receive goods (GRN) and increment ingredient stock in DB
+inventoryRouter.post("/purchase-orders/:id/receive", requireAuth, requirePermission("inventory.write"), async (req: AuthedRequest, res) => {
+  const poId = req.params.id;
+
+  try {
+    const outletId = req.auth!.outletId;
+    const userId = req.auth!.userId;
+
+    const po = await (prisma as any).purchase_orders.findFirst({
+      where: { id: poId, outlet_id: outletId },
+      include: {
+        purchase_order_items: {
+          include: { ingredients: true },
+        },
+        vendors: true,
+      },
+    });
+
+    if (!po) {
+      return res.status(404).json({ error: "Purchase order not found" });
+    }
+
+    if (po.status === "RECEIVED") {
+      return res.status(400).json({ error: "Purchase order has already been received" });
+    }
+
+    const requested = Array.isArray(req.body.items) ? req.body.items as { ingredientId: string; quantity: number }[] : null;
+    const receivedItems = [];
+    let allComplete = true;
+
+    for (const item of po.purchase_order_items) {
+      const already = Number(item.received_qty || 0);
+      const ordered = Number(item.quantity || 0);
+      const remaining = Math.max(0, ordered - already);
+      const requestedRow = requested?.find((r) => r.ingredientId === item.ingredient_id);
+      const addQty = requested ? Number(requestedRow?.quantity || 0) : remaining;
+      if (addQty <= 0) {
+        if (already < ordered) allComplete = false;
+        continue;
+      }
+      const applied = Math.min(addQty, remaining);
+      if (applied < remaining || already + applied < ordered) allComplete = false;
+
+      const ingredient = await prisma.ingredients.findUnique({
+        where: { id: item.ingredient_id },
+      });
+      if (!ingredient) continue;
+
+      const previousStock = Number(ingredient.current_stock_qty || 0);
+      const newStock = previousStock + applied;
+      await prisma.ingredients.update({
+        where: { id: ingredient.id },
+        data: {
+          current_stock_qty: newStock,
+          updated_at: new Date(),
+          updated_by: userId,
+        },
+      });
+      await prisma.purchase_order_items.update({
+        where: { id: item.id },
+        data: { received_qty: already + applied },
+      });
+      receivedItems.push({
+        ingredientId: ingredient.id,
+        ingredientName: ingredient.name,
+        addedQty: applied,
+        previousStock,
+        newStock,
+        unit: ingredient.unit_of_measure,
+      });
+    }
+
+    const nextStatus = allComplete ? "RECEIVED" : "PARTIALLY_RECEIVED";
+    await prisma.purchase_orders.update({
+      where: { id: poId },
+      data: {
+        status: nextStatus,
+        updated_at: new Date(),
+        updated_by: userId,
+      },
+    });
+
+    // Write GRN Audit Log
+    await prisma.auditLog.create({
+      data: {
+        outletId,
+        actor_id: userId,
+        action: "UPDATE",
+        entityType: "INVENTORY_GRN",
+        entityId: poId,
+        beforeState: { status: po.status },
+        afterState: { status: nextStatus, receivedItems, poNumber: po.po_number, vendorName: po.vendors?.name },
+        createdAt: new Date(),
+      },
+    });
+
+    res.status(200).json({
+      ok: true,
+      message: `Goods for ${po.po_number} received. Status ${nextStatus}.`,
+      poNumber: po.po_number,
+      status: nextStatus,
+      receivedItems,
+    });
+  } catch (error: any) {
+    console.error("Error receiving purchase order:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /inventory/availability/export - Export 86 item availability list
+inventoryRouter.get("/availability/export", requireAuth, requirePermission("inventory.read"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const category = req.query.category as string;
+
+    const items = await prisma.menuItem.findMany({
+      where: {
+        outletId,
+        ...(category && category !== "All" ? { category: { name: category } } : {}),
+      },
+      include: {
+        category: true,
+      },
+      orderBy: [{ category: { name: "asc" } }, { name: "asc" }],
+    });
+
+    res.status(200).json(
+      items.map((it) => ({
+        id: it.id,
+        name: it.name,
+        code: (it as any).code || "",
+        category: it.category?.name || "General",
+        priceMinor: Math.round(Number(it.price || 0) * 100),
+        priceFormatted: `₹${Number(it.price || 0).toFixed(2)}`,
+        isVeg: it.isVeg,
+        isStocked: it.isActive ?? true,
+        stockQty: 100,
+        status: (it.isActive ?? true) ? "IN_STOCK" : "86_OUT_OF_STOCK",
+      }))
+    );
+  } catch (error: any) {
+    console.error("Error exporting availability:", error);
     res.status(500).json({ error: error.message });
   }
 });

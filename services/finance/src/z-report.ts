@@ -1,5 +1,15 @@
 import { PrismaClient } from "@prisma/client";
 
+function businessDayWindow(dayStartTime: Date | null | undefined, date: Date): { start: Date; end: Date } {
+  const hours = dayStartTime instanceof Date ? dayStartTime.getHours() : 5;
+  const minutes = dayStartTime instanceof Date ? dayStartTime.getMinutes() : 0;
+  const start = new Date(date);
+  start.setHours(hours, minutes, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  return { start, end };
+}
+
 export class ZReportGenerator {
   private prisma: PrismaClient;
 
@@ -8,19 +18,17 @@ export class ZReportGenerator {
   }
 
   async generateDailyReport(outletId: string, date: Date) {
-    const startOfDay = new Date(date);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(date);
-    endOfDay.setHours(23, 59, 59, 999);
+    const outlet = await this.prisma.outlet.findUnique({ where: { id: outletId } });
+    const { start, end } = businessDayWindow(outlet?.dayStartTime ?? null, date);
 
     const orders = await this.prisma.order.findMany({
       where: {
         outletId,
         status: "COMPLETED",
-        createdAt: {
-          gte: startOfDay,
-          lte: endOfDay,
-        },
+        OR: [
+          { settledAt: { gte: start, lt: end } },
+          { AND: [{ settledAt: null }, { createdAt: { gte: start, lt: end } }] },
+        ],
       },
     });
 
@@ -29,19 +37,23 @@ export class ZReportGenerator {
         outletId,
         status: "CAPTURED",
         createdAt: {
-          gte: startOfDay,
-          lte: endOfDay,
+          gte: start,
+          lt: end,
         },
       },
     });
 
     let totalSales = 0n;
     let totalTax = 0n;
+    let totalTips = 0n;
+    let totalServiceCharge = 0n;
     const paymentModes: Record<string, bigint> = {};
 
     for (const ord of orders) {
-      totalSales += ord.subtotalMinor;
-      totalTax += ord.taxTotalMinor;
+      totalSales += ord.grandTotal;
+      totalTax += ord.taxTotal || 0n;
+      totalTips += ord.tipTotal || 0n;
+      totalServiceCharge += ord.serviceChargeTotal || 0n;
     }
 
     for (const p of payments) {
@@ -51,15 +63,59 @@ export class ZReportGenerator {
       paymentModes[p.method] += p.amount;
     }
 
+    const handovers = await this.prisma.waiterShiftHandover.findMany({
+      where: {
+        outletId,
+        createdAt: { gte: start, lt: end },
+      },
+    });
+    let handoverCashCounted = 0n;
+    let handoverTipPayout = 0n;
+    let handoverDigitalTips = 0n;
+    for (const h of handovers) {
+      handoverCashCounted += h.actualCashCountedMinor;
+      handoverTipPayout += h.netTipPayoutMinor;
+      handoverDigitalTips += h.digitalTipsMinor;
+    }
+
+    // #region agent log
+    fetch("http://127.0.0.1:7323/ingest/28c85a32-5ef1-4fe5-9437-78139f7a5bfb", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c675b" },
+      body: JSON.stringify({
+        sessionId: "9c675b",
+        runId: "waiter-charges",
+        hypothesisId: "N",
+        location: "z-report.ts:generateDailyReport",
+        message: "z-report totals include tips/service/handover",
+        data: {
+          invoiceCount: orders.length,
+          totalTips: totalTips.toString(),
+          totalServiceCharge: totalServiceCharge.toString(),
+          handoverCount: handovers.length,
+          handoverTipPayout: handoverTipPayout.toString(),
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+
     return {
       outletId,
-      date: startOfDay.toISOString().split("T")[0],
+      date: start.toISOString().split("T")[0],
+      businessDayStart: start.toISOString(),
+      businessDayEnd: end.toISOString(),
       totalSales,
       totalTax,
-      grandTotal: totalSales + totalTax,
+      grandTotal: totalSales,
+      totalTips,
+      totalServiceCharge,
       paymentModes,
       invoiceCount: orders.length,
+      handoverCount: handovers.length,
+      handoverCashCounted,
+      handoverTipPayout,
+      handoverDigitalTips,
     };
   }
 }
-

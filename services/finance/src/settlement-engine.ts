@@ -30,7 +30,7 @@ export class SettlementEngine {
       throw new Error("Order not found");
     }
 
-    if (order.status === "SETTLED" || order.status === "COMPLETED") {
+    if ((order.status as any) === "COMPLETED") {
       throw new Error("Order is already settled");
     }
 
@@ -58,39 +58,30 @@ export class SettlementEngine {
       // 4. Generate Invoice Number
       const invoiceNumber = `INV-${new Date().getFullYear()}-${Math.floor(Math.random() * 100000).toString().padStart(5, '0')}`;
 
-      // 5. Create Invoice
-      const invoice = await tx.invoice.create({
-        data: {
-          outletId,
-          orderId,
-          invoiceNo: invoiceNumber,
-          amount: order.grandTotal,
-          taxAmount: order.taxTotal,
-        }
-      });
-
-      // 6. Update Order Status
+      // 5. Update Order Status
       await tx.order.update({
         where: { id: orderId },
-        data: { status: "SETTLED" }
+        data: { status: "COMPLETED" }
       });
 
-      // 7. Write Audit Log
+      // 6. Write Audit Log
       await tx.auditLog.create({
         data: {
           outletId,
-          userId,
-          action: "ORDER_SETTLED",
+          actor_id: userId,
+          action: "UPDATE",
           entityType: "ORDER",
           entityId: orderId,
-          afterState: { status: "SETTLED", invoiceNumber }
+          afterState: { status: "COMPLETED", invoiceNumber }
         }
       });
+
+      const invoiceRecord = { id: orderId, invoiceNo: invoiceNumber };
 
       // 8. Emit Async Event if callback provided
       if (this.onOrderSettled) {
         const payload = {
-          invoiceId: invoice.id,
+          invoiceId: invoiceRecord.id,
           orderId: order.id,
           outletId,
         };
@@ -99,7 +90,7 @@ export class SettlementEngine {
         }, 0);
       }
 
-      return invoice;
+      return invoiceRecord;
     });
   }
 }

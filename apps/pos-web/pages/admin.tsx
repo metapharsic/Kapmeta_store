@@ -23,6 +23,8 @@ interface SalesSummaryApi {
 // serialized as a string).
 interface ItemPerformanceApi {
   menuItemId: string;
+  menuItemName?: string;
+  name?: string;
   quantitySold: number;
   netSalesMinor: string;
 }
@@ -392,7 +394,7 @@ export default function AdminDashboard() {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
 
-    Promise.all([
+    Promise.allSettled([
       authedFetch(`/reporting/sales-summary?${qs}`, { signal: controller.signal }).then((res) => {
         if (!res.ok) throw new Error("HTTP error " + res.status);
         return res.json() as Promise<SalesSummaryApi>;
@@ -425,22 +427,27 @@ export default function AdminDashboard() {
         if (!res.ok) throw new Error("HTTP error " + res.status);
         return res.json() as Promise<TableOccupancyApi>;
       }),
-      authedFetch(`/reporting/invoices?limit=25`, { signal: controller.signal }).then((res) => {
+      authedFetch(`/reporting/invoices?limit=25&${qs}`, { signal: controller.signal }).then((res) => {
         if (!res.ok) throw new Error("HTTP error " + res.status);
         return res.json() as Promise<RecentInvoiceApi[]>;
       }),
     ])
-      .then(([summaryRes, itemsRes, paymentRes, channelRes, ttaRes, leakageRes, taxRes, occupancyRes, invoicesRes]) => {
+      .then((results) => {
         clearTimeout(timeout);
-        setSummary(summaryRes);
-        setItems(Array.isArray(itemsRes) ? itemsRes : []);
-        setPaymentBreakdown(paymentRes);
-        setChannelBreakdown(channelRes);
-        setTableTurnaround(ttaRes);
-        setLeakageReport(leakageRes);
-        setTaxBreakdown(taxRes);
-        setTableOccupancy(occupancyRes);
-        setRecentInvoices(Array.isArray(invoicesRes) ? invoicesRes : []);
+        const value = <T,>(r: PromiseSettledResult<T>, fallback: T): T =>
+          r.status === "fulfilled" ? r.value : fallback;
+        const [summaryRes, itemsRes, paymentRes, channelRes, ttaRes, leakageRes, taxRes, occupancyRes, invoicesRes] = results;
+        setSummary(value(summaryRes, null as SalesSummaryApi | null));
+        setItems(value(itemsRes, [] as ItemPerformanceApi[]));
+        setPaymentBreakdown(value(paymentRes, null as PaymentBreakdownApi | null));
+        setChannelBreakdown(value(channelRes, null as ChannelBreakdownApi | null));
+        setTableTurnaround(value(ttaRes, null as TableTurnaroundApi | null));
+        setLeakageReport(value(leakageRes, null as LeakageReportApi | null));
+        setTaxBreakdown(value(taxRes, null as TaxBreakdownApi | null));
+        setTableOccupancy(value(occupancyRes, null as TableOccupancyApi | null));
+        setRecentInvoices(value(invoicesRes, [] as RecentInvoiceApi[]));
+        const failed = results.filter((r) => r.status === "rejected");
+        setLoadError(failed.length === results.length ? "Failed to load reports" : null);
         setLoading(false);
       })
       .catch((err) => {
@@ -462,11 +469,15 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (authLoading) return;
     fetchReports();
+    const interval = setInterval(fetchReports, 15000);
+    return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, timeRange]);
 
-  const formatMoney = (minor: string | number) => {
-    const paise = typeof minor === "string" ? Number(minor) : minor;
+  const formatMoney = (minor: any) => {
+    if (minor === undefined || minor === null || minor === "") return "₹0.00";
+    const paise = typeof minor === "bigint" ? Number(minor) : Number(minor);
+    if (isNaN(paise)) return "₹0.00";
     return "₹" + (paise / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
 
@@ -919,7 +930,7 @@ export default function AdminDashboard() {
                       <table className="clean-table">
                         <thead>
                           <tr>
-                            <th>Menu Item ID</th>
+                            <th>Dish / Menu Item</th>
                             <th>Quantity Sold</th>
                             <th>Net Sales</th>
                           </tr>
@@ -928,7 +939,7 @@ export default function AdminDashboard() {
                           {topItems.map((it) => (
                             <tr key={it.menuItemId}>
                               <td>
-                                <strong>{it.menuItemId}</strong>
+                                <strong>{it.menuItemName || it.name || it.menuItemId}</strong>
                               </td>
                               <td>{it.quantitySold}</td>
                               <td className="amount-cell">{formatMoney(it.netSalesMinor)}</td>

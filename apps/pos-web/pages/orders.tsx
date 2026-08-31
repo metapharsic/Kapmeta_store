@@ -172,7 +172,7 @@ export default function OrdersPage() {
     params.set("fromDate", from.toISOString());
     params.set("toDate", to.toISOString());
 
-    authedFetch(`/admin/revenue-trend?${params.toString()}`)
+    authedFetch(`/reporting/revenue-trend?${params.toString()}`)
       .then((res) => (res.ok ? res.json() : []))
       .then((data) => setRevenueTrend(Array.isArray(data) ? data : []))
       .catch(() => setRevenueTrend([]));

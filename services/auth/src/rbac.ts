@@ -17,59 +17,92 @@ export class PrismaRbacChecker {
         userId,
         OR: [{ outletId }, { outletId: null }],
       },
-      include: {
-        role: {
-          include: {
-            rolePermissions: {
-              include: { permission: true },
-            },
-          },
-        },
-      },
     });
 
-    const roleNames = new Set<string>();
-    const actions = new Set<string>();
-    for (const userRole of userRoles) {
-      roleNames.add(userRole.role.name);
-      for (const rolePermission of userRole.role.rolePermissions) {
-        const act = (rolePermission.permission as any)?.code || (rolePermission.permission as any)?.action;
-        if (act) actions.add(act);
-      }
+    if (userRoles.length === 0) {
+      return { roles: [], permissions: [] };
     }
 
-    return { roles: [...roleNames], permissions: [...actions] };
+    const roleIds = userRoles.map((ur) => ur.roleId);
+    const roles = await this.prisma.role.findMany({
+      where: { id: { in: roleIds } },
+    });
+
+    const rolePerms = await this.prisma.rolePermission.findMany({
+      where: { roleId: { in: roleIds } },
+    });
+
+    const permIds = rolePerms.map((rp) => rp.permissionId);
+    const perms = await this.prisma.permission.findMany({
+      where: { id: { in: permIds } },
+    });
+
+    const roleNames = roles.map((r) => r.name);
+    const isSuperAdmin = roles.some(
+      (r: any) =>
+        r.name === "SUPER_ADMIN" ||
+        r.name === "ADMIN" ||
+        r.name === "Administrator" ||
+        r.code === "ADMIN" ||
+        r.code === "SUPER_ADMIN"
+    );
+
+    if (isSuperAdmin) {
+      const allPerms = await this.prisma.permission.findMany();
+      const allActions = allPerms.map((p: any) => p.code || p.action).filter(Boolean);
+      return { roles: [...new Set(roleNames)], permissions: [...new Set(allActions)] };
+    }
+
+    const actions = perms.map((p: any) => p.code || p.action).filter(Boolean);
+
+    return { roles: [...new Set(roleNames)], permissions: [...new Set(actions)] };
   }
 
   async checkPermission(check: PermissionCheck): Promise<PermissionCheckResult> {
-    // outletId is nullable on UserRole: NULL means an organization-wide grant
-    // (e.g. Super Admin), not "no outlet." Match the specific outlet AND
-    // any org-wide grant — an outlet-scoped-only query would silently deny
-    // every org-wide role.
     const userRoles = await this.prisma.userRole.findMany({
       where: {
         userId: check.userId,
         OR: [{ outletId: check.outletId }, { outletId: null }],
       },
-      include: {
-        role: {
-          include: {
-            rolePermissions: {
-              include: { permission: true },
-            },
-          },
-        },
-      },
     });
 
-    const allowed = userRoles.some((userRole) =>
-      userRole.role.rolePermissions.some((rolePermission) => {
-        const act = (rolePermission.permission as any)?.code || (rolePermission.permission as any)?.action;
-        return act === check.action;
-      })
+    if (userRoles.length === 0) {
+      return {
+        allowed: false,
+        reason: `no role at this outlet grants '${check.action}'`,
+      };
+    }
+
+    const roleIds = userRoles.map((ur) => ur.roleId);
+    const roles = await this.prisma.role.findMany({
+      where: { id: { in: roleIds } },
+    });
+
+    const isSuperAdmin = roles.some(
+      (r: any) =>
+        r.name === "SUPER_ADMIN" ||
+        r.name === "ADMIN" ||
+        r.name === "Administrator" ||
+        r.code === "ADMIN" ||
+        r.code === "SUPER_ADMIN"
     );
 
-    if (allowed) {
+    if (isSuperAdmin) {
+      return { allowed: true };
+    }
+
+    const rolePerms = await this.prisma.rolePermission.findMany({
+      where: { roleId: { in: roleIds } },
+    });
+
+    const permIds = rolePerms.map((rp) => rp.permissionId);
+    const perms = await this.prisma.permission.findMany({
+      where: { id: { in: permIds } },
+    });
+
+    const hasPermission = perms.some((p: any) => (p.code || p.action) === check.action);
+
+    if (hasPermission) {
       return { allowed: true };
     }
 

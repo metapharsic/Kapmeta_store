@@ -236,7 +236,8 @@ export async function fetchMe(): Promise<MeResponse | null> {
   const session = getSession();
   if (!session) return null;
   try {
-    const res = await fetch(`${API_BASE}/auth/me`, {
+    const base = getApiBase();
+    const res = await fetch(`${base}/auth/me`, {
       headers: { Authorization: `Bearer ${session.accessToken}` },
     });
     if (!res.ok) return null;
@@ -274,6 +275,13 @@ export async function authedFetch(url: string, options: RequestInit = {}): Promi
   const headers = new Headers(options.headers);
   if (session) {
     headers.set("Authorization", `Bearer ${session.accessToken}`);
+    if (session.outletId && !headers.has("X-Outlet-Id")) {
+      headers.set("X-Outlet-Id", session.outletId);
+    }
+  }
+
+  if (options.body && typeof options.body === "string" && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
   }
 
   const base = getApiBase();

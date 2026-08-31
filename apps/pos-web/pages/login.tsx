@@ -79,11 +79,6 @@ export default function LoginPage() {
   const [activeRoleKey, setActiveRoleKey] = useState<string | null>(null);
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
 
-  // Clear any stale session data on the login page so users are not stuck
-  useEffect(() => {
-    logout().catch(() => {});
-  }, []);
-
   const performLogin = async (eMail: string, pass: string, outId: string, targetPath = "/") => {
     setError(null);
     setErrorDetail(null);

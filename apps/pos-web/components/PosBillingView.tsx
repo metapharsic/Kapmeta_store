@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/router";
 import { authedFetch } from "../lib/auth";
+import { useKapmetaSocket } from "../lib/useKapmetaSocket";
 import BillSplitModal from "./BillSplitModal";
 import AttractiveMenuItemCard, { MenuItemData } from "./menu/AttractiveMenuItemCard";
 import MenuCustomizerModal, { CustomizedItemSelection } from "./menu/MenuCustomizerModal";
@@ -67,9 +68,16 @@ export default function PosBillingView({
   const [waiterName, setWaiterName] = useState("Captain 1");
   const [cart, setCart] = useState<CartItem[]>([]);
 
-  // Active Running Order from Table
+  // Active Running Order from Table & Multi-KOT Waves
   const [activeOrder, setActiveOrder] = useState<any | null>(null);
   const [runningItems, setRunningItems] = useState<RunningOrderItem[]>([]);
+  const [tableKots, setTableKots] = useState<Array<{
+    id: string;
+    ticketNumber: string;
+    status: string;
+    createdAt: string;
+    items: Array<{ id: string; name: string; quantity: number; status: string }>;
+  }>>([]);
 
   // Payment & Settlement
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "CARD" | "DUE" | "OTHER">("CASH");
@@ -86,6 +94,14 @@ export default function PosBillingView({
     loadMenu();
     loadActiveTableOrder();
   }, [initialTableId, initialTable]);
+
+  useKapmetaSocket(
+    () => {
+      loadActiveTableOrder();
+    },
+    Boolean(initialTableId || initialTable),
+    "pos-billing"
+  );
 
   const loadMenu = async () => {
     try {
@@ -129,6 +145,31 @@ export default function PosBillingView({
         if (matched) {
           setTableNumber(matched.tableNumber);
           setTableSection(matched.section || "Main Dining");
+          // #region agent log
+          fetch("http://127.0.0.1:7323/ingest/28c85a32-5ef1-4fe5-9437-78139f7a5bfb", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c675b" },
+            body: JSON.stringify({
+              sessionId: "9c675b",
+              runId: "post-merge",
+              hypothesisId: "T",
+              location: "PosBillingView.tsx:loadActiveTableOrder",
+              message: "billing opened for table",
+              data: {
+                clickedTableId: initialTableId || null,
+                matchedId: matched.id,
+                tableNumber: matched.tableNumber,
+                activeOrderId: matched.activeOrderId || null,
+                mergeGroupId: matched.mergeGroupId || null,
+                mergePrimaryTableId: matched.mergePrimaryTableId || null,
+                mergedWith: matched.mergedWith || [],
+                itemCount: matched.currentOrder?.items?.length || 0,
+              },
+              timestamp: Date.now(),
+            }),
+          }).catch(() => {});
+          // #endregion
+          
           if (matched.activeOrderId) {
             const ordRes = await authedFetch(`/orders/${matched.activeOrderId}`);
             if (ordRes.ok) {
@@ -148,11 +189,104 @@ export default function PosBillingView({
                 );
               }
             }
+
+            // Also load KOT tickets for granular multi-wave display
+            if (matched.currentOrder?.kots) {
+              setTableKots(matched.currentOrder.kots);
+            } else {
+              const kotRes = await authedFetch(`/kitchen/kot`);
+              if (kotRes.ok) {
+                const allKots = await kotRes.json();
+                const matchedKots = (allKots || []).filter((k: any) => k.orderId === matched.activeOrderId);
+                setTableKots(
+                  matchedKots.map((k: any) => ({
+                    id: k.id,
+                    ticketNumber: k.ticketNumber,
+                    status: k.status,
+                    createdAt: k.createdAt,
+                    items: (k.kotItems || []).map((ki: any) => ({
+                      id: ki.id,
+                      name: ki.menuItem?.name || "Item",
+                      quantity: ki.quantity,
+                      status: ki.servedAt ? "SERVED" : k.status,
+                    })),
+                  }))
+                );
+              }
+            }
+          } else {
+            const byTable = await authedFetch(`/orders/by-table/${matched.id}/active`);
+            if (byTable.ok) {
+              const live = await byTable.json();
+              const ordRes = await authedFetch(`/orders/${live.id}`);
+              if (ordRes.ok) {
+                const ord = await ordRes.json();
+                setActiveOrder(ord);
+                if (ord.items && Array.isArray(ord.items)) {
+                  setRunningItems(
+                    ord.items.map((it: any) => ({
+                      id: it.id,
+                      menuItemName: it.menuItemName || it.item_name || it.name,
+                      quantity: it.quantity,
+                      unitPriceMinor: Number(it.unitPriceMinor || it.unitPrice || 0),
+                      subtotalMinor: Number(it.subtotalMinor || it.subtotal || (it.quantity * it.unitPriceMinor) || 0),
+                      status: it.status || "KOT_SENT",
+                      notes: it.notes,
+                    }))
+                  );
+                }
+              }
+            } else {
+              setActiveOrder(null);
+              setRunningItems([]);
+              setTableKots([]);
+            }
           }
         }
       }
     } catch (err) {
       console.error("Failed to load active table order", err);
+    }
+  };
+
+  const handleServeKot = async (kotId: string) => {
+    try {
+      const res = await authedFetch(`/kitchen/kot/${kotId}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ toStatus: "SERVED" }),
+      });
+      if (res.ok) {
+        setTableKots((prev) =>
+          prev.map((k) =>
+            k.id === kotId
+              ? {
+                  ...k,
+                  status: "SERVED",
+                  items: k.items.map((it) => ({ ...it, status: "SERVED" })),
+                }
+              : k
+          )
+        );
+        await loadActiveTableOrder();
+      }
+    } catch (e) {
+      console.error("Failed to serve KOT", e);
+    }
+  };
+
+  const handleVacateTable = async () => {
+    if (!initialTableId) return;
+    try {
+      const res = await authedFetch(`/tables/${initialTableId}/vacant`, {
+        method: "POST",
+      });
+      if (res.ok) {
+        alert(`Table ${tableNumber} is now marked VACANT and available for new guests.`);
+        if (onBackToTables) onBackToTables();
+        else router.push("/");
+      }
+    } catch (e) {
+      console.error("Failed to vacate table", e);
     }
   };
 
@@ -264,37 +398,62 @@ export default function PosBillingView({
     }
     setProcessingOrder(true);
     try {
-      const payload = {
-        action: "KOT",
-        orderType: orderMode,
-        tableNumber,
-        diningTableId: initialTableId || undefined,
-        covers: coversCount,
-        waiterName,
-        lines: cart.map((c) => ({
-          menuItemId: c.item.id,
-          quantity: c.quantity,
-          unitPriceMinor: c.item.priceMinor,
-          notes: c.notes || undefined,
-        })),
-        status: "KOT_CREATED",
-      };
+      const dispatchedList = cart.map((c) => `${c.quantity}x ${c.item.name}`);
+      let orderNum = "KOT-NEW";
 
-      const res = await authedFetch("/orders", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
+      if (activeOrder?.id) {
+        // Append items to existing order
+        const res = await authedFetch(`/orders/${activeOrder.id}/items`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            lines: cart.map((c) => ({
+              menuItemId: c.item.id,
+              quantity: c.quantity,
+              unitPriceMinor: c.item.priceMinor,
+              notes: c.notes || undefined,
+            })),
+          }),
+        });
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
+          throw new Error(errJson.error || "Failed to add items to active order");
+        }
+        orderNum = activeOrder.orderNumber;
+      } else {
+        // Create new order with KOT
+        const payload = {
+          action: "KOT",
+          orderType: orderMode,
+          tableNumber,
+          diningTableId: initialTableId || undefined,
+          covers: coversCount,
+          waiterName,
+          lines: cart.map((c) => ({
+            menuItemId: c.item.id,
+            quantity: c.quantity,
+            unitPriceMinor: c.item.priceMinor,
+            notes: c.notes || undefined,
+          })),
+          status: "KOT_CREATED",
+        };
 
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || "Failed to send KOT");
+        const res = await authedFetch("/orders", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
+          throw new Error(errJson.error || "Failed to send KOT");
+        }
+
+        const resData = await res.json();
+        orderNum = resData.orderNumber || "KOT-NEW";
       }
 
-      const resData = await res.json();
-      const dispatchedList = cart.map((c) => `${c.quantity}x ${c.item.name}`);
-
       setKotFeedback({
-        orderNumber: resData.orderNumber || "KOT-NEW",
+        orderNumber: orderNum,
         items: dispatchedList,
       });
 
@@ -314,57 +473,92 @@ export default function PosBillingView({
     }
     setProcessingOrder(true);
     try {
-      const allLines = [
-        ...runningItems.map((r) => ({
-          menuItemId: r.id,
-          quantity: r.quantity,
-          unitPriceMinor: r.unitPriceMinor,
-        })),
-        ...cart.map((c) => ({
-          menuItemId: c.item.id,
-          quantity: c.quantity,
-          unitPriceMinor: c.item.priceMinor,
-        })),
+      const allDisplayItems = [
+        ...runningItems.map((r) => ({ name: r.menuItemName, qty: r.quantity, price: r.subtotalMinor })),
+        ...cart.map((c) => ({ name: c.item.name, qty: c.quantity, price: c.itemTotalMinor })),
       ];
 
-      const payload = {
-        action: "BILL",
-        orderType: orderMode,
-        tableNumber,
-        diningTableId: initialTableId || undefined,
-        covers: coversCount,
-        waiterName,
-        paymentMethod,
-        isPaid: true,
-        lines: allLines,
-        subtotalMinor: totalSubtotalMinor,
-        taxTotalMinor: taxMinor,
-        grandTotalMinor,
-      };
+      let orderNumber = activeOrder?.orderNumber || "INV-001";
 
-      const res = await authedFetch("/orders", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
+      if (activeOrder?.id) {
+        // If there are staged cart items, append them first
+        if (cart.length > 0) {
+          const addRes = await authedFetch(`/orders/${activeOrder.id}/items`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              lines: cart.map((c) => ({
+                menuItemId: c.item.id,
+                quantity: c.quantity,
+                unitPriceMinor: c.item.priceMinor,
+                notes: c.notes || undefined,
+              })),
+            }),
+          });
+          if (!addRes.ok) {
+            const errJson = await addRes.json().catch(() => ({}));
+            throw new Error(errJson.error || "Failed to append items to order");
+          }
+        }
 
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || "Failed to generate bill");
+        // Settle active order
+        const settleRes = await authedFetch(`/orders/${activeOrder.id}/settle`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            paymentMethod,
+            amountPaidMinor: grandTotalMinor,
+          }),
+        });
+
+        if (!settleRes.ok) {
+          const errJson = await settleRes.json().catch(() => ({}));
+          throw new Error(errJson.error || "Failed to settle order");
+        }
+      } else {
+        // Create and settle new order
+        const payload = {
+          action: "BILL",
+          orderType: orderMode,
+          tableNumber,
+          diningTableId: initialTableId || undefined,
+          covers: coversCount,
+          waiterName,
+          paymentMethod,
+          isPaid: true,
+          lines: cart.map((c) => ({
+            menuItemId: c.item.id,
+            quantity: c.quantity,
+            unitPriceMinor: c.item.priceMinor,
+            notes: c.notes || undefined,
+          })),
+          subtotalMinor: totalSubtotalMinor,
+          taxTotalMinor: taxMinor,
+          grandTotalMinor,
+        };
+
+        const res = await authedFetch("/orders", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
+          throw new Error(errJson.error || "Failed to generate bill");
+        }
+
+        const resData = await res.json();
+        orderNumber = resData.orderNumber || "INV-001";
       }
 
-      const resData = await res.json();
-
       setReceiptModal({
-        orderNumber: resData.orderNumber || activeOrder?.orderNumber || "INV-001",
+        orderNumber,
         tableNumber,
         paymentMethod,
         totalSubtotalMinor,
         taxMinor,
         grandTotalMinor,
-        items: [
-          ...runningItems.map((r) => ({ name: r.menuItemName, qty: r.quantity, price: r.subtotalMinor })),
-          ...cart.map((c) => ({ name: c.item.name, qty: c.quantity, price: c.itemTotalMinor })),
-        ],
+        items: allDisplayItems,
         createdAt: new Date().toISOString(),
       });
 
@@ -372,7 +566,7 @@ export default function PosBillingView({
       setRunningItems([]);
       setActiveOrder(null);
     } catch (err: any) {
-      alert(err.message || "Failed to print bill");
+      alert(err.message || "Failed to generate bill");
     } finally {
       setProcessingOrder(false);
     }
@@ -574,8 +768,68 @@ export default function PosBillingView({
               </div>
             ) : (
               <>
-                {/* 1. Already Dispatched Running KOT Items */}
-                {runningItems.length > 0 && (
+                {/* 1. Multi-KOT Running / Dispatched Items with Real-time Stage Badges */}
+                {tableKots.length > 0 ? (
+                  <div className="running-section-group">
+                    <div className="running-section-header">
+                      <span>🍳 RUNNING KOTS ({tableKots.length} Waves)</span>
+                      <span>₹{(runningSubtotalMinor / 100).toFixed(2)}</span>
+                    </div>
+
+                    {tableKots.map((kot) => (
+                      <div key={kot.id} className="kot-wave-card" style={{ marginBottom: "8px", background: "#f8fafc", borderRadius: "6px", padding: "6px 8px", border: "1px solid #e2e8f0" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px", fontSize: "0.75rem" }}>
+                          <div>
+                            <strong style={{ color: "#334155" }}>KOT #{kot.ticketNumber}</strong>
+                            <span style={{ color: "#94a3b8", marginLeft: "6px" }}>{new Date(kot.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                            {kot.status === "SERVED" && (
+                              <span style={{ background: "#ecfdf5", color: "#059669", border: "1px solid #a7f3d0", padding: "1px 6px", borderRadius: "4px", fontWeight: 700, fontSize: "10px" }}>
+                                ✅ SERVED
+                              </span>
+                            )}
+                            {kot.status === "READY" && (
+                              <span style={{ background: "#fef3c7", color: "#d97706", border: "1px solid #fde68a", padding: "1px 6px", borderRadius: "4px", fontWeight: 800, fontSize: "10px", animation: "pulse 1.5s infinite" }}>
+                                🔔 READY
+                              </span>
+                            )}
+                            {(kot.status === "PREPARING" || (kot.status as string) === "IN_PREPARATION") && (
+                              <span style={{ background: "#fef9c3", color: "#ca8a04", border: "1px solid #fef08a", padding: "1px 6px", borderRadius: "4px", fontWeight: 700, fontSize: "10px" }}>
+                                👨‍🍳 COOKING
+                              </span>
+                            )}
+                            {(kot.status === "QUEUED" || (kot.status as string) === "KOT_CREATED" || (kot.status as string) === "PENDING") && (
+                              <span style={{ background: "#e0f2fe", color: "#0284c7", border: "1px solid #bae6fd", padding: "1px 6px", borderRadius: "4px", fontWeight: 700, fontSize: "10px" }}>
+                                🟡 QUEUED
+                              </span>
+                            )}
+
+                            {kot.status === "READY" && (
+                              <button
+                                type="button"
+                                style={{ background: "#10b981", color: "#fff", border: "none", borderRadius: "4px", padding: "2px 6px", fontSize: "10px", fontWeight: 700, cursor: "pointer" }}
+                                onClick={() => handleServeKot(kot.id)}
+                                title="Mark this KOT served to table"
+                              >
+                                🍽️ Serve
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {kot.items.map((kItem) => (
+                          <div key={kItem.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.8125rem", padding: "2px 0", borderTop: "1px dotted #f1f5f9" }}>
+                            <span>{kItem.quantity}x {kItem.name}</span>
+                            <span style={{ fontSize: "10px", color: kItem.status === "SERVED" ? "#059669" : "#64748b" }}>
+                              {kItem.status === "SERVED" ? "Served" : "In Kitchen"}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                ) : runningItems.length > 0 ? (
                   <div className="running-section-group">
                     <div className="running-section-header">
                       <span>🍳 RUNNING KOT ITEMS (Dispatched)</span>
@@ -599,7 +853,7 @@ export default function PosBillingView({
                       </div>
                     ))}
                   </div>
-                )}
+                ) : null}
 
                 {/* 2. Newly Added Cart Items to Send */}
                 {cart.length > 0 && (
@@ -895,6 +1149,16 @@ export default function PosBillingView({
                 }}
               >
                 🖨️ Print Receipt
+              </button>
+              <button
+                type="button"
+                style={{ background: "#4f46e5", color: "#fff", border: "none", padding: "8px 14px", borderRadius: "6px", fontWeight: 700, cursor: "pointer", fontSize: "0.8125rem" }}
+                onClick={async () => {
+                  await handleVacateTable();
+                  setReceiptModal(null);
+                }}
+              >
+                🧹 Clear & Mark Vacant
               </button>
               <button
                 type="button"

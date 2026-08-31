@@ -35,6 +35,7 @@ export default function CrmPage() {
   const [newLastName, setNewLastName] = useState("");
   const [newPhone, setNewPhone] = useState("");
   const [newEmail, setNewEmail] = useState("");
+  const [newBirthDate, setNewBirthDate] = useState("");
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [createSuccess, setCreateSuccess] = useState<CustomerApi | null>(null);
@@ -93,6 +94,7 @@ export default function CrmPage() {
         lastName: newLastName.trim() || undefined,
         phone: newPhone.trim(),
         email: newEmail.trim() || undefined,
+        birthDate: newBirthDate || undefined,
       }),
     })
       .then(async (res) => {
@@ -106,6 +108,7 @@ export default function CrmPage() {
         setNewLastName("");
         setNewPhone("");
         setNewEmail("");
+        setNewBirthDate("");
         setCreateLoading(false);
       })
       .catch((err) => {
@@ -325,7 +328,7 @@ export default function CrmPage() {
                         <span className="kpi-heading">LOYALTY POINTS</span>
                       </div>
                       <div className="kpi-main">
-                        <h2 className="kpi-number">{customer.loyaltyPoints}</h2>
+                        <h2 className="kpi-number">{customer.loyaltyPoints ?? 0}</h2>
                       </div>
                     </div>
                   </div>
@@ -396,6 +399,14 @@ export default function CrmPage() {
                     placeholder="Email"
                     value={newEmail}
                     onChange={(e) => setNewEmail(e.target.value)}
+                  />
+                  <input
+                    type="date"
+                    className="text-input"
+                    placeholder="Birth Date (YYYY-MM-DD)"
+                    title="Customer Date of Birth"
+                    value={newBirthDate}
+                    onChange={(e) => setNewBirthDate(e.target.value)}
                   />
                   <button type="submit" className="export-btn" disabled={createLoading}>
                     {createLoading ? "Creating..." : "Create Customer"}

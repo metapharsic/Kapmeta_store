@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../prisma";
 import { PrismaMenuCatalogRepository } from "@kapmeta/menu";
 import {
   createOrder,
@@ -21,7 +21,6 @@ import type { OrderLineInput } from "@kapmeta/shared-types/orders";
 //      staff-side POST /orders route uses (see routes/orders.ts) — a
 //      malicious customer submitting an arbitrary priceMinor in the request
 //      body has no effect, since it's never read.
-const prisma = new PrismaClient();
 
 const router = Router();
 

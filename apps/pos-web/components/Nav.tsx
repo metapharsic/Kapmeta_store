@@ -32,7 +32,7 @@ const NAV_LINKS: NavLinkDef[] = [
   { href: "/menu", permission: "menu.category.manage", topbarLabel: "Menu Management", pillLabel: "🍽️ Menu Management" },
   { href: "/channel-availability", permission: "integration.manage", topbarLabel: "Online Item Status", pillLabel: "📡 Online Status" },
   { href: "/admin", permission: "report.read", topbarLabel: "Sales Analytics", pillLabel: "📊 Sales Reports" },
-  { href: "/finance", permission: "finance.report", topbarLabel: "Finance & Z-Report", pillLabel: "💰 Finance" },
+  { href: "/finance", permission: "report.read", topbarLabel: "Finance & Z-Report", pillLabel: "💰 Finance" },
   { href: "/crm", permission: "crm.read", topbarLabel: "Customers & Loyalty", pillLabel: "🎁 Customers" },
   { href: "/marketing", permission: "crm.write", topbarLabel: "Marketing Campaigns", pillLabel: "📣 Marketing" },
   { href: "/user-management", permission: "users.manage", topbarLabel: "User & Role Management", pillLabel: "🧑‍💼 Users & Roles" },
@@ -78,7 +78,7 @@ const SIDEBAR_GROUPS: SidebarGroupDef[] = [
   {
     header: null,
     badge: "New",
-    links: [{ href: "/finance", permission: "finance.report", label: "Finance" }],
+    links: [{ href: "/finance", permission: "report.read", label: "Finance" }],
   },
   {
     header: "Reports",
