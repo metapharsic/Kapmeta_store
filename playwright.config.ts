@@ -1,7 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
-  testDir: './tests/e2e',
+  testDir: './tests',
+  testMatch: ['**/playwright/tests/**/*.spec.ts', '**/e2e/**/*.spec.ts'],
   timeout: 30000,
   expect: {
     timeout: 5000,
@@ -15,7 +16,7 @@ export default defineConfig({
     ['html', { outputFolder: 'playwright-report', open: 'never' }],
   ],
   use: {
-    baseURL: 'http://localhost:4444',
+    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
@@ -28,10 +29,17 @@ export default defineConfig({
         viewport: { width: 1366, height: 768 },
       },
     },
+    {
+      name: 'tablet-waiter',
+      use: {
+        ...devices['iPad Pro 11'],
+        viewport: { width: 1194, height: 834 },
+      },
+    },
   ],
   webServer: {
     command: 'npm run dev',
-    url: 'http://localhost:4444',
+    url: 'http://localhost:3000',
     reuseExistingServer: true,
     timeout: 120000,
   },
