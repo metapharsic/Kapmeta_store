@@ -185,13 +185,225 @@ function playPickupBeep() {
   }
 }
 
+const ORDER_CATEGORIES = [
+  "Breakfast",
+  "Meal Box (Online)",
+  "Cold Beverage",
+  "Hot Beverages",
+  "Soup(Veg)",
+  "Meals",
+  "Soup(Non-Veg)",
+  "Chinese Starters (Veg)",
+  "Chinese Starters (Non-Veg)",
+  "Tandoori Starters (Veg)",
+  "Tandoori Starters (Non-Veg)",
+  "Curries (Veg)",
+  "Curries (Non-Veg)",
+  "Roti",
+  "Noodles (Veg)",
+];
+
+const DEFAULT_WAITER_TABLES: DiningTable[] = [
+  // AC Section
+  { id: "tbl_a1", tableNumber: "A1", capacity: 4, section: "AC", status: "VACANT", isActive: true },
+  { id: "tbl_a2", tableNumber: "A2", capacity: 2, section: "AC", status: "VACANT", isActive: true },
+  { id: "tbl_a3", tableNumber: "A3", capacity: 4, section: "AC", status: "VACANT", isActive: true },
+  { id: "tbl_a4", tableNumber: "A4", capacity: 6, section: "AC", status: "VACANT", isActive: true },
+  { id: "tbl_a5", tableNumber: "A5", capacity: 2, section: "AC", status: "VACANT", isActive: true },
+  { id: "tbl_a6", tableNumber: "A6", capacity: 4, section: "AC", status: "VACANT", isActive: true },
+  { id: "tbl_a7", tableNumber: "A7", capacity: 4, section: "AC", status: "VACANT", isActive: true },
+  { id: "tbl_a8", tableNumber: "A8", capacity: 2, section: "AC", status: "VACANT", isActive: true },
+  { id: "tbl_a9", tableNumber: "A9", capacity: 6, section: "AC", status: "VACANT", isActive: true },
+  { id: "tbl_a10", tableNumber: "A10", capacity: 4, section: "AC", status: "VACANT", isActive: true },
+  { id: "tbl_a11", tableNumber: "A11", capacity: 2, section: "AC", status: "VACANT", isActive: true },
+  { id: "tbl_a12", tableNumber: "A12", capacity: 4, section: "AC", status: "VACANT", isActive: true },
+  { id: "tbl_a13", tableNumber: "A13", capacity: 4, section: "AC", status: "VACANT", isActive: true },
+  { id: "tbl_a14", tableNumber: "A14", capacity: 6, section: "AC", status: "VACANT", isActive: true },
+  { id: "tbl_a15", tableNumber: "A15", capacity: 2, section: "AC", status: "VACANT", isActive: true },
+  // Non-AC Section
+  { id: "tbl_b1", tableNumber: "B1", capacity: 4, section: "Non-AC", status: "VACANT", isActive: true },
+  { id: "tbl_b2", tableNumber: "B2", capacity: 2, section: "Non-AC", status: "VACANT", isActive: true },
+  { id: "tbl_b3", tableNumber: "B3", capacity: 4, section: "Non-AC", status: "VACANT", isActive: true },
+  { id: "tbl_b4", tableNumber: "B4", capacity: 6, section: "Non-AC", status: "VACANT", isActive: true },
+  { id: "tbl_b5", tableNumber: "B5", capacity: 2, section: "Non-AC", status: "VACANT", isActive: true },
+  { id: "tbl_b6", tableNumber: "B6", capacity: 4, section: "Non-AC", status: "VACANT", isActive: true },
+  { id: "tbl_b7", tableNumber: "B7", capacity: 4, section: "Non-AC", status: "VACANT", isActive: true },
+  { id: "tbl_b8", tableNumber: "B8", capacity: 2, section: "Non-AC", status: "VACANT", isActive: true },
+  { id: "tbl_b9", tableNumber: "B9", capacity: 6, section: "Non-AC", status: "VACANT", isActive: true },
+  { id: "tbl_b10", tableNumber: "B10", capacity: 4, section: "Non-AC", status: "VACANT", isActive: true },
+  { id: "tbl_b11", tableNumber: "B11", capacity: 2, section: "Non-AC", status: "VACANT", isActive: true },
+  { id: "tbl_b12", tableNumber: "B12", capacity: 4, section: "Non-AC", status: "VACANT", isActive: true },
+];
+
+const DEFAULT_WAITER_MENU_ITEMS: MenuItem[] = [
+  // Breakfast Items (Exact Match)
+  { id: "bk_1", name: "(2) Idly (1) Vada", category: "Breakfast", description: "Fresh steamed idlies with crispy medu vada & piping hot sambar", priceMinor: 7000, isVeg: true, isStocked: true, stockQty: 100, icon: "🥟" },
+  { id: "bk_2", name: "(S) Idly", category: "Breakfast", description: "Single steamed soft idly served with coconut chutney", priceMinor: 4000, isVeg: true, isStocked: true, stockQty: 100, icon: "🥟" },
+  { id: "bk_3", name: "(S) Idly (S) Vada", category: "Breakfast", description: "Single idly and single vada combo", priceMinor: 6000, isVeg: true, isStocked: true, stockQty: 100, icon: "🥟" },
+  { id: "bk_4", name: "(S) Idly (S) Vada Sambar", category: "Breakfast", description: "Idly & vada dipped in aromatic south Indian sambar", priceMinor: 6500, isVeg: true, isStocked: true, stockQty: 100, icon: "🥣" },
+  { id: "bk_5", name: "(S) Idly Sambar", category: "Breakfast", description: "Single idly dipped in hot sambar", priceMinor: 4500, isVeg: true, isStocked: true, stockQty: 100, icon: "🥣" },
+  { id: "bk_6", name: "(S) Vada", category: "Breakfast", description: "Single crisp golden brown medu vada", priceMinor: 4500, isVeg: true, isStocked: true, stockQty: 100, icon: "🍩" },
+  { id: "bk_7", name: "(S) Vada Sambar", category: "Breakfast", description: "Single crisp vada submerged in flavourful sambar", priceMinor: 5000, isVeg: true, isStocked: true, stockQty: 100, icon: "🥣" },
+  { id: "bk_8", name: "70 Mm Dosa", category: "Breakfast", description: "Extra-long jumbo crisp dosa served with 3 chutneys", priceMinor: 11000, isVeg: true, isStocked: true, stockQty: 100, icon: "🥞" },
+  { id: "bk_9", name: "Butter Masala Dosa", category: "Breakfast", description: "Crisp golden crepe smeared with Amul butter & potato masala", priceMinor: 9500, isVeg: true, isStocked: true, stockQty: 100, icon: "🥞" },
+  { id: "bk_10", name: "Chitti Pesarattu", category: "Breakfast", description: "Mini green gram crepes loaded with chopped onions & ginger", priceMinor: 8500, isVeg: true, isStocked: true, stockQty: 100, icon: "🥞" },
+  { id: "bk_11", name: "Extra Aloo", category: "Breakfast", description: "Portion of spicy spiced potato stuffing", priceMinor: 2500, isVeg: true, isStocked: true, stockQty: 100, icon: "🥔" },
+  { id: "bk_12", name: "Extra Poori", category: "Breakfast", description: "Single freshly puffed golden poori", priceMinor: 3000, isVeg: true, isStocked: true, stockQty: 100, icon: "🫓" },
+  { id: "bk_13", name: "Ghee Karam Idly", category: "Breakfast", description: "Bite-sized button idlies tossed in spicy Guntur podi and pure ghee", priceMinor: 7500, isVeg: true, isStocked: true, stockQty: 100, icon: "🥟" },
+  { id: "bk_14", name: "Ghee Karvepaaku Podi Dosa", category: "Breakfast", description: "Curry leaf podi sprinkled dosa with generous desi ghee", priceMinor: 10500, isVeg: true, isStocked: true, stockQty: 100, icon: "🥞" },
+  { id: "bk_15", name: "Ghee Podi Dosa", category: "Breakfast", description: "Crispy dosa layered with spicy gun-powder and clarified butter", priceMinor: 9500, isVeg: true, isStocked: true, stockQty: 100, icon: "🥞" },
+  { id: "bk_16", name: "Ghee Podi Rava Dosa", category: "Breakfast", description: "Semolina net dosa roasted crisp with podi and ghee", priceMinor: 11500, isVeg: true, isStocked: true, stockQty: 100, icon: "🥞" },
+  { id: "bk_17", name: "Idly (2)", category: "Breakfast", description: "Pair of steamed rice cakes served with sambar & chutney", priceMinor: 5000, isVeg: true, isStocked: true, stockQty: 100, icon: "🥟" },
+  { id: "bk_18", name: "Idly Sambar", category: "Breakfast", description: "2 steamed idlies floating in fresh piping hot sambar", priceMinor: 5500, isVeg: true, isStocked: true, stockQty: 100, icon: "🥣" },
+  { id: "bk_19", name: "Masala Dosa", category: "Breakfast", description: "Classic Bengaluru style crispy dosa stuffed with potato bhaji", priceMinor: 8000, isVeg: true, isStocked: true, stockQty: 100, icon: "🥞" },
+  { id: "bk_20", name: "Onion Dosa", category: "Breakfast", description: "Crispy dosa topped with caramelised chopped onions", priceMinor: 8500, isVeg: true, isStocked: true, stockQty: 100, icon: "🥞" },
+  { id: "bk_21", name: "Onion Rava Dosa", category: "Breakfast", description: "Semolina lace crepe loaded with crushed onions & cumin", priceMinor: 10000, isVeg: true, isStocked: true, stockQty: 100, icon: "🥞" },
+  { id: "bk_22", name: "Onion Uttapam", category: "Breakfast", description: "Thick spongy rice pancake studded with juicy onions and chillies", priceMinor: 9000, isVeg: true, isStocked: true, stockQty: 100, icon: "🥞" },
+  { id: "bk_23", name: "Paneer Dosa", category: "Breakfast", description: "Thin crepe loaded with shredded seasoned cottage cheese", priceMinor: 11000, isVeg: true, isStocked: true, stockQty: 100, icon: "🥞" },
+  { id: "bk_24", name: "Paper Dosa", category: "Breakfast", description: "Wafer-thin ultra-crisp golden roast dosa", priceMinor: 8500, isVeg: true, isStocked: true, stockQty: 100, icon: "🥞" },
+  { id: "bk_25", name: "Pesarattu", category: "Breakfast", description: "Whole moong dal savoury crepe served with ginger allam pachadi", priceMinor: 7500, isVeg: true, isStocked: true, stockQty: 100, icon: "🥞" },
+  { id: "bk_26", name: "Plain Dosa", category: "Breakfast", description: "Traditional fermented rice-lentil golden roasted crepe", priceMinor: 6500, isVeg: true, isStocked: true, stockQty: 100, icon: "🥞" },
+  { id: "bk_27", name: "Poori", category: "Breakfast", description: "3 fluffy deep-fried wheat breads served with potato sagu", priceMinor: 7000, isVeg: true, isStocked: true, stockQty: 100, icon: "🫓" },
+  { id: "bk_28", name: "Rava Dosa", category: "Breakfast", description: "Crisp instant semolina crepe roasted with green chillies & ginger", priceMinor: 8500, isVeg: true, isStocked: true, stockQty: 100, icon: "🥞" },
+  { id: "bk_29", name: "Set Dosa", category: "Breakfast", description: "3 soft, spongy and fluffy dosas with sagu and coconut chutney", priceMinor: 8000, isVeg: true, isStocked: true, stockQty: 100, icon: "🥞" },
+  { id: "bk_30", name: "Thatte Idly", category: "Breakfast", description: "Famous Karnataka flat plate idly served with red chilli chutney & ghee", priceMinor: 6000, isVeg: true, isStocked: true, stockQty: 100, icon: "🥟" },
+  { id: "bk_31", name: "Vada", category: "Breakfast", description: "2 crispy savoury lentil fritters with aromatic curry leaves", priceMinor: 5000, isVeg: true, isStocked: true, stockQty: 100, icon: "🍩" },
+  { id: "bk_32", name: "Vada Sambar", category: "Breakfast", description: "Pair of medu vadas steeped in authentic drumstick sambar", priceMinor: 6000, isVeg: true, isStocked: true, stockQty: 100, icon: "🥣" },
+
+  // Meal Box (Online)
+  { id: "mb_1", name: "South Indian Executive Meal Box", category: "Meal Box (Online)", description: "Rice, Sambar, Rasam, 2 Poriyals, Curd, Sweet, Papad & Pickle", priceMinor: 19900, isVeg: true, isStocked: true, stockQty: 100, icon: "🍱" },
+  { id: "mb_2", name: "North Indian Mini Meal Box", category: "Meal Box (Online)", description: "2 Butter Rotis, Paneer Butter Masala, Dal Tadka, Jeera Rice, Gulab Jamun", priceMinor: 18900, isVeg: true, isStocked: true, stockQty: 100, icon: "🍱" },
+  { id: "mb_3", name: "Special Biryani Box (Veg)", category: "Meal Box (Online)", description: "Hyderabadi Veg Dum Biryani, Mirchi Ka Salan, Raita, Sweet", priceMinor: 22000, isVeg: true, isStocked: true, stockQty: 100, icon: "🍱" },
+  { id: "mb_4", name: "Chicken Biryani Combo Box", category: "Meal Box (Online)", description: "Chicken Biryani, Chicken 65 (2 pcs), Salan, Raita, Boondi Ladoo", priceMinor: 26000, isVeg: false, isStocked: true, stockQty: 100, icon: "🍱" },
+  { id: "mb_5", name: "Paneer Tikka Meal Box", category: "Meal Box (Online)", description: "Paneer Tikka, Butter Naan, Dal Makhani, Pulao, Dessert", priceMinor: 24000, isVeg: true, isStocked: true, stockQty: 100, icon: "🍱" },
+  { id: "mb_6", name: "Chinese Combo Meal Box", category: "Meal Box (Online)", description: "Veg Hakka Noodles, Veg Manchurian Gravy, Spring Roll", priceMinor: 23000, isVeg: true, isStocked: true, stockQty: 100, icon: "🍱" },
+
+  // Cold Beverage
+  { id: "cb_1", name: "Fresh Sweet Lime Soda", category: "Cold Beverage", description: "Bubbly and refreshing fresh squeezed lime soda", priceMinor: 6000, isVeg: true, isStocked: true, stockQty: 100, icon: "🥤" },
+  { id: "cb_2", name: "Cold Coffee with Ice Cream", category: "Cold Beverage", description: "Rich chilled espresso topped with vanilla ice cream", priceMinor: 9000, isVeg: true, isStocked: true, stockQty: 100, icon: "🧋" },
+  { id: "cb_3", name: "Watermelon Juice", category: "Cold Beverage", description: "100% natural freshly cold-pressed watermelon juice", priceMinor: 7000, isVeg: true, isStocked: true, stockQty: 100, icon: "🍉" },
+  { id: "cb_4", name: "Mango Lassi", category: "Cold Beverage", description: "Creamy Alphonso mango pulp blended with rich fresh yoghurt", priceMinor: 8000, isVeg: true, isStocked: true, stockQty: 100, icon: "🥭" },
+  { id: "cb_5", name: "Butter Milk (Masala Chaas)", category: "Cold Beverage", description: "Cooling spiced buttermilk with ginger, green chilli and coriander", priceMinor: 4000, isVeg: true, isStocked: true, stockQty: 100, icon: "🥛" },
+  { id: "cb_6", name: "Fresh Mint Lemonade", category: "Cold Beverage", description: "Chilled zesty lemonade infused with crushed garden mint", priceMinor: 5000, isVeg: true, isStocked: true, stockQty: 100, icon: "🍋" },
+  { id: "cb_7", name: "Kesar Badam Thandai", category: "Cold Beverage", description: "Traditional royal saffron and almond infused cold milk", priceMinor: 8500, isVeg: true, isStocked: true, stockQty: 100, icon: "🥛" },
+  { id: "cb_8", name: "Oreo Chocolate Shake", category: "Cold Beverage", description: "Thick creamy shake blended with crushed Oreo cookies", priceMinor: 9500, isVeg: true, isStocked: true, stockQty: 100, icon: "🥤" },
+
+  // Hot Beverages
+  { id: "hb_1", name: "South Indian Filter Coffee", category: "Hot Beverages", description: "Authentic chicory filter coffee frothed in traditional dabarah", priceMinor: 4000, isVeg: true, isStocked: true, stockQty: 100, icon: "☕" },
+  { id: "hb_2", name: "Special Masala Chai", category: "Hot Beverages", description: "Strong freshly brewed tea simmered with cardamom and ginger", priceMinor: 3500, isVeg: true, isStocked: true, stockQty: 100, icon: "🍵" },
+  { id: "hb_3", name: "Ginger Lemon Green Tea", category: "Hot Beverages", description: "Organic detox green tea infused with fresh ginger & lemon", priceMinor: 4500, isVeg: true, isStocked: true, stockQty: 100, icon: "🫖" },
+  { id: "hb_4", name: "Hot Badam Milk", category: "Hot Beverages", description: "Steaming hot milk infused with crushed roasted almonds & saffron", priceMinor: 6000, isVeg: true, isStocked: true, stockQty: 100, icon: "🥛" },
+  { id: "hb_5", name: "Cardamom Irani Chai", category: "Hot Beverages", description: "Slow-cooked dum brewed rich and creamy Hyderabad Irani chai", priceMinor: 4000, isVeg: true, isStocked: true, stockQty: 100, icon: "☕" },
+  { id: "hb_6", name: "Hot Chocolate", category: "Hot Beverages", description: "Rich Belgian hot chocolate with velvety steamed milk", priceMinor: 7000, isVeg: true, isStocked: true, stockQty: 100, icon: "🍫" },
+
+  // Soup (Veg)
+  { id: "sv_1", name: "Cream of Tomato Soup", category: "Soup(Veg)", description: "Velvety ripe tomato soup served with crunchy croutons", priceMinor: 8000, isVeg: true, isStocked: true, stockQty: 100, icon: "🍲" },
+  { id: "sv_2", name: "Veg Hot and Sour Soup", category: "Soup(Veg)", description: "Spicy & tangy Asian soup packed with shredded veggies & mushrooms", priceMinor: 8500, isVeg: true, isStocked: true, stockQty: 100, icon: "🍲" },
+  { id: "sv_3", name: "Sweet Corn Veg Soup", category: "Soup(Veg)", description: "Comforting creamy broth with tender sweet corn kernels", priceMinor: 8500, isVeg: true, isStocked: true, stockQty: 100, icon: "🌽" },
+  { id: "sv_4", name: "Veg Manchow Soup", category: "Soup(Veg)", description: "Indo-Chinese garlicky soup topped with crispy fried noodles", priceMinor: 9000, isVeg: true, isStocked: true, stockQty: 100, icon: "🍲" },
+  { id: "sv_5", name: "Lemon Coriander Veg Soup", category: "Soup(Veg)", description: "Zesty clear vegetable broth infused with fresh lemon and coriander", priceMinor: 8500, isVeg: true, isStocked: true, stockQty: 100, icon: "🍲" },
+  { id: "sv_6", name: "Cream of Mushroom Soup", category: "Soup(Veg)", description: "Rich roasted button mushroom soup simmered in fresh cream", priceMinor: 9500, isVeg: true, isStocked: true, stockQty: 100, icon: "🍄" },
+
+  // Meals
+  { id: "m_1", name: "Kapila Special Veg Thali", category: "Meals", description: "2 Roti, Paneer Curry, Dal, Veg Fry, Rice, Sambar, Rasam, Curd, Sweet", priceMinor: 16000, isVeg: true, isStocked: true, stockQty: 100, icon: "🍛" },
+  { id: "m_2", name: "South Indian Full Meals", category: "Meals", description: "Unlimited hot rice, Ghee, Gunpowder, Sambar, Rasam, 2 Curries, Payasam", priceMinor: 14000, isVeg: true, isStocked: true, stockQty: 100, icon: "🍛" },
+  { id: "m_3", name: "Curd Rice with Pomegranate", category: "Meals", description: "Creamy seasoned curd rice tempered with mustard seeds and pearls", priceMinor: 8000, isVeg: true, isStocked: true, stockQty: 100, icon: "🍚" },
+  { id: "m_4", name: "Sambar Rice with Ghee", category: "Meals", description: "Classic hot Bisi Bele Bath style sambar rice drenched in desi ghee", priceMinor: 9000, isVeg: true, isStocked: true, stockQty: 100, icon: "🍛" },
+  { id: "m_5", name: "Andhra Special Meals", category: "Meals", description: "Fiery Andhra Pappu, Gongura pachadi, Royyala iguru gravy & Curd", priceMinor: 17000, isVeg: true, isStocked: true, stockQty: 100, icon: "🍛" },
+  { id: "m_6", name: "Mini Executive Lunch", category: "Meals", description: "Quick balanced meal with roti, dal, pulao, raita and salad", priceMinor: 12000, isVeg: true, isStocked: true, stockQty: 100, icon: "🍱" },
+
+  // Soup (Non-Veg)
+  { id: "snv_1", name: "Chicken Manchow Soup", category: "Soup(Non-Veg)", description: "Spicy shredded chicken soup crowned with crisp noodles", priceMinor: 11000, isVeg: false, isStocked: true, stockQty: 100, icon: "🍗" },
+  { id: "snv_2", name: "Chicken Sweet Corn Soup", category: "Soup(Non-Veg)", description: "Gentle chicken broth with sweet corn and egg ribbons", priceMinor: 11000, isVeg: false, isStocked: true, stockQty: 100, icon: "🍲" },
+  { id: "snv_3", name: "Mutton Bone Marrow Soup (Paya)", category: "Soup(Non-Veg)", description: "Traditional slow-simmered aromatic paya shorba broth", priceMinor: 15000, isVeg: false, isStocked: true, stockQty: 100, icon: "🍖" },
+  { id: "snv_4", name: "Chicken Hot & Sour Soup", category: "Soup(Non-Veg)", description: "Bold chicken soup seasoned with dark soya, vinegar and pepper", priceMinor: 11500, isVeg: false, isStocked: true, stockQty: 100, icon: "🍲" },
+  { id: "snv_5", name: "Chicken Clear Soup", category: "Soup(Non-Veg)", description: "Nourishing clear broth with chicken chunks and spring onions", priceMinor: 10500, isVeg: false, isStocked: true, stockQty: 100, icon: "🍲" },
+  { id: "snv_6", name: "Mutton Shorba (Special)", category: "Soup(Non-Veg)", description: "Royal Nizami mutton bone broth flavored with cloves & cardamom", priceMinor: 16000, isVeg: false, isStocked: true, stockQty: 100, icon: "🍖" },
+
+  // Chinese Starters (Veg)
+  { id: "csv_1", name: "Veg Manchurian Dry", category: "Chinese Starters (Veg)", description: "Crisp vegetable dumplings wok-tossed in ginger garlic glaze", priceMinor: 13000, isVeg: true, isStocked: true, stockQty: 100, icon: "🧆" },
+  { id: "csv_2", name: "Chilli Paneer Dry", category: "Chinese Starters (Veg)", description: "Cottage cheese cubes wok-fried with bell peppers and green chillies", priceMinor: 16000, isVeg: true, isStocked: true, stockQty: 100, icon: "🧀" },
+  { id: "csv_3", name: "Crispy Corn Pepper Salt", category: "Chinese Starters (Veg)", description: "Golden fried sweet corn kernels tossed with freshly ground pepper", priceMinor: 14000, isVeg: true, isStocked: true, stockQty: 100, icon: "🌽" },
+  { id: "csv_4", name: "Baby Corn 65", category: "Chinese Starters (Veg)", description: "Crunchy baby corn florets coated in spiced southern masala", priceMinor: 14500, isVeg: true, isStocked: true, stockQty: 100, icon: "🌽" },
+  { id: "csv_5", name: "Veg Spring Rolls (6 Pcs)", category: "Chinese Starters (Veg)", description: "Golden crispy pastry rolls stuffed with shredded vegetables", priceMinor: 13500, isVeg: true, isStocked: true, stockQty: 100, icon: "🥢" },
+  { id: "csv_6", name: "Paneer 65 Crispy", category: "Chinese Starters (Veg)", description: "Paneer cubes marinated in yogurt chili paste and curry leaves", priceMinor: 16500, isVeg: true, isStocked: true, stockQty: 100, icon: "🧀" },
+  { id: "csv_7", name: "Mushroom Chilli Dry", category: "Chinese Starters (Veg)", description: "Fresh button mushrooms tossed with green chillies & spring onions", priceMinor: 15000, isVeg: true, isStocked: true, stockQty: 100, icon: "🍄" },
+  { id: "csv_8", name: "Honey Chilli Potato", category: "Chinese Starters (Veg)", description: "Crispy potato fingers glazed in sweet honey and hot chilli paste", priceMinor: 12500, isVeg: true, isStocked: true, stockQty: 100, icon: "🍟" },
+
+  // Chinese Starters (Non-Veg)
+  { id: "csnv_1", name: "Chilli Chicken Dry", category: "Chinese Starters (Non-Veg)", description: "Boneless chicken tossed with onions, green chillies and soya sauce", priceMinor: 18000, isVeg: false, isStocked: true, stockQty: 100, icon: "🍗" },
+  { id: "csnv_2", name: "Chicken 65 Hyderabadi", category: "Chinese Starters (Non-Veg)", description: "Crispy spicy chicken chunks tempered with curry leaves and mustard", priceMinor: 19000, isVeg: false, isStocked: true, stockQty: 100, icon: "🍗" },
+  { id: "csnv_3", name: "Apollo Fish Fry", category: "Chinese Starters (Non-Veg)", description: "Boneless fish fillets marinated in spiced curd and pan tossed", priceMinor: 22000, isVeg: false, isStocked: true, stockQty: 100, icon: "🐟" },
+  { id: "csnv_4", name: "Dragon Chicken", category: "Chinese Starters (Non-Veg)", description: "Crispy chicken strips tossed in fiery red dragon sauce with cashews", priceMinor: 19500, isVeg: false, isStocked: true, stockQty: 100, icon: "🍗" },
+  { id: "csnv_5", name: "Chicken Lollipop (6 Pcs)", category: "Chinese Starters (Non-Veg)", description: "Crisp frenched chicken winglets served with spicy Szechuan dip", priceMinor: 21000, isVeg: false, isStocked: true, stockQty: 100, icon: "🍗" },
+  { id: "csnv_6", name: "Pepper Chicken Roast", category: "Chinese Starters (Non-Veg)", description: "Dry chicken roast seasoned with roasted black peppercorns", priceMinor: 19500, isVeg: false, isStocked: true, stockQty: 100, icon: "🍗" },
+  { id: "csnv_7", name: "Garlic Butter Prawns", category: "Chinese Starters (Non-Veg)", description: "Juicy ocean prawns sautéed in rich garlic butter glaze", priceMinor: 25000, isVeg: false, isStocked: true, stockQty: 100, icon: "🦐" },
+  { id: "csnv_8", name: "Chicken Majestic", category: "Chinese Starters (Non-Veg)", description: "Tender chicken strips tossed with green chillies and mint yogurt", priceMinor: 20000, isVeg: false, isStocked: true, stockQty: 100, icon: "🍗" },
+
+  // Tandoori Starters (Veg)
+  { id: "tsv_1", name: "Paneer Tikka Angara", category: "Tandoori Starters (Veg)", description: "Smoky cottage cheese cubes charred in clay tandoor oven", priceMinor: 18000, isVeg: true, isStocked: true, stockQty: 100, icon: "🍢" },
+  { id: "tsv_2", name: "Malai Broccoli Tikka", category: "Tandoori Starters (Veg)", description: "Tender broccoli florets marinated in cream, cheese and cardamom", priceMinor: 19000, isVeg: true, isStocked: true, stockQty: 100, icon: "🥦" },
+  { id: "tsv_3", name: "Tandoori Mushroom Tikka", category: "Tandoori Starters (Veg)", description: "Button mushrooms filled with spiced paneer and roasted over coals", priceMinor: 16000, isVeg: true, isStocked: true, stockQty: 100, icon: "🍢" },
+  { id: "tsv_4", name: "Veg Seekh Kabab", category: "Tandoori Starters (Veg)", description: "Minced vegetable and corn skewers spiced and charcoal grilled", priceMinor: 15000, isVeg: true, isStocked: true, stockQty: 100, icon: "🍢" },
+  { id: "tsv_5", name: "Haryali Paneer Tikka", category: "Tandoori Starters (Veg)", description: "Paneer cubes infused with fresh mint, spinach and coriander paste", priceMinor: 18500, isVeg: true, isStocked: true, stockQty: 100, icon: "🍢" },
+  { id: "tsv_6", name: "Tandoori Stuffed Aloo", category: "Tandoori Starters (Veg)", description: "Scooped potatoes stuffed with dry fruits and roasted golden", priceMinor: 14000, isVeg: true, isStocked: true, stockQty: 100, icon: "🥔" },
+
+  // Tandoori Starters (Non-Veg)
+  { id: "tsnv_1", name: "Tandoori Murgh (Full)", category: "Tandoori Starters (Non-Veg)", description: "Whole chicken marinated in Kashmiri chili yogurt & tandoor grilled", priceMinor: 34000, isVeg: false, isStocked: true, stockQty: 100, icon: "🍗" },
+  { id: "tsnv_2", name: "Murgh Tikka (6 Pcs)", category: "Tandoori Starters (Non-Veg)", description: "Succulent boneless chicken chunks roasted on iron skewers", priceMinor: 21000, isVeg: false, isStocked: true, stockQty: 100, icon: "🍢" },
+  { id: "tsnv_3", name: "Tangdi Kabab (4 Pcs)", category: "Tandoori Starters (Non-Veg)", description: "Chicken drumsticks marinated in rich cheese cream and roasted", priceMinor: 23000, isVeg: false, isStocked: true, stockQty: 100, icon: "🍗" },
+  { id: "tsnv_4", name: "Reshmi Chicken Kabab", category: "Tandoori Starters (Non-Veg)", description: "Silky soft chicken breast chunks marinated in cashew cream", priceMinor: 22000, isVeg: false, isStocked: true, stockQty: 100, icon: "🍢" },
+  { id: "tsnv_5", name: "Mutton Seekh Kabab", category: "Tandoori Starters (Non-Veg)", description: "Spiced minced mutton cylinders grilled over hot glowing coals", priceMinor: 26000, isVeg: false, isStocked: true, stockQty: 100, icon: "🍢" },
+  { id: "tsnv_6", name: "Fish Tikka (Tandoori)", category: "Tandoori Starters (Non-Veg)", description: "Ajwain spiced river fish fillets roasted to flaky perfection", priceMinor: 24000, isVeg: false, isStocked: true, stockQty: 100, icon: "🐟" },
+  { id: "tsnv_7", name: "Pahadi Chicken Kabab", category: "Tandoori Starters (Non-Veg)", description: "Chicken chunks coated in rustic Himalayan green herb marinade", priceMinor: 21500, isVeg: false, isStocked: true, stockQty: 100, icon: "🍢" },
+  { id: "tsnv_8", name: "Kalmi Kabab (3 Pcs)", category: "Tandoori Starters (Non-Veg)", description: "Mughlai style marinated chicken thighs cooked over slow fire", priceMinor: 23500, isVeg: false, isStocked: true, stockQty: 100, icon: "🍗" },
+
+  // Curries (Veg)
+  { id: "cv_1", name: "Paneer Butter Masala", category: "Curries (Veg)", description: "Soft paneer cubes simmered in velvety tomato cashew makhani gravy", priceMinor: 16000, isVeg: true, isStocked: true, stockQty: 100, icon: "🥘" },
+  { id: "cv_2", name: "Kaju Curry (Special)", category: "Curries (Veg)", description: "Whole roasted cashews cooked in rich onion-tomato aromatic gravy", priceMinor: 20000, isVeg: true, isStocked: true, stockQty: 100, icon: "🥘" },
+  { id: "cv_3", name: "Dal Tadka Desi Ghee", category: "Curries (Veg)", description: "Yellow lentils tempered with cumin, garlic, dry red chillies and ghee", priceMinor: 12000, isVeg: true, isStocked: true, stockQty: 100, icon: "🥣" },
+  { id: "cv_4", name: "Methi Chaman", category: "Curries (Veg)", description: "Kashmiri cottage cheese delicacy cooked with fresh fenugreek leaves", priceMinor: 17000, isVeg: true, isStocked: true, stockQty: 100, icon: "🥘" },
+  { id: "cv_5", name: "Kadai Paneer", category: "Curries (Veg)", description: "Cottage cheese and crunchy bell peppers tossed in pounded spices", priceMinor: 16500, isVeg: true, isStocked: true, stockQty: 100, icon: "🥘" },
+  { id: "cv_6", name: "Dal Makhani (Slow Cooked)", category: "Curries (Veg)", description: "Black urad lentils and kidney beans simmered overnight with butter", priceMinor: 15000, isVeg: true, isStocked: true, stockQty: 100, icon: "🥣" },
+  { id: "cv_7", name: "Mix Veg Curry", category: "Curries (Veg)", description: "Seasonal garden vegetables cooked in mild North Indian gravy", priceMinor: 13500, isVeg: true, isStocked: true, stockQty: 100, icon: "🥘" },
+  { id: "cv_8", name: "Palak Paneer", category: "Curries (Veg)", description: "Paneer cubes steeped in velvety garlic-tempered spinach gravy", priceMinor: 16000, isVeg: true, isStocked: true, stockQty: 100, icon: "🥘" },
+
+  // Curries (Non-Veg)
+  { id: "cnv_1", name: "Butter Chicken Delhi Style", category: "Curries (Non-Veg)", description: "Tandoori chicken pieces simmered in silky buttery tomato gravy", priceMinor: 22000, isVeg: false, isStocked: true, stockQty: 100, icon: "🍲" },
+  { id: "cnv_2", name: "Telangana Style Chicken Curry", category: "Curries (Non-Veg)", description: "Rustic country style chicken curry with roasted spices & poppy seeds", priceMinor: 21000, isVeg: false, isStocked: true, stockQty: 100, icon: "🍲" },
+  { id: "cnv_3", name: "Mutton Rogan Josh", category: "Curries (Non-Veg)", description: "Classic Kashmiri tender mutton braised in aromatic ratanjot gravy", priceMinor: 28000, isVeg: false, isStocked: true, stockQty: 100, icon: "🍲" },
+  { id: "cnv_4", name: "Chicken Tikka Masala", category: "Curries (Non-Veg)", description: "Charcoal grilled chicken tikka in spiced onion-tomato masala", priceMinor: 23000, isVeg: false, isStocked: true, stockQty: 100, icon: "🍲" },
+  { id: "cnv_5", name: "Chettinad Chicken Curry", category: "Curries (Non-Veg)", description: "Fiery Tamil style chicken with roasted black peppercorns and coconut", priceMinor: 22000, isVeg: false, isStocked: true, stockQty: 100, icon: "🍲" },
+  { id: "cnv_6", name: "Andhra Mutton Curry", category: "Curries (Non-Veg)", description: "Spicy tender goat meat curry slow cooked with green chili paste", priceMinor: 29000, isVeg: false, isStocked: true, stockQty: 100, icon: "🍲" },
+  { id: "cnv_7", name: "Nellore Fish Curry", category: "Curries (Non-Veg)", description: "Tangy raw mango and tamarind fish curry cooked in earthen pot", priceMinor: 24000, isVeg: false, isStocked: true, stockQty: 100, icon: "🐟" },
+  { id: "cnv_8", name: "Egg Masala Curry (2 Eggs)", category: "Curries (Non-Veg)", description: "Boiled fried eggs in thick seasoned onion tomato gravy", priceMinor: 14000, isVeg: false, isStocked: true, stockQty: 100, icon: "🥚" },
+
+  // Roti
+  { id: "r_1", name: "Butter Naan", category: "Roti", description: "Leavened oven-baked flatbread brushed with butter", priceMinor: 4500, isVeg: true, isStocked: true, stockQty: 100, icon: "🫓" },
+  { id: "r_2", name: "Garlic Butter Naan", category: "Roti", description: "Crisp naan topped with minced roasted garlic & fresh coriander", priceMinor: 5500, isVeg: true, isStocked: true, stockQty: 100, icon: "🫓" },
+  { id: "r_3", name: "Tandoori Roti (Butter)", category: "Roti", description: "Whole wheat round flatbread cooked crisp in clay tandoor", priceMinor: 3000, isVeg: true, isStocked: true, stockQty: 100, icon: "🫓" },
+  { id: "r_4", name: "Rumali Roti", category: "Roti", description: "Ultra thin handkerchief style soft Indian flatbread", priceMinor: 3500, isVeg: true, isStocked: true, stockQty: 100, icon: "🫓" },
+  { id: "r_5", name: "Plain Tandoori Roti", category: "Roti", description: "Healthy whole wheat bread baked in clay tandoor", priceMinor: 2500, isVeg: true, isStocked: true, stockQty: 100, icon: "🫓" },
+  { id: "r_6", name: "Laccha Paratha", category: "Roti", description: "Multi-layered flaky whole wheat paratha roasted with ghee", priceMinor: 5000, isVeg: true, isStocked: true, stockQty: 100, icon: "🫓" },
+  { id: "r_7", name: "Amritsari Kulcha", category: "Roti", description: "Crispy tandoori kulcha stuffed with spiced mashed potatoes", priceMinor: 6000, isVeg: true, isStocked: true, stockQty: 100, icon: "🫓" },
+  { id: "r_8", name: "Cheese Garlic Naan", category: "Roti", description: "Naan stuffed with melting mozzarella cheese and garlic", priceMinor: 7500, isVeg: true, isStocked: true, stockQty: 100, icon: "🫓" },
+
+  // Noodles (Veg)
+  { id: "nv_1", name: "Veg Hakka Noodles", category: "Noodles (Veg)", description: "Wok tossed noodles with shredded cabbage, carrots & bell peppers", priceMinor: 14000, isVeg: true, isStocked: true, stockQty: 100, icon: "🍜" },
+  { id: "nv_2", name: "Veg Schezwan Noodles", category: "Noodles (Veg)", description: "Spicy wok noodles tossed with fiery red Schezwan pepper sauce", priceMinor: 15000, isVeg: true, isStocked: true, stockQty: 100, icon: "🍜" },
+  { id: "nv_3", name: "Chilli Garlic Veg Noodles", category: "Noodles (Veg)", description: "Noodles tossed with roasted garlic, red chillies and spring onion", priceMinor: 15500, isVeg: true, isStocked: true, stockQty: 100, icon: "🍜" },
+  { id: "nv_4", name: "Singapore Veg Noodles", category: "Noodles (Veg)", description: "Thin vermicelli noodles seasoned with mild yellow curry powder", priceMinor: 16000, isVeg: true, isStocked: true, stockQty: 100, icon: "🍜" },
+  { id: "nv_5", name: "Burnt Garlic Veg Noodles", category: "Noodles (Veg)", description: "Aromatic noodles loaded with golden browned garlic and soy", priceMinor: 15000, isVeg: true, isStocked: true, stockQty: 100, icon: "🍜" },
+  { id: "nv_6", name: "Paneer Hakka Noodles", category: "Noodles (Veg)", description: "Hakka noodles loaded with spiced paneer cubes and crunchy veggies", priceMinor: 17000, isVeg: true, isStocked: true, stockQty: 100, icon: "🍜" },
+];
+
 export default function WaiterDashboard() {
   const { me, loading: authLoading } = useAuthGuard("order.create");
 
   // Floor Map & Catalog States
-  const [tables, setTables] = useState<DiningTable[]>([]);
-  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
-  const [categories, setCategories] = useState<string[]>([]);
+  const [tables, setTables] = useState<DiningTable[]>(DEFAULT_WAITER_TABLES);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>(DEFAULT_WAITER_MENU_ITEMS);
+  const [categories, setCategories] = useState<string[]>(ORDER_CATEGORIES);
   const [myKots, setMyKots] = useState<KOTTicket[]>([]);
   const [selectedSection, setSelectedSection] = useState<string>("All");
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
@@ -265,7 +477,9 @@ export default function WaiterDashboard() {
       const res = await authedFetch("/tables");
       if (res.ok) {
         const data = await res.json();
-        setTables(data);
+        if (Array.isArray(data) && data.length > 0) {
+          setTables(data);
+        }
       }
     } catch (e) {
       console.error("Failed to fetch tables", e);
@@ -280,14 +494,20 @@ export default function WaiterDashboard() {
       const res = await authedFetch("/menu/items");
       if (res.ok) {
         const data: RawMenuItemApi[] = await res.json();
-        const mapped: MenuItem[] = data.map((item) => ({
-          ...item,
-          category: item.categoryName,
-          isStocked: item.availability?.isStocked ?? false,
-          stockQty: item.availability?.stockQty ?? 0,
-        }));
-        setMenuItems(mapped);
-        setCategories(Array.from(new Set(mapped.map((item) => item.category))));
+        if (Array.isArray(data) && data.length > 0) {
+          const rawOverrides = typeof window !== "undefined" ? localStorage.getItem("kapmeta_stock_overrides") : null;
+          const overrides = rawOverrides ? JSON.parse(rawOverrides) : {};
+          const mapped: MenuItem[] = data.map((item) => ({
+            ...item,
+            category: item.categoryName,
+            isStocked: overrides[item.id] !== undefined
+              ? overrides[item.id]
+              : (item.availability ? item.availability.isStocked : true),
+            stockQty: item.availability ? item.availability.stockQty : 100,
+          }));
+          setMenuItems(mapped);
+          setCategories(Array.from(new Set(mapped.map((item) => item.category))));
+        }
       }
     } catch (e) {
       console.error("Failed to fetch menu items", e);
@@ -351,9 +571,19 @@ export default function WaiterDashboard() {
     heartbeat();
     setOfflineCount(loadOfflineQueue().length);
 
-    if (typeof Notification !== "undefined" && Notification.permission === "default") {
-      Notification.requestPermission().catch(() => {});
-    }
+    // Real-time 86 Stock Control Listener
+    const handleAvailabilityChange = (e: any) => {
+      if (e.detail && e.detail.itemId !== undefined) {
+        setMenuItems((prev) =>
+          prev.map((it) =>
+            it.id === e.detail.itemId
+              ? { ...it, isStocked: e.detail.isStocked, stockQty: e.detail.stockQty ?? 100 }
+              : it
+          )
+        );
+      }
+    };
+    window.addEventListener("item-availability-changed", handleAvailabilityChange);
 
     const goOnline = () => {
       setIsOnline(true);
@@ -528,6 +758,51 @@ export default function WaiterDashboard() {
     return cart.reduce((acc, ci) => acc + (ci.item.priceMinor * ci.quantity), 0);
   }, [cart]);
 
+  const loadedWaiterTableRef = React.useRef<string | null>(null);
+  const isWaiterLoadedRef = React.useRef<boolean>(false);
+
+  // Sync draft cart to localStorage ONLY when loaded for this specific active table
+  useEffect(() => {
+    if (
+      isWaiterLoadedRef.current &&
+      activeTable &&
+      loadedWaiterTableRef.current === activeTable.tableNumber &&
+      !manageOrder &&
+      typeof window !== "undefined"
+    ) {
+      if (cart.length > 0) {
+        localStorage.setItem(`kapmeta_draft_${activeTable.tableNumber}`, JSON.stringify(cart));
+      } else {
+        localStorage.removeItem(`kapmeta_draft_${activeTable.tableNumber}`);
+      }
+    }
+  }, [cart, activeTable, manageOrder]);
+
+  const openNewOrder = (table: DiningTable) => {
+    isWaiterLoadedRef.current = false;
+    loadedWaiterTableRef.current = table.tableNumber;
+    setActiveTable(table);
+    setCoversCount(table.capacity || 2);
+    setManageOrder(null);
+    let loaded = false;
+    if (typeof window !== "undefined") {
+      try {
+        const draft = localStorage.getItem(`kapmeta_draft_${table.tableNumber}`) || localStorage.getItem(`kapmeta_draft_${table.id}`);
+        if (draft) {
+          const parsed = JSON.parse(draft);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setCart(parsed);
+            loaded = true;
+          }
+        }
+      } catch (e) {}
+    }
+    if (!loaded) {
+      setCart([]);
+    }
+    isWaiterLoadedRef.current = true;
+  };
+
   // Place Table Order — courseFilter fires only that course's cart lines (course-wise firing);
   // omit to fire the whole cart at once.
   const submitOrder = async (courseFilter?: Course) => {
@@ -569,11 +844,15 @@ export default function WaiterDashboard() {
         // this the order would never reach the kitchen. Best-effort: don't
         // block the waiter's flow if this call fails.
         if (!created.alreadyExisted) {
-          authedFetch(`/orders/${created.id}/status`, {
+          await authedFetch(`/orders/${created.id}/status`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ toStatus: "CONFIRMED" }),
           }).catch((e) => console.error("Failed to auto-confirm order", e));
+        }
+        if (activeTable && typeof window !== "undefined") {
+          localStorage.removeItem(`kapmeta_draft_${activeTable.tableNumber}`);
+          localStorage.removeItem(`kapmeta_draft_${activeTable.id}`);
         }
         setCart((prev) => prev.filter((ci) => !firing.includes(ci)));
         if (courseFilter && !manageOrder) {
@@ -897,7 +1176,7 @@ export default function WaiterDashboard() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
       <Head>
-        <title>PetPooja Captain - {me?.outlet?.name || "Hotel Kapila"}</title>
+        <title>KapMeta Captain - {me?.outlet?.name || "Hotel Kapila"}</title>
       </Head>
 
       <div className="flex-1 flex flex-col min-w-0">
@@ -994,7 +1273,6 @@ export default function WaiterDashboard() {
                 <button
                   type="button"
                   onClick={() => {
-                    if (cart.length > 0 && !confirm("Discard unsent items in the cart?")) return;
                     setActiveTable(null);
                     setManageOrder(null);
                     setCart([]);
@@ -1499,12 +1777,7 @@ export default function WaiterDashboard() {
                             )}
                             {table.status === "VACANT" && !transferFromTable && (
                               <button
-                                onClick={() => {
-                                  setActiveTable(table);
-                                  setCoversCount(table.capacity || 2);
-                                  setManageOrder(null);
-                                  setCart([]);
-                                }}
+                                onClick={() => openNewOrder(table)}
                                 className="new-order-btn w-full bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg py-1.5 text-xs font-semibold transition-all"
                               >
                                 + New Order

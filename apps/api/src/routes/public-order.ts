@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../db";
 import { PrismaMenuCatalogRepository } from "@kapmeta/menu";
 import {
   createOrder,
@@ -8,20 +8,6 @@ import {
   PrismaOrderRepository,
 } from "@kapmeta/orders";
 import type { OrderLineInput } from "@kapmeta/shared-types/orders";
-
-// PUBLIC, unauthenticated router — this is the customer-facing QR self-order
-// flow (scan table QR -> browse menu -> place order). Unlike every other
-// route in this API, there is deliberately no requireAuth here: the customer
-// has no account. All trust boundaries instead hinge on:
-//   1. the tableId in the URL resolving to a real, active DiningTable, which
-//      also gives us the outletId (never trust an outletId from the client),
-//      and
-//   2. prices being re-resolved server-side from the menu catalog for every
-//      line via the exact same PrismaMenuPriceLookup/createOrder pipeline the
-//      staff-side POST /orders route uses (see routes/orders.ts) — a
-//      malicious customer submitting an arbitrary priceMinor in the request
-//      body has no effect, since it's never read.
-const prisma = new PrismaClient();
 
 const router = Router();
 

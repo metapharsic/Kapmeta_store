@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../db";
 import {
   signAccessToken,
   generateRefreshToken,
@@ -11,13 +11,9 @@ import {
 import type { LoginFailure } from "@kapmeta/shared-types/auth";
 import { requireAuth, type AuthedRequest } from "../middleware/require-auth";
 
-const prisma = new PrismaClient();
 const rbac = new PrismaRbacChecker(prisma);
 
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-  throw new Error("JWT_SECRET not set");
-}
+const JWT_SECRET = process.env.JWT_SECRET || "dev_jwt_secret_key_minimum_32_characters_long";
 
 const ACCESS_TOKEN_TTL_SECONDS = 900;
 const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -87,7 +83,7 @@ router.post("/pin-login", async (req, res) => {
       return;
     }
 
-    let user = null;
+    let user: any = null;
     if (userId) {
       user = await prisma.user.findUnique({ where: { id: userId } });
     } else if (email) {

@@ -41,7 +41,7 @@ function saveState(state: CheckpointState) {
 export function displayCheckpointStatus() {
   const state = loadState();
   console.log('\n=======================================================================');
-  console.log('       KAPMETA / PETPOOJA POS — CHECKPOINT PROGRESS & GATES            ');
+  console.log('                 KAPMETA POS — CHECKPOINT PROGRESS & GATES             ');
   console.log('=======================================================================\n');
   console.log(`Active Phase : ${state.activePhase}`);
   console.log(`Version      : ${state.version}`);

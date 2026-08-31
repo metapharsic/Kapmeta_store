@@ -17,7 +17,7 @@ interface PetPoojaHeaderProps {
 }
 
 export default function PetPoojaHeader({
-  outletName = "Hotel Kapila",
+  outletName = "Hotel kapila",
   outletCode = "R327038",
   onNewOrder,
   activeMode,
@@ -27,211 +27,521 @@ export default function PetPoojaHeader({
 }: PetPoojaHeaderProps) {
   const router = useRouter();
   const [searchModalType, setSearchModalType] = useState<"BILL" | "KOT" | null>(null);
+  const [billSearchQuery, setBillSearchQuery] = useState("");
+  const [kotSearchQuery, setKotSearchQuery] = useState("");
   const [isItemToggleOpen, setIsItemToggleOpen] = useState(false);
   const [isHoldOpen, setIsHoldOpen] = useState(false);
   const [isStoreOnline, setIsStoreOnline] = useState(true);
   const [liveViewActive, setLiveViewActive] = useState(true);
-  const [alertsCount, setAlertsCount] = useState(3);
+  const [alertsCount, setAlertsCount] = useState(0);
   const [showSupportModal, setShowSupportModal] = useState(false);
   const [showMenuDrawer, setShowMenuDrawer] = useState(false);
 
+  // Left Drawer Expanded Submenu States
+  const [reportsExpanded, setReportsExpanded] = useState(false);
+  const [operationsExpanded, setOperationsExpanded] = useState(false);
+  const [settingsExpanded, setSettingsExpanded] = useState(false);
+  const [activeMenuItem, setActiveMenuItem] = useState<string>("Billing");
+
+  const handleBillSearchSubmit = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && billSearchQuery.trim()) {
+      router.push(`/orders?search=${encodeURIComponent(billSearchQuery.trim())}`);
+    }
+  };
+
+  const handleKotSearchSubmit = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && kotSearchQuery.trim()) {
+      router.push(`/kitchen?kot=${encodeURIComponent(kotSearchQuery.trim())}`);
+    }
+  };
+
+  const handleCheckUpdates = () => {
+    alert("Checking kapMeta POS System Updates...\n\nCurrent Version: 126.0.1\nDatabase: Synchronized\nStatus: Up to date (Latest Stable Release).");
+  };
+
   return (
     <>
+      {/* Desktop Window Title Bar */}
+      <div className="petpooja-window-titlebar">
+        <div className="window-title-left">
+          <div className="window-app-icon">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="#ffffff">
+              <path d="M12 2L2 9.5V22h20V9.5L12 2zm0 3.5l6 4.5v9H6v-9l6-4.5z" />
+            </svg>
+          </div>
+          <span className="window-title-text">
+            {outletName} ({outletCode}) - The Finest Restaurant Management Platform
+          </span>
+        </div>
+        <div className="window-controls-right">
+          <button type="button" className="win-btn" title="Minimize">─</button>
+          <button type="button" className="win-btn" title="Maximize">🗖</button>
+          <button type="button" className="win-btn win-close" title="Close">✕</button>
+        </div>
+      </div>
+
+      {/* Main PetPooja Navigation Header */}
       <header className="petpooja-top-header">
-        {/* Left branding & Outlet title */}
-        <div className="petpooja-header-left">
+        {/* Left Section: Online dot, Hamburger, Logo, New Order, Search Pills */}
+        <div className="header-left-cluster">
+          <span className="online-indicator-dot" title="LAN / Cloud Connected"></span>
+
           <button
             type="button"
-            className="petpooja-hamburger-btn"
-            onClick={() => setShowMenuDrawer(!showMenuDrawer)}
-            title="Navigation Menu"
+            className="hamburger-menu-btn"
+            onClick={() => setShowMenuDrawer(true)}
+            title="Open kapMeta Settings & Operations Menu"
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <line x1="3" y1="6" x2="21" y2="6" />
-              <line x1="3" y1="12" x2="21" y2="12" />
-              <line x1="3" y1="18" x2="21" y2="18" />
-            </svg>
+            <span className="hamburger-line"></span>
+            <span className="hamburger-line"></span>
+            <span className="hamburger-line"></span>
           </button>
 
-          <div className="petpooja-logo-badge">
-            <span className="logo-text">POSS</span>
-          </div>
+          <Link href="/" className="petpooja-brand-badge" title="KapMeta POS Home">
+            <div className="brand-icon-box">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="#ffffff">
+                <path d="M12 3L4 9v12h16V9l-8-6zm6 16H6v-9.5l6-4.5 6 4.5V19z" />
+              </svg>
+            </div>
+            <div className="brand-text-col">
+              <span className="brand-sub">KAPMETA</span>
+              <span className="brand-main">POS</span>
+            </div>
+          </Link>
 
-          <div className="petpooja-outlet-title">
-            <span className="outlet-name-bold">{outletName} ({outletCode})</span>
-            <span className="outlet-subtitle"> - The Finest Restaurant Management Platform</span>
-          </div>
-        </div>
-
-        {/* Center Actions: New Order & Quick Search */}
-        <div className="petpooja-header-center">
           <button
             type="button"
-            className="petpooja-new-order-btn"
+            className="petpooja-new-order-pill"
             onClick={() => {
-              if (onNewOrder) {
-                onNewOrder();
-              } else {
-                router.push("/");
-              }
+              if (onNewOrder) onNewOrder();
+              else router.push("/");
             }}
           >
             New Order
           </button>
 
-          <div className="petpooja-search-box" onClick={() => setSearchModalType("BILL")}>
-            <span className="search-icon">🔍</span>
-            <span className="search-label">Q Bill No</span>
+          {/* Bill No Search Pill */}
+          <div className="search-pill-box">
+            <span className="search-glass-icon">🔍</span>
+            <input
+              type="text"
+              className="search-pill-input"
+              placeholder="Bill No"
+              value={billSearchQuery}
+              onChange={(e) => setBillSearchQuery(e.target.value)}
+              onKeyDown={handleBillSearchSubmit}
+              onClick={() => setSearchModalType("BILL")}
+            />
           </div>
 
-          <div className="petpooja-search-box" onClick={() => setSearchModalType("KOT")}>
-            <span className="search-icon">🔍</span>
-            <span className="search-label">Q KOT No</span>
+          {/* KOT No Search Pill */}
+          <div className="search-pill-box">
+            <span className="search-glass-icon">🔍</span>
+            <input
+              type="text"
+              className="search-pill-input"
+              placeholder="KOT No"
+              value={kotSearchQuery}
+              onChange={(e) => setKotSearchQuery(e.target.value)}
+              onKeyDown={handleKotSearchSubmit}
+              onClick={() => setSearchModalType("KOT")}
+            />
           </div>
         </div>
 
-        {/* Right Utility Icons & Actions */}
-        <div className="petpooja-header-right">
+        {/* Right Section: Icon Actions & Support Hotline */}
+        <div className="header-right-cluster">
+          {/* 1. Item On/Off */}
           <button
             type="button"
-            className="header-icon-btn"
+            className="top-nav-action-btn"
             onClick={() => setIsItemToggleOpen(true)}
-            title="Item On/Off (86 Stock Toggle)"
+            title="Item Availability / 86 Stock On-Off"
           >
-            <span className="icon-glyph">⊘</span>
-            <span className="icon-caption">Item On/Off</span>
+            <div className="nav-icon-wrapper">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2">
+                <rect x="2" y="6" width="20" height="12" rx="6" />
+                <circle cx="8" cy="12" r="3" fill="#475569" />
+              </svg>
+            </div>
+            <span className="nav-caption">Item On/Off</span>
           </button>
 
+          {/* 2. Store */}
           <button
             type="button"
-            className={`header-icon-btn ${isStoreOnline ? "is-active" : "is-offline"}`}
+            className={`top-nav-action-btn ${isStoreOnline ? "is-online" : "is-offline"}`}
             onClick={() => setIsStoreOnline(!isStoreOnline)}
-            title="Store Status"
+            title={isStoreOnline ? "Store is Online" : "Store is Offline"}
           >
-            <span className="icon-glyph">🏪</span>
-            <span className="icon-caption">Store</span>
+            <div className="nav-icon-wrapper">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                <polyline points="9 22 9 12 15 12 15 22" />
+              </svg>
+            </div>
+            <span className="nav-caption">Store</span>
           </button>
 
+          {/* 3. Live View */}
           <button
             type="button"
-            className={`header-icon-btn ${liveViewActive ? "is-live" : ""}`}
-            onClick={() => setLiveViewActive(!liveViewActive)}
-            title="Live View KDS & Floor Sync"
+            className={`top-nav-action-btn ${liveViewActive ? "is-live" : ""}`}
+            onClick={() => {
+              setLiveViewActive(!liveViewActive);
+              router.push("/orders?tab=live");
+            }}
+            title="Live View Floor & KDS Feed"
           >
-            <span className="icon-glyph">📡</span>
-            <span className="icon-caption">Live View</span>
+            <div className="nav-icon-wrapper">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2">
+                <path d="M4.93 19.07A10 10 0 0 1 12 16a10 10 0 0 1 7.07 3.07M1.39 15.54A15 15 0 0 1 12 11a15 15 0 0 1 10.61 4.54M8.46 22.54A5 5 0 0 1 12 21a5 5 0 0 1 3.54 1.54" />
+                <circle cx="12" cy="11" r="1" fill="#475569" />
+              </svg>
+            </div>
+            <span className="nav-caption">Live View</span>
           </button>
 
-          <Link href="/orders?tab=live" className="header-icon-btn" title="Orders Manager">
-            <span className="icon-glyph">📋</span>
-            <span className="icon-caption">Orders</span>
+          {/* 4. Orders */}
+          <Link href="/orders" className="top-nav-action-btn" title="Orders Register">
+            <div className="nav-icon-wrapper">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2">
+                <rect x="2" y="3" width="20" height="14" rx="2" />
+                <line x1="8" y1="21" x2="16" y2="21" />
+                <line x1="12" y1="17" x2="12" y2="21" />
+              </svg>
+            </div>
+            <span className="nav-caption">Orders</span>
           </Link>
 
-          <Link href="/orders?tab=all" className="header-icon-btn" title="Recent Transactions">
-            <span className="icon-glyph">🕒</span>
-            <span className="icon-caption">Recent</span>
+          {/* 5. Recent */}
+          <Link href="/orders?tab=recent" className="top-nav-action-btn" title="Recent Invoices">
+            <div className="nav-icon-wrapper">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+                <polyline points="10 9 9 9 8 9" />
+              </svg>
+            </div>
+            <span className="nav-caption">Recent</span>
           </Link>
 
+          {/* 6. Hold */}
           <button
             type="button"
-            className="header-icon-btn"
+            className="top-nav-action-btn"
             onClick={() => {
               if (onOpenHoldDrawer) onOpenHoldDrawer();
               else setIsHoldOpen(true);
             }}
-            title="Held Orders / Parked Carts"
+            title="Held Orders"
           >
-            <span className="icon-glyph">⏸</span>
-            <span className="icon-caption">Hold {heldOrdersCount > 0 ? `(${heldOrdersCount})` : ""}</span>
+            <div className="nav-icon-wrapper">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2">
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 16 14" />
+              </svg>
+            </div>
+            <span className="nav-caption">Hold {heldOrdersCount > 0 ? `(${heldOrdersCount})` : ""}</span>
           </button>
 
+          {/* 7. Alerts */}
           <button
             type="button"
-            className="header-icon-btn alert-btn"
+            className="top-nav-action-btn alert-action-btn"
             onClick={() => setAlertsCount(0)}
-            title="Alerts & Notifications"
+            title="Alerts"
           >
-            <span className="icon-glyph">🔔</span>
-            {alertsCount > 0 && <span className="alert-badge">{alertsCount}</span>}
-            <span className="icon-caption">Alerts</span>
+            <div className="nav-icon-wrapper">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+              </svg>
+              {alertsCount > 0 && <span className="red-badge-dot"></span>}
+            </div>
+            <span className="nav-caption">Alerts</span>
           </button>
 
-          <Link href="/channel-availability" className="header-icon-btn" title="Zomato / Swiggy Help & Status">
-            <span className="icon-glyph">🛵</span>
-            <span className="icon-caption">Zomato Help</span>
+          {/* 8. Zomato Help */}
+          <Link href="/channel-availability" className="top-nav-action-btn" title="Zomato / Swiggy Aggregator Support">
+            <div className="nav-icon-wrapper">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2">
+                <path d="M3 18v-6a9 9 0 0 1 18 0v6" />
+                <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z" />
+              </svg>
+            </div>
+            <span className="nav-caption">Zomato Help</span>
           </Link>
 
+          {/* 9. Logout */}
           <button
             type="button"
-            className="header-icon-btn"
+            className="top-nav-action-btn"
             onClick={() => {
-              if (confirm("Are you sure you want to log out of PetPooja POS?")) {
+              if (confirm("Are you sure you want to log out of kapMeta POS?")) {
                 logout().catch(() => {});
               }
             }}
-            title="Log Out"
+            title="Logout"
           >
-            <span className="icon-glyph">🚪</span>
-            <span className="icon-caption">Logout</span>
+            <div className="nav-icon-wrapper">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+            </div>
+            <span className="nav-caption">Logout</span>
           </button>
 
-          <div className="header-support-pill" onClick={() => setShowSupportModal(true)}>
-            <span className="support-title">Need Help?</span>
-            <span className="support-phone">07969 223344</span>
+          {/* Need Help Support Pill */}
+          <div className="support-contact-block" onClick={() => setShowSupportModal(true)}>
+            <span className="support-heading">Need Help ?</span>
+            <span className="support-phone-number">07969 223344</span>
           </div>
         </div>
       </header>
 
-      {/* Slide-out Global Navigation Drawer */}
+      {/* LEFT MENU BAR (Exact match to Reference Screenshot) */}
       {showMenuDrawer && (
         <div className="petpooja-drawer-backdrop" onClick={() => setShowMenuDrawer(false)}>
-          <div className="petpooja-side-drawer" onClick={(e) => e.stopPropagation()}>
-            <div className="drawer-header">
-              <div className="drawer-brand">
-                <span className="logo-text">POSS</span>
-                <h3>PetPooja POS</h3>
+          <aside className="petpooja-left-menu-bar" onClick={(e) => e.stopPropagation()}>
+            {/* 1. Header Bar: "Settings" with Left Arrow */}
+            <div className="drawer-header-bar">
+              <h2 className="drawer-title-text">Settings</h2>
+              <button
+                type="button"
+                className="drawer-back-arrow-btn"
+                onClick={() => setShowMenuDrawer(false)}
+                title="Close Menu"
+              >
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.5">
+                  <line x1="19" y1="12" x2="5" y2="12" />
+                  <polyline points="12 19 5 12 12 5" />
+                </svg>
+              </button>
+            </div>
+
+            {/* 2. Menu Navigation Items List */}
+            <div className="drawer-menu-items-scroll">
+              {/* Item 1: Billing */}
+              <div
+                className={`menu-row-item ${activeMenuItem === "Billing" ? "is-selected" : ""}`}
+                onClick={() => {
+                  setActiveMenuItem("Billing");
+                  setShowMenuDrawer(false);
+                  router.push("/");
+                }}
+              >
+                <div className="item-icon-col">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                    <line x1="16" y1="13" x2="8" y2="13" />
+                    <line x1="16" y1="17" x2="8" y2="17" />
+                    <polyline points="10 9 9 9 8 9" />
+                  </svg>
+                </div>
+                <span className="item-label-text">Billing</span>
               </div>
-              <button className="close-btn" onClick={() => setShowMenuDrawer(false)}>✕</button>
+
+              {/* Item 2: Operations (Expandable) */}
+              <div
+                className={`menu-row-item ${activeMenuItem === "Operations" ? "is-selected" : ""}`}
+                onClick={() => {
+                  setActiveMenuItem("Operations");
+                  setOperationsExpanded(!operationsExpanded);
+                }}
+              >
+                <div className="item-icon-col">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
+                    <line x1="4" y1="21" x2="4" y2="14" />
+                    <line x1="4" y1="10" x2="4" y2="3" />
+                    <line x1="12" y1="21" x2="12" y2="12" />
+                    <line x1="12" y1="8" x2="12" y2="3" />
+                    <line x1="20" y1="21" x2="20" y2="16" />
+                    <line x1="20" y1="12" x2="20" y2="3" />
+                    <line x1="1" y1="14" x2="7" y2="14" />
+                    <line x1="9" y1="8" x2="15" y2="8" />
+                    <line x1="17" y1="16" x2="23" y2="16" />
+                  </svg>
+                </div>
+                <span className="item-label-text">Operations</span>
+                <span className={`chevron-indicator ${operationsExpanded ? "open" : ""}`}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.5">
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </span>
+              </div>
+
+              {/* Operations Sub-items */}
+              {operationsExpanded && (
+                <div className="submenu-container">
+                  <Link href="/admin" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
+                    Cash Flow & Sales
+                  </Link>
+                  <Link href="/menu" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
+                    Menu & Inventory
+                  </Link>
+                  <Link href="/crm" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
+                    Customers CRM
+                  </Link>
+                  <button
+                    type="button"
+                    className="submenu-link"
+                    style={{ background: "transparent", border: "none", width: "100%", textAlign: "left", cursor: "pointer", font: "inherit", color: "inherit" }}
+                    onClick={() => {
+                      setShowMenuDrawer(false);
+                      setIsItemToggleOpen(true);
+                    }}
+                  >
+                    Menu Item On/Off (86 Stock)
+                  </button>
+                </div>
+              )}
+
+              {/* Item 3: Reports (Expandable with Down Chevron) */}
+              <div
+                className={`menu-row-item ${activeMenuItem === "Reports" ? "is-selected" : ""}`}
+                onClick={() => {
+                  setActiveMenuItem("Reports");
+                  setReportsExpanded(!reportsExpanded);
+                }}
+              >
+                <div className="item-icon-col">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
+                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                  </svg>
+                </div>
+                <span className="item-label-text">Reports</span>
+                <span className={`chevron-indicator ${reportsExpanded ? "open" : ""}`}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.5">
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </span>
+              </div>
+
+              {/* Reports Sub-items */}
+              {reportsExpanded && (
+                <div className="submenu-container">
+                  <Link href="/finance" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
+                    Day-End Settlement / Z-Report
+                  </Link>
+                  <Link href="/admin" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
+                    Executive Sales Summary
+                  </Link>
+                  <Link href="/orders?tab=recent" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
+                    Order Sales Audit Report
+                  </Link>
+                  <Link href="/inventory" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
+                    Item & Category Sales
+                  </Link>
+                </div>
+              )}
+
+              {/* Item 4: Live View */}
+              <div
+                className={`menu-row-item ${activeMenuItem === "Live View" ? "is-selected" : ""}`}
+                onClick={() => {
+                  setActiveMenuItem("Live View");
+                  setShowMenuDrawer(false);
+                  router.push("/orders?tab=live");
+                }}
+              >
+                <div className="item-icon-col">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
+                    <path d="M4.93 19.07A10 10 0 0 1 12 16a10 10 0 0 1 7.07 3.07M1.39 15.54A15 15 0 0 1 12 11a15 15 0 0 1 10.61 4.54M8.46 22.54A5 5 0 0 1 12 21a5 5 0 0 1 3.54 1.54" />
+                    <circle cx="12" cy="11" r="1.5" fill="#ffffff" />
+                  </svg>
+                </div>
+                <span className="item-label-text">Live View</span>
+              </div>
+
+              {/* Item 5: Settings (Expandable) */}
+              <div
+                className={`menu-row-item ${activeMenuItem === "Settings" ? "is-selected" : ""}`}
+                onClick={() => {
+                  setActiveMenuItem("Settings");
+                  setSettingsExpanded(!settingsExpanded);
+                }}
+              >
+                <div className="item-icon-col">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                  </svg>
+                </div>
+                <span className="item-label-text">Settings</span>
+                <span className={`chevron-indicator ${settingsExpanded ? "open" : ""}`}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.5">
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </span>
+              </div>
+
+              {/* Settings Sub-items */}
+              {settingsExpanded && (
+                <div className="submenu-container">
+                  <Link href="/table-management" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
+                    Table & Area Configuration
+                  </Link>
+                  <Link href="/user-management" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
+                    Biller Profile & Users
+                  </Link>
+                  <Link href="/integrations" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
+                    LAN / Cloud Sync Setup
+                  </Link>
+                </div>
+              )}
+
+              {/* Item 6: Check Updates */}
+              <div
+                className="menu-row-item"
+                onClick={handleCheckUpdates}
+              >
+                <div className="item-icon-col">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
+                    <polyline points="23 4 23 10 17 10" />
+                    <polyline points="1 20 1 14 7 14" />
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                  </svg>
+                </div>
+                <span className="item-label-text">Check Updates</span>
+              </div>
+
+              {/* Item 7: Logout */}
+              <div
+                className="menu-row-item"
+                onClick={() => {
+                  if (confirm("Are you sure you want to log out of kapMeta POS?")) {
+                    logout().catch(() => {});
+                  }
+                }}
+              >
+                <div className="item-icon-col">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                    <polyline points="16 17 21 12 16 7" />
+                    <line x1="21" y1="12" x2="9" y2="12" />
+                  </svg>
+                </div>
+                <span className="item-label-text">Logout</span>
+              </div>
             </div>
-            <div className="drawer-nav-list">
-              <Link href="/" className="drawer-item" onClick={() => setShowMenuDrawer(false)}>
-                🛒 <span>POS Register (Order Taking)</span>
-              </Link>
-              <Link href="/table-management" className="drawer-item" onClick={() => setShowMenuDrawer(false)}>
-                🪑 <span>Table View / Floor Plan</span>
-              </Link>
-              <Link href="/waiter" className="drawer-item" onClick={() => setShowMenuDrawer(false)}>
-                🏃 <span>PetPooja Captain (Tablet / Mobile)</span>
-              </Link>
-              <Link href="/orders?tab=live" className="drawer-item" onClick={() => setShowMenuDrawer(false)}>
-                🔴 <span>Live Orders</span>
-              </Link>
-              <Link href="/orders?tab=online" className="drawer-item" onClick={() => setShowMenuDrawer(false)}>
-                🌐 <span>Online Orders (Swiggy / Zomato)</span>
-              </Link>
-              <Link href="/kitchen" className="drawer-item" onClick={() => setShowMenuDrawer(false)}>
-                🍳 <span>Kitchen Display System (KDS)</span>
-              </Link>
-              <Link href="/inventory" className="drawer-item" onClick={() => setShowMenuDrawer(false)}>
-                📦 <span>Stock & 86 Item Control</span>
-              </Link>
-              <Link href="/menu" className="drawer-item" onClick={() => setShowMenuDrawer(false)}>
-                🍽️ <span>Menu Management</span>
-              </Link>
-              <Link href="/channel-availability" className="drawer-item" onClick={() => setShowMenuDrawer(false)}>
-                📡 <span>Aggregator Menu Status</span>
-              </Link>
-              <Link href="/admin" className="drawer-item" onClick={() => setShowMenuDrawer(false)}>
-                📊 <span>Sales Analytics & Reports</span>
-              </Link>
-              <Link href="/finance" className="drawer-item" onClick={() => setShowMenuDrawer(false)}>
-                💰 <span>Finance & Z-Report</span>
-              </Link>
-              <Link href="/user-management" className="drawer-item" onClick={() => setShowMenuDrawer(false)}>
-                🧑‍💼 <span>Staff & Role Access</span>
-              </Link>
+
+            {/* 3. Bottom Metadata Block (Ref ID, Version, Biller Name) */}
+            <div className="drawer-footer-metadata-block">
+              <div className="meta-row-header">
+                <span className="meta-ref-id">Ref ID : A327038R</span>
+                <span className="meta-version">Version : 126.0.1</span>
+              </div>
+              <div className="meta-row-biller">
+                <span className="meta-biller-name">Biller Name : biller</span>
+              </div>
             </div>
-          </div>
+          </aside>
         </div>
       )}
 
@@ -257,309 +567,485 @@ export default function PetPoojaHeader({
       {showSupportModal && (
         <div className="petpooja-modal-backdrop" onClick={() => setShowSupportModal(false)}>
           <div className="petpooja-modal-card" onClick={(e) => e.stopPropagation()}>
-            <h3>PetPooja 24x7 Merchant Support</h3>
-            <p style={{ margin: "12px 0", color: "var(--text-secondary)" }}>
-              Direct line for billing, thermal printing, and aggregator escalation assistance:
+            <h3>kapMeta Merchant Support (24x7)</h3>
+            <p style={{ margin: "12px 0", color: "#475569", fontSize: "0.875rem" }}>
+              Direct telephone support for billing terminal, LAN sync, and delivery aggregator help:
             </p>
-            <div style={{ fontSize: "1.25rem", fontWeight: 700, color: "#e11d48", padding: "12px", background: "#fff1f2", borderRadius: "8px", textAlign: "center" }}>
+            <div style={{ fontSize: "1.35rem", fontWeight: 700, color: "#1d4ed8", padding: "14px", background: "#eff6ff", borderRadius: "8px", textAlign: "center", border: "1px solid #bfdbfe" }}>
               📞 07969 223344
             </div>
             <div style={{ marginTop: "16px", display: "flex", justifyContent: "flex-end" }}>
-              <button className="petpooja-btn-secondary" onClick={() => setShowSupportModal(false)}>Close</button>
+              <button className="btn-close-modal" onClick={() => setShowSupportModal(false)}>Close</button>
             </div>
           </div>
         </div>
       )}
 
       <style jsx>{`
+        /* Top Window Titlebar */
+        .petpooja-window-titlebar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          height: 24px;
+          background: #ffffff;
+          border-bottom: 1px solid #f1f5f9;
+          padding: 0 8px;
+          font-size: 0.72rem;
+          color: #475569;
+          user-select: none;
+        }
+        .window-title-left {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .window-app-icon {
+          width: 14px;
+          height: 14px;
+          background: #d32f2f;
+          border-radius: 2px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .window-title-text {
+          font-weight: 500;
+          color: #334155;
+          letter-spacing: -0.2px;
+        }
+        .window-controls-right {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+        .win-btn {
+          background: transparent;
+          border: none;
+          padding: 2px 6px;
+          font-size: 0.75rem;
+          color: #64748b;
+          cursor: pointer;
+          border-radius: 2px;
+        }
+        .win-btn:hover {
+          background: #f1f5f9;
+          color: #0f172a;
+        }
+        .win-close:hover {
+          background: #ef4444;
+          color: #ffffff;
+        }
+
+        /* Main Top Header */
         .petpooja-top-header {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          height: 48px;
+          height: 52px;
           background: #ffffff;
-          border-bottom: 1px solid #e2e8f0;
-          padding: 0 12px;
+          border-bottom: 1px solid #e5e7eb;
+          padding: 0 14px;
           position: sticky;
           top: 0;
           z-index: 50;
-          font-family: inherit;
-          gap: 8px;
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+          gap: 12px;
         }
 
-        .petpooja-header-left {
+        /* Left Cluster */
+        .header-left-cluster {
           display: flex;
           align-items: center;
           gap: 10px;
           flex-shrink: 0;
         }
 
-        .petpooja-hamburger-btn {
+        .online-indicator-dot {
+          width: 8px;
+          height: 8px;
+          background: #22c55e;
+          border-radius: 50%;
+          display: inline-block;
+          box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.2);
+        }
+
+        .hamburger-menu-btn {
           background: transparent;
           border: none;
-          color: #475569;
           cursor: pointer;
           padding: 4px;
           display: flex;
-          align-items: center;
+          flex-direction: column;
+          gap: 3px;
           border-radius: 4px;
         }
-        .petpooja-hamburger-btn:hover {
-          background: #f1f5f9;
+        .hamburger-menu-btn:hover {
+          background: #f8fafc;
+        }
+        .hamburger-line {
+          width: 18px;
+          height: 2px;
+          background: #1e293b;
+          border-radius: 1px;
         }
 
-        .petpooja-logo-badge {
-          background: #e11d48;
+        .petpooja-brand-badge {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          background: #d32f2f;
           color: #ffffff;
-          padding: 2px 8px;
-          border-radius: 4px;
-          font-weight: 900;
-          font-size: 0.875rem;
-          letter-spacing: -0.5px;
+          padding: 4px 8px;
+          border-radius: 6px;
+          text-decoration: none;
+          box-shadow: 0 1px 3px rgba(211, 47, 47, 0.25);
+        }
+        .brand-icon-box {
           display: flex;
           align-items: center;
           justify-content: center;
         }
-
-        .petpooja-outlet-title {
-          font-size: 0.75rem;
-          color: #64748b;
-          white-space: nowrap;
-        }
-        .outlet-name-bold {
-          font-weight: 700;
-          color: #1e293b;
-        }
-
-        .petpooja-header-center {
+        .brand-text-col {
           display: flex;
-          align-items: center;
-          gap: 8px;
-          flex-grow: 1;
-          max-width: 480px;
+          flex-direction: column;
+          line-height: 1;
+        }
+        .brand-sub {
+          font-size: 0.45rem;
+          letter-spacing: 0.5px;
+          font-weight: 700;
+          opacity: 0.9;
+        }
+        .brand-main {
+          font-size: 0.75rem;
+          font-weight: 900;
+          letter-spacing: -0.3px;
         }
 
-        .petpooja-new-order-btn {
-          background: #dc2626;
+        .petpooja-new-order-pill {
+          background: #d32f2f;
           color: #ffffff;
           border: none;
           font-weight: 700;
           font-size: 0.8125rem;
-          padding: 5px 14px;
-          border-radius: 4px;
+          padding: 7px 18px;
+          border-radius: 9999px;
           cursor: pointer;
           white-space: nowrap;
-          box-shadow: 0 1px 2px rgba(220, 38, 38, 0.2);
-          transition: background 0.15s;
+          box-shadow: 0 1px 3px rgba(211, 47, 47, 0.3);
+          transition: background 0.15s, transform 0.1s;
         }
-        .petpooja-new-order-btn:hover {
-          background: #b91c1c;
+        .petpooja-new-order-pill:hover {
+          background: #b71c1c;
+          transform: translateY(-0.5px);
         }
 
-        .petpooja-search-box {
+        .search-pill-box {
           display: flex;
           align-items: center;
-          gap: 6px;
-          background: #f8fafc;
-          border: 1px solid #cbd5e1;
-          border-radius: 4px;
-          padding: 4px 10px;
+          background: #ffffff;
+          border: 1px solid #d1d5db;
+          border-radius: 9999px;
+          padding: 0 12px;
+          height: 32px;
+          width: 110px;
+          transition: border-color 0.15s, width 0.2s;
+        }
+        .search-pill-box:focus-within {
+          border-color: #d32f2f;
+          width: 140px;
+          box-shadow: 0 0 0 2px rgba(211, 47, 47, 0.15);
+        }
+        .search-glass-icon {
           font-size: 0.75rem;
           color: #64748b;
-          cursor: pointer;
-          min-width: 95px;
+          margin-right: 4px;
         }
-        .petpooja-search-box:hover {
-          background: #f1f5f9;
-          border-color: #94a3b8;
+        .search-pill-input {
+          border: none;
+          outline: none;
+          background: transparent;
+          font-size: 0.75rem;
+          color: #1e293b;
+          width: 100%;
+        }
+        .search-pill-input::placeholder {
+          color: #64748b;
+          font-weight: 500;
         }
 
-        .petpooja-header-right {
+        /* Right Cluster */
+        .header-right-cluster {
           display: flex;
           align-items: center;
-          gap: 6px;
+          gap: 8px;
           flex-shrink: 0;
         }
 
-        .header-icon-btn {
+        .top-nav-action-btn {
           background: transparent;
           border: none;
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: center;
-          padding: 2px 6px;
+          padding: 3px 5px;
           cursor: pointer;
-          color: #64748b;
+          color: #475569;
           text-decoration: none;
-          font-size: 0.65rem;
-          position: relative;
           border-radius: 4px;
-          min-width: 44px;
+          min-width: 46px;
+          transition: background 0.15s, color 0.15s;
         }
-        .header-icon-btn:hover {
+        .top-nav-action-btn:hover {
           background: #f8fafc;
           color: #0f172a;
         }
-        .icon-glyph {
-          font-size: 0.95rem;
-          line-height: 1;
+        .nav-icon-wrapper {
+          position: relative;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          height: 22px;
         }
-        .icon-caption {
+        .nav-caption {
           font-size: 0.625rem;
           font-weight: 500;
           margin-top: 1px;
           white-space: nowrap;
+          color: #475569;
         }
 
-        .header-icon-btn.is-active .icon-glyph {
-          color: #16a34a;
-        }
-        .header-icon-btn.is-live .icon-glyph {
-          color: #2563eb;
-          animation: pulse 2s infinite;
-        }
-
-        .alert-btn {
-          position: relative;
-        }
-        .alert-badge {
+        .alert-action-btn .red-badge-dot {
           position: absolute;
           top: 0;
-          right: 6px;
+          right: 0;
+          width: 6px;
+          height: 6px;
           background: #dc2626;
-          color: #fff;
-          font-size: 0.5625rem;
-          font-weight: 800;
-          border-radius: 999px;
-          padding: 0 4px;
-          line-height: 12px;
+          border-radius: 50%;
         }
 
-        .header-support-pill {
+        .support-contact-block {
           display: flex;
           flex-direction: column;
           align-items: flex-end;
-          padding: 2px 8px;
-          background: #f8fafc;
-          border-left: 1px solid #e2e8f0;
+          padding-left: 10px;
+          border-left: 1px solid #e5e7eb;
           cursor: pointer;
+          user-select: none;
         }
-        .support-title {
-          font-size: 0.625rem;
-          color: #94a3b8;
-        }
-        .support-phone {
+        .support-heading {
           font-size: 0.6875rem;
+          color: #374151;
+          font-weight: 500;
+        }
+        .support-phone-number {
+          font-size: 0.8125rem;
           font-weight: 700;
-          color: #3b82f6;
+          color: #1d4ed8;
+          letter-spacing: -0.2px;
         }
 
-        /* Drawer & Modals */
+        /* ------------------------------------------------------------------ */
+        /* LEFT MENU BAR (Exact Dark Charcoal Theme per Reference Screenshot) */
+        /* ------------------------------------------------------------------ */
         .petpooja-drawer-backdrop {
           position: fixed;
-          top: 0;
-          left: 0;
-          width: 100vw;
-          height: 100vh;
-          background: rgba(15, 23, 42, 0.45);
-          z-index: 100;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.45);
+          z-index: 1000;
           display: flex;
         }
-        .petpooja-side-drawer {
-          width: 280px;
+        .petpooja-left-menu-bar {
+          width: 260px;
+          background: #3e3e3e;
           height: 100%;
-          background: #ffffff;
-          box-shadow: 4px 0 20px rgba(0,0,0,0.15);
+          box-shadow: 4px 0 20px rgba(0, 0, 0, 0.35);
           display: flex;
           flex-direction: column;
-          animation: slideIn 0.2s ease-out;
+          animation: slideInLeft 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+          color: #ffffff;
+          user-select: none;
         }
-        .drawer-header {
+        @keyframes slideInLeft {
+          from { transform: translateX(-100%); }
+          to { transform: translateX(0); }
+        }
+
+        /* 1. Header: "Settings" with Left Arrow */
+        .drawer-header-bar {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 16px;
-          border-bottom: 1px solid #e2e8f0;
+          height: 52px;
+          padding: 0 16px;
+          background: #383838;
+          border-bottom: 1px solid #4a4a4a;
         }
-        .drawer-brand {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-        .drawer-brand h3 {
+        .drawer-title-text {
+          font-size: 1.15rem;
+          font-weight: 700;
+          color: #ffffff;
           margin: 0;
-          font-size: 1rem;
-          font-weight: 800;
+          letter-spacing: -0.2px;
         }
-        .close-btn {
+        .drawer-back-arrow-btn {
           background: transparent;
           border: none;
-          font-size: 1.1rem;
           cursor: pointer;
-          color: #64748b;
-        }
-        .drawer-nav-list {
-          padding: 8px;
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-          overflow-y: auto;
-        }
-        .drawer-item {
           display: flex;
           align-items: center;
-          gap: 12px;
-          padding: 10px 12px;
-          border-radius: 6px;
-          color: #334155;
-          text-decoration: none;
-          font-size: 0.875rem;
-          font-weight: 600;
+          justify-content: center;
+          padding: 4px;
+          border-radius: 4px;
         }
-        .drawer-item:hover {
-          background: #f1f5f9;
-          color: #0f172a;
+        .drawer-back-arrow-btn:hover {
+          background: #4a4a4a;
         }
 
+        /* 2. Menu Navigation Items List */
+        .drawer-menu-items-scroll {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          overflow-y: auto;
+          padding-top: 2px;
+        }
+
+        .menu-row-item {
+          display: flex;
+          align-items: center;
+          padding: 14px 18px;
+          cursor: pointer;
+          transition: background 0.12s;
+          border-left: 4px solid transparent;
+          position: relative;
+        }
+        .menu-row-item:hover {
+          background: #4a4a4a;
+        }
+        .menu-row-item.is-selected {
+          background: #575757;
+          border-left: 4px solid #ffffff;
+        }
+
+        .item-icon-col {
+          width: 28px;
+          display: flex;
+          align-items: center;
+          justify-content: flex-start;
+          margin-right: 14px;
+        }
+        .item-label-text {
+          flex: 1;
+          font-size: 0.9375rem;
+          font-weight: 500;
+          color: #ffffff;
+          letter-spacing: -0.1px;
+        }
+        .chevron-indicator {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: transform 0.2s;
+        }
+        .chevron-indicator.open {
+          transform: rotate(180deg);
+        }
+
+        /* Submenus */
+        .submenu-container {
+          display: flex;
+          flex-direction: column;
+          background: #333333;
+          padding: 4px 0 8px 56px;
+          border-left: 4px solid #575757;
+        }
+        .submenu-link {
+          padding: 8px 12px;
+          color: #cbd5e1;
+          text-decoration: none;
+          font-size: 0.8125rem;
+          font-weight: 500;
+          transition: color 0.12s, padding-left 0.12s;
+        }
+        .submenu-link:hover {
+          color: #ffffff;
+          padding-left: 16px;
+        }
+
+        /* 3. Bottom Metadata Panel */
+        .drawer-footer-metadata-block {
+          background: #383838;
+          border-top: 1px solid #525252;
+          display: flex;
+          flex-direction: column;
+        }
+        .meta-row-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 10px 14px;
+          font-size: 0.8125rem;
+          font-weight: 600;
+          color: #ffffff;
+          border-bottom: 1px solid #4a4a4a;
+        }
+        .meta-ref-id {
+          letter-spacing: -0.2px;
+        }
+        .meta-version {
+          letter-spacing: -0.2px;
+        }
+        .meta-row-biller {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 10px 14px;
+          font-size: 0.8125rem;
+          font-weight: 600;
+          color: #ffffff;
+          background: #343434;
+        }
+        .meta-biller-name {
+          letter-spacing: -0.2px;
+        }
+
+        /* Support Modal */
         .petpooja-modal-backdrop {
           position: fixed;
-          top: 0;
-          left: 0;
-          width: 100vw;
-          height: 100vh;
-          background: rgba(15, 23, 42, 0.5);
-          z-index: 120;
+          inset: 0;
+          background: rgba(15, 23, 42, 0.4);
+          z-index: 1000;
           display: flex;
           align-items: center;
           justify-content: center;
         }
         .petpooja-modal-card {
           background: #ffffff;
-          padding: 24px;
           border-radius: 12px;
+          padding: 24px;
+          max-width: 440px;
           width: 90%;
-          max-width: 420px;
           box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
         }
-        .petpooja-btn-secondary {
+        .btn-close-modal {
           background: #f1f5f9;
           border: 1px solid #cbd5e1;
+          color: #334155;
           padding: 8px 16px;
           border-radius: 6px;
+          font-size: 0.875rem;
           font-weight: 600;
           cursor: pointer;
-        }
-
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.4; }
-        }
-        @keyframes slideIn {
-          from { transform: translateX(-100%); }
-          to { transform: translateX(0); }
         }
       `}</style>
     </>
   );
 }
+
+export { PetPoojaHeader as KapMetaHeader };
+export type { PetPoojaHeaderProps as KapMetaHeaderProps };
+

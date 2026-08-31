@@ -8,7 +8,7 @@ async function sleep(ms: number) {
 
 async function runWaiterE2ETest() {
   console.log("\n=======================================================");
-  console.log("   PETPOOJA / KAPMETA POS — WAITER FLOW E2E VERIFIER");
+  console.log("   KAPMETA POS — WAITER FLOW E2E VERIFIER");
   console.log("=======================================================\n");
 
   // 1. Login as Admin / Waiter

@@ -1,5 +1,5 @@
 # ==============================================================================
-# KAPMETA / PETPOOJA POS PLATFORM - STARTUP RUNNER AND PROCESS ORCHESTRATOR
+# KAPMETA POS PLATFORM - STARTUP RUNNER AND PROCESS ORCHESTRATOR
 # ==============================================================================
 
 # 0. Anchor to Project Root Directory
@@ -10,7 +10,7 @@ if (-not (Test-Path "$rootDir\package.json")) {
 Set-Location $rootDir
 
 try {
-    $host.UI.RawUI.WindowTitle = 'Kapmeta POS - PetPooja Live Server (Port 4444 & 4001)'
+    $host.UI.RawUI.WindowTitle = 'Kapmeta POS Live Server (Port 4444 & 4001)'
 } catch {}
 
 Write-Host '=======================================================================' -ForegroundColor Green
@@ -243,7 +243,7 @@ $startupSuccessEvent | Out-File -FilePath $appLog -Append -Encoding utf8
 function Show-Dashboard {
     try { Clear-Host } catch {}
     Write-Host '=======================================================================' -ForegroundColor Green
-    Write-Host '   KAPMETA / PETPOOJA POS PLATFORM — LIVE CONTROL DASHBOARD (ONLINE)   ' -ForegroundColor Green
+    Write-Host '   KAPMETA POS PLATFORM — LIVE CONTROL DASHBOARD (ONLINE)   ' -ForegroundColor Green
     Write-Host '=======================================================================' -ForegroundColor Green
     Write-Host ''
     Write-Host '  [SERVICES STATUS]' -ForegroundColor Cyan
@@ -265,7 +265,7 @@ function Show-Dashboard {
     Write-Host '    [R] Restart All Services' -ForegroundColor White
     Write-Host '    [Q] Stop All Services and Exit' -ForegroundColor Red
     Write-Host '=======================================================================' -ForegroundColor Green
-    Write-Host '  PetPooja POS is actively serving requests. Press a key above to interact.' -ForegroundColor Green
+    Write-Host '  KapMeta POS is actively serving requests. Press a key above to interact.' -ForegroundColor Green
     Write-Host ''
 }
 
@@ -327,7 +327,7 @@ if ($isInteractive) {
                     return
                 }
                 'Q' {
-                    Write-Host "`n[SHUTDOWN] Stopping all PetPooja POS services..." -ForegroundColor Red
+                    Write-Host "`n[SHUTDOWN] Stopping all KapMeta POS services..." -ForegroundColor Red
                     & "$rootDir\scripts\shutdown.ps1"
                     $running = $false
                     Write-Host 'Goodbye! Press any key to close.' -ForegroundColor Gray
@@ -340,7 +340,7 @@ if ($isInteractive) {
     }
 } else {
     Write-Host '=======================================================================' -ForegroundColor Green
-    Write-Host '  [ONLINE] PetPooja POS Platform Services are Running in Background!   ' -ForegroundColor Green
+    Write-Host '  [ONLINE] KapMeta POS Platform Services are Running in Background!   ' -ForegroundColor Green
     Write-Host '=======================================================================' -ForegroundColor Green
     Write-Host '  - POS Web UI       : http://localhost:4444' -ForegroundColor Cyan
     Write-Host '  - API Health Check : http://localhost:4001/health' -ForegroundColor Cyan

@@ -117,7 +117,7 @@ function getSuggestedRemediation(message: string): string {
 
 export function runErrorScanner(): { totalScanned: number; errorCount: number; errors: LogError[] } {
   console.log('\n=======================================================================');
-  console.log('       KAPMETA / PETPOOJA POS — AUTOMATED LOG & ERROR SCANNER          ');
+  console.log('                 KAPMETA POS — AUTOMATED LOG & ERROR SCANNER           ');
   console.log('=======================================================================\n');
 
   if (!fs.existsSync(LOGS_DIR)) {

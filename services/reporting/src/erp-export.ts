@@ -38,7 +38,7 @@ export class ERPExportGenerator {
 
     // Map each invoice into a standard Sales Journal Voucher
     for (const inv of invoices) {
-      const ledgers = [];
+      const ledgers: Array<{ account: string, isDebit: boolean, amountMinor: string }> = [];
 
       // Credit Sales Account
       ledgers.push({

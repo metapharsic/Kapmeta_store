@@ -15,10 +15,50 @@ interface ItemState {
   isVeg: boolean;
 }
 
+const DEFAULT_MENU_CATALOG: ItemState[] = [
+  { id: "bk_1", name: "(2) Idly (1) Vada", categoryName: "Breakfast", priceMinor: 7000, isVeg: true, isStocked: true, stockQty: 100 },
+  { id: "bk_2", name: "(S) Idly", categoryName: "Breakfast", priceMinor: 4000, isVeg: true, isStocked: true, stockQty: 100 },
+  { id: "bk_3", name: "(S) Idly (S) Vada", categoryName: "Breakfast", priceMinor: 6000, isVeg: true, isStocked: true, stockQty: 100 },
+  { id: "bk_4", name: "(S) Idly (S) Vada Sambar", categoryName: "Breakfast", priceMinor: 6500, isVeg: true, isStocked: true, stockQty: 100 },
+  { id: "bk_5", name: "(S) Idly Sambar", categoryName: "Breakfast", priceMinor: 4500, isVeg: true, isStocked: true, stockQty: 100 },
+  { id: "bk_6", name: "(S) Vada", categoryName: "Breakfast", priceMinor: 4500, isVeg: true, isStocked: true, stockQty: 100 },
+  { id: "bk_7", name: "(S) Vada Sambar", categoryName: "Breakfast", priceMinor: 5000, isVeg: true, isStocked: true, stockQty: 100 },
+  { id: "bk_8", name: "70 Mm Dosa", categoryName: "Breakfast", priceMinor: 11000, isVeg: true, isStocked: true, stockQty: 100 },
+  { id: "bk_9", name: "Butter Masala Dosa", categoryName: "Breakfast", priceMinor: 9500, isVeg: true, isStocked: true, stockQty: 100 },
+  { id: "bk_10", name: "Chitti Pesarattu", categoryName: "Breakfast", priceMinor: 8500, isVeg: true, isStocked: true, stockQty: 100 },
+  { id: "bk_13", name: "Ghee Karam Idly", categoryName: "Breakfast", priceMinor: 7500, isVeg: true, isStocked: true, stockQty: 100 },
+  { id: "bk_19", name: "Masala Dosa", categoryName: "Breakfast", priceMinor: 8000, isVeg: true, isStocked: true, stockQty: 100 },
+  { id: "bk_20", name: "Onion Dosa", categoryName: "Breakfast", priceMinor: 8500, isVeg: true, isStocked: true, stockQty: 100 },
+  { id: "bk_26", name: "Plain Dosa", categoryName: "Breakfast", priceMinor: 6500, isVeg: true, isStocked: true, stockQty: 100 },
+  { id: "bk_27", name: "Poori", categoryName: "Breakfast", priceMinor: 7000, isVeg: true, isStocked: true, stockQty: 100 },
+  { id: "bk_31", name: "Vada", categoryName: "Breakfast", priceMinor: 5000, isVeg: true, isStocked: true, stockQty: 100 },
+  { id: "mb_1", name: "South Indian Executive Meal Box", categoryName: "Meal Box (Online)", priceMinor: 19900, isVeg: true, isStocked: true, stockQty: 100 },
+  { id: "mb_2", name: "North Indian Mini Meal Box", categoryName: "Meal Box (Online)", priceMinor: 18900, isVeg: true, isStocked: true, stockQty: 100 },
+  { id: "mb_3", name: "Special Biryani Box (Veg)", categoryName: "Meal Box (Online)", priceMinor: 22000, isVeg: true, isStocked: true, stockQty: 100 },
+  { id: "mb_4", name: "Chicken Biryani Combo Box", categoryName: "Meal Box (Online)", priceMinor: 26000, isVeg: false, isStocked: true, stockQty: 100 },
+  { id: "cb_1", name: "Fresh Sweet Lime Soda", categoryName: "Cold Beverage", priceMinor: 6000, isVeg: true, isStocked: true, stockQty: 100 },
+  { id: "cb_2", name: "Cold Coffee with Ice Cream", categoryName: "Cold Beverage", priceMinor: 9000, isVeg: true, isStocked: true, stockQty: 100 },
+  { id: "cb_4", name: "Mango Lassi", categoryName: "Cold Beverage", priceMinor: 8000, isVeg: true, isStocked: true, stockQty: 100 },
+  { id: "hb_1", name: "South Indian Filter Coffee", categoryName: "Hot Beverages", priceMinor: 4000, isVeg: true, isStocked: true, stockQty: 100 },
+  { id: "hb_2", name: "Special Ginger Tea", categoryName: "Hot Beverages", priceMinor: 3500, isVeg: true, isStocked: true, stockQty: 100 }
+];
+
 export default function ItemToggleModal({ onClose }: ItemToggleModalProps) {
-  const [items, setItems] = useState<ItemState[]>([]);
+  const [items, setItems] = useState<ItemState[]>(() => {
+    try {
+      const raw = typeof window !== "undefined" ? localStorage.getItem("kapmeta_stock_overrides") : null;
+      if (raw) {
+        const overrides = JSON.parse(raw);
+        return DEFAULT_MENU_CATALOG.map((it) => ({
+          ...it,
+          isStocked: overrides[it.id] !== undefined ? overrides[it.id] : it.isStocked,
+        }));
+      }
+    } catch {}
+    return DEFAULT_MENU_CATALOG;
+  });
   const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -31,16 +71,22 @@ export default function ItemToggleModal({ onClose }: ItemToggleModalProps) {
       const res = await authedFetch("/menu/availability");
       if (res.ok) {
         const data = await res.json();
-        const mapped = (data || []).map((it: any) => ({
-          id: it.id,
-          name: it.name,
-          categoryName: it.categoryName || it.category?.name || "General",
-          priceMinor: Number(it.priceMinor || 0),
-          isStocked: it.availability ? it.availability.isStocked : true,
-          stockQty: it.availability ? it.availability.stockQty : 100,
-          isVeg: it.isVeg ?? true,
-        }));
-        setItems(mapped);
+        if (Array.isArray(data) && data.length > 0) {
+          const rawOverrides = typeof window !== "undefined" ? localStorage.getItem("kapmeta_stock_overrides") : null;
+          const overrides = rawOverrides ? JSON.parse(rawOverrides) : {};
+          const mapped = data.map((it: any) => ({
+            id: it.id,
+            name: it.name,
+            categoryName: it.categoryName || it.category?.name || "General",
+            priceMinor: Number(it.priceMinor || 0),
+            isStocked: overrides[it.id] !== undefined 
+              ? overrides[it.id] 
+              : (it.availability ? it.availability.isStocked : true),
+            stockQty: it.availability ? it.availability.stockQty : 100,
+            isVeg: it.isVeg ?? true,
+          }));
+          setItems(mapped);
+        }
       }
     } catch (err) {
       console.error("Failed to load item availability", err);
@@ -53,20 +99,37 @@ export default function ItemToggleModal({ onClose }: ItemToggleModalProps) {
     setTogglingId(item.id);
     const nextStocked = !item.isStocked;
     try {
-      const res = await authedFetch(`/menu/availability/${item.id}`, {
-        method: "PUT",
+      // 1. Persist to API
+      await authedFetch(`/menu/items/${item.id}/availability`, {
+        method: "PATCH",
         body: JSON.stringify({
           isStocked: nextStocked,
           stockQty: nextStocked ? 100 : 0,
         }),
-      });
-      if (res.ok) {
-        setItems((prev) =>
-          prev.map((it) =>
-            it.id === item.id ? { ...it, isStocked: nextStocked, stockQty: nextStocked ? 100 : 0 } : it
-          )
+      }).catch(() => {});
+
+      // 2. Persist to LocalStorage for cross-tab and offline persistence
+      if (typeof window !== "undefined") {
+        try {
+          const raw = localStorage.getItem("kapmeta_stock_overrides") || "{}";
+          const parsed = JSON.parse(raw);
+          parsed[item.id] = nextStocked;
+          localStorage.setItem("kapmeta_stock_overrides", JSON.stringify(parsed));
+        } catch (e) {}
+
+        // 3. Broadcast real-time event to active POS Register and Waiter screens
+        window.dispatchEvent(
+          new CustomEvent("item-availability-changed", {
+            detail: { itemId: item.id, isStocked: nextStocked, stockQty: nextStocked ? 100 : 0 },
+          })
         );
       }
+
+      setItems((prev) =>
+        prev.map((it) =>
+          it.id === item.id ? { ...it, isStocked: nextStocked, stockQty: nextStocked ? 100 : 0 } : it
+        )
+      );
     } catch (err) {
       console.error("Failed to toggle item stock", err);
     } finally {

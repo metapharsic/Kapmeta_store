@@ -338,7 +338,7 @@ export default function InventoryDashboard() {
   return (
     <div className="min-h-screen flex bg-slate-950 text-slate-100 font-sans">
       <Head>
-        <title>Inventory & Supply Chain - PetPooja POS</title>
+        <title>Inventory & Supply Chain - KapMeta POS</title>
       </Head>
       <Nav variant="sidebar" />
 

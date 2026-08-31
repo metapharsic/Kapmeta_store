@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableDelayedExpansion
 cd /d "%~dp0"
-title Kapmeta POS - Application Terminator
+title KapMeta POS - Application Terminator
 color 0C
 
 echo =======================================================================

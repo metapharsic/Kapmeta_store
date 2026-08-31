@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../db";
 import {
   getSalesSummary,
   getItemPerformance,
@@ -10,8 +10,6 @@ import {
   PrismaReportingRepository,
 } from "@kapmeta/reporting";
 import { requireAuth, requirePermission, type AuthedRequest } from "../middleware/require-auth";
-
-const prisma = new PrismaClient();
 
 const router = Router();
 

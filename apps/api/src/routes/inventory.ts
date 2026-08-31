@@ -1,10 +1,9 @@
 import { Router } from "express";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../db";
 import { requireAuth, requirePermission, AuthedRequest } from "../middleware/require-auth";
 import { IngredientManager, ProcurementManager } from "@kapmeta/inventory";
 
 export const inventoryRouter = Router();
-const prisma = new PrismaClient();
 const ingredientManager = new IngredientManager(prisma);
 const procurementManager = new ProcurementManager(prisma);
 

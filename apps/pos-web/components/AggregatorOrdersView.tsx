@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { useRouter } from "next/router";
 import { authedFetch } from "../lib/auth";
 
 interface OnlineOrder {
@@ -18,6 +19,7 @@ interface OnlineOrder {
 }
 
 export default function AggregatorOrdersView() {
+  const router = useRouter();
   const [topTab, setTopTab] = useState<"CURRENT" | "ONLINE" | "ADVANCE">("ONLINE");
   const [statusFilter, setStatusFilter] = useState<OnlineOrder["status"] | "ALL">("ALL");
   const [search, setSearch] = useState("");
@@ -283,7 +285,7 @@ export default function AggregatorOrdersView() {
                     <button
                       type="button"
                       className="btn-action-view"
-                      onClick={() => setSelectedOrder(ord)}
+                      onClick={() => router.push(`/pending-order-detail?orderId=${ord.id}`)}
                     >
                       View Details
                     </button>

@@ -181,7 +181,7 @@ export function priceOrder(
     // item price is scaled below.
     let modifierSurchargeUnitMinor = 0n;
     const modifiers: PricedOrderLineModifier[] = [];
-    for (const modifierOptionId of line.modifierOptionIds) {
+    for (const modifierOptionId of line.modifierOptionIds || []) {
       const modifierPriceMinor = modifierPrices.get(modifierOptionId);
       if (modifierPriceMinor === undefined) {
         throw new Error(`no price found for modifier option ${modifierOptionId}`);

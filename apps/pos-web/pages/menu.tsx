@@ -197,7 +197,7 @@ export default function MenuManagement() {
   return (
     <div className="menu-app">
       <Head>
-        <title>Kapmeta POS — Menu Management</title>
+        <title>KapMeta POS — Menu Management</title>
         <meta name="description" content="Category and menu item catalog management console." />
       </Head>
 
@@ -208,7 +208,7 @@ export default function MenuManagement() {
         <div className="topbar-left">
           <div className="brand-badge">
             <span className="brand-icon">🍽️</span>
-            <span className="brand-name">Kapmeta POS</span>
+            <span className="brand-name">KapMeta POS</span>
           </div>
           <div className="outlet-pill">
             <span className="outlet-dot"></span>

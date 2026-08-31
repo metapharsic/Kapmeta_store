@@ -192,7 +192,7 @@ export default function TableManagement() {
   return (
     <div className="table-management-root">
       <Head>
-        <title>Floor Plan & Table Management - PetPooja POS</title>
+        <title>Floor Plan & Table Management - KapMeta POS</title>
       </Head>
 
       <PetPoojaHeader
@@ -251,6 +251,7 @@ export default function TableManagement() {
             <AddTableModal
               onClose={() => setShowAdd(false)}
               onTableCreated={fetchTables}
+              existingTables={tables.map((t) => t.tableNumber)}
             />
           )}
 

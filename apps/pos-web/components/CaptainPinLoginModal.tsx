@@ -103,7 +103,7 @@ export default function CaptainPinLoginModal({
           <div className="brand-badge">
             <span className="logo-text">POSS</span>
             <div>
-              <div style={{ fontWeight: 800, fontSize: "1rem" }}>PetPooja Captain Login</div>
+              <div style={{ fontWeight: 800, fontSize: "1rem" }}>KapMeta Captain Login</div>
               <div style={{ fontSize: "0.75rem", color: "#64748b" }}>Fast PIN Authentication & Shift Start</div>
             </div>
           </div>

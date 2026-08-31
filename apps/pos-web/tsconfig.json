@@ -24,6 +24,9 @@
     "incremental": true
   },
   "include": [
+    "next-env.d.ts",
+    "pages",
+    "components",
     "src",
     "test"
   ],
