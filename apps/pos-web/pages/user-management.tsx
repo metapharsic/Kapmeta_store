@@ -27,6 +27,11 @@ interface RoleApi {
   description: string | null;
 }
 
+interface OutletApi {
+  id: string;
+  name: string;
+}
+
 interface PermissionApi {
   id: string;
   action: string;
@@ -34,13 +39,15 @@ interface PermissionApi {
 }
 
 export default function UserManagement() {
-  const { me, loading: authLoading } = useAuthGuard("menu.category.manage");
+  const { me, loading: authLoading } = useAuthGuard("users.manage");
 
   const [users, setUsers] = useState<UserApi[]>([]);
   const [roles, setRoles] = useState<RoleApi[]>([]);
+  const [outlets, setOutlets] = useState<OutletApi[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
 
   // Per-user pending selection for the assign form.
   const [selectedRole, setSelectedRole] = useState<Record<string, string>>({});
@@ -156,6 +163,7 @@ export default function UserManagement() {
   const handleDeleteUser = async (userId: string) => {
     if (!window.confirm("Are you sure you want to delete this staff account?")) return;
     setActionError(null);
+    setActionNotice(null);
     setDeletingUserId(userId);
     try {
       const res = await authedFetch(`/users/${userId}`, {
@@ -164,6 +172,12 @@ export default function UserManagement() {
       if (!res.ok && res.status !== 204) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || "HTTP error " + res.status);
+      }
+      if (res.status !== 204) {
+        const body = await res.json().catch(() => ({} as { deactivated?: boolean; message?: string }));
+        if (body.deactivated && body.message) {
+          setActionNotice(body.message);
+        }
       }
       fetchData();
     } catch (err) {
@@ -189,11 +203,16 @@ export default function UserManagement() {
         if (!res.ok) throw new Error("HTTP error " + res.status);
         return res.json() as Promise<PermissionApi[]>;
       }),
+      authedFetch(`/outlets`).then((res) => {
+        if (!res.ok) throw new Error("HTTP error " + res.status);
+        return res.json() as Promise<OutletApi[]>;
+      }),
     ])
-      .then(([usersRes, rolesRes, permissionsRes]) => {
+      .then(([usersRes, rolesRes, permissionsRes, outletsRes]) => {
         setUsers(Array.isArray(usersRes) ? usersRes : []);
         setRoles(Array.isArray(rolesRes) ? rolesRes : []);
         setPermissions(Array.isArray(permissionsRes) ? permissionsRes : []);
+        setOutlets(Array.isArray(outletsRes) ? outletsRes : []);
         setLoading(false);
       })
       .catch((err) => {
@@ -201,6 +220,7 @@ export default function UserManagement() {
         setUsers([]);
         setRoles([]);
         setPermissions([]);
+        setOutlets([]);
         setLoading(false);
       });
   };
@@ -281,6 +301,12 @@ export default function UserManagement() {
       if (!permRes.ok) {
         const body = await permRes.json().catch(() => ({}));
         throw new Error(body.error || "HTTP error " + permRes.status);
+      }
+      const permBody = (await permRes.json().catch(() => ({}))) as { droppedIds?: string[] };
+      if (permBody.droppedIds && permBody.droppedIds.length > 0) {
+        setActionNotice(
+          `${permBody.droppedIds.length} permission(s) could not be applied (unknown IDs).`
+        );
       }
 
       setShowRoleEditor(false);
@@ -429,6 +455,13 @@ export default function UserManagement() {
               </div>
             )}
 
+            {actionNotice && (
+              <div className="empty-state-card">
+                <span className="empty-icon">ℹ️</span>
+                <p>{actionNotice}</p>
+              </div>
+            )}
+
             {loading && (
               <div className="empty-state-card">
                 <span className="empty-icon">⏳</span>
@@ -526,15 +559,20 @@ export default function UserManagement() {
                             </select>
                           </td>
                           <td>
-                            <input
-                              type="text"
-                              placeholder="Outlet ID (optional)"
+                            <select
                               value={selectedOutlet[user.id] ?? ""}
                               onChange={(e) =>
                                 setSelectedOutlet((prev) => ({ ...prev, [user.id]: e.target.value }))
                               }
                               className="outlet-input"
-                            />
+                            >
+                              <option value="">Org-wide (no outlet)</option>
+                              {outlets.map((outlet) => (
+                                <option key={outlet.id} value={outlet.id}>
+                                  {outlet.name}
+                                </option>
+                              ))}
+                            </select>
                           </td>
                           <td>
                             <button
@@ -675,7 +713,14 @@ export default function UserManagement() {
                     </div>
                     <div className="form-group">
                       <label>Outlet Scope (blank = org-wide)</label>
-                      <input type="text" placeholder="Outlet ID" value={newUserOutletId} onChange={(e) => setNewUserOutletId(e.target.value)} />
+                      <select value={newUserOutletId} onChange={(e) => setNewUserOutletId(e.target.value)}>
+                        <option value="">Org-wide (no outlet)</option>
+                        {outlets.map((outlet) => (
+                          <option key={outlet.id} value={outlet.id}>
+                            {outlet.name}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <div className="modal-actions">
                       <button type="button" className="cancel-modal-btn" onClick={() => setShowAddUserModal(false)}>Cancel</button>

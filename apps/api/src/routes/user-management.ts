@@ -8,6 +8,25 @@ const router = Router();
 // Gated on "users.manage" which is now seeded in seed_permissions.sql.
 const USER_MANAGEMENT_PERMISSION = "users.manage";
 
+// GET /outlets — list outlets for pickers (id + name only).
+router.get(
+  "/outlets",
+  requireAuth,
+  requirePermission(USER_MANAGEMENT_PERMISSION),
+  async (_req: AuthedRequest, res) => {
+    try {
+      const outlets = await prisma.outlet.findMany({
+        select: { id: true, name: true },
+        orderBy: { name: "asc" },
+      });
+      res.status(200).json(outlets);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "internal error" });
+    }
+  }
+);
+
 // GET /users — list users with their current role assignments (+ outlet).
 router.get(
   "/users",
@@ -261,6 +280,7 @@ router.put(
         select: { id: true },
       });
       const validIds = new Set(validPermissions.map((p) => p.id));
+      const droppedIds = permissionIds.filter((pid) => !validIds.has(pid));
 
       await prisma.$transaction([
         prisma.rolePermission.deleteMany({ where: { roleId: id } }),
@@ -269,7 +289,12 @@ router.put(
         }),
       ]);
 
-      res.status(200).json({ permissionIds: [...validIds] });
+      res.status(200).json({
+        success: true,
+        permissionIds: [...validIds],
+        appliedCount: validIds.size,
+        droppedIds,
+      });
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "internal error" });
@@ -475,6 +500,14 @@ router.post(
         return;
       }
 
+      if (outletId) {
+        const outlet = await prisma.outlet.findUnique({ where: { id: outletId } });
+        if (!outlet) {
+          res.status(400).json({ error: "Outlet not found" });
+          return;
+        }
+      }
+
       const salt = await bcrypt.genSalt(10);
       const passwordHash = await bcrypt.hash(password, salt);
       const pinHash = pin ? await bcrypt.hash(pin, salt) : null;
@@ -608,8 +641,54 @@ router.delete(
         return;
       }
 
+      // A hard delete is only safe if this user has no history anywhere in the
+      // system — role assignments, sessions, quick links, notifications, or
+      // orders/KOTs they touched as waiter/creator/updater. Any of that would
+      // either throw an FK-constraint error (UserRole/Session/UserQuickLink are
+      // real relations to User with no onDelete: Cascade, so Postgres rejects
+      // the delete) or silently orphan references (Order.waiterId is a plain
+      // UUID column with no FK, so a hard delete there would leave dangling
+      // ids). If any dependency exists we
+      // deactivate instead of deleting, mirroring the vendor DELETE pattern in
+      // inventory.ts.
+      const [
+        roleAssignmentCount,
+        sessionCount,
+        quickLinkCount,
+        notificationCount,
+        orderCount,
+      ] = await Promise.all([
+        prisma.userRole.count({ where: { userId: id } }),
+        prisma.session.count({ where: { userId: id } }),
+        prisma.userQuickLink.count({ where: { userId: id } }),
+        prisma.notification.count({ where: { userId: id } }),
+        prisma.order.count({ where: { waiterId: id } }),
+      ]);
+
+      const hasDependencies =
+        roleAssignmentCount > 0 ||
+        sessionCount > 0 ||
+        quickLinkCount > 0 ||
+        notificationCount > 0 ||
+        orderCount > 0;
+
+      if (hasDependencies) {
+        await prisma.user.update({
+          where: { id },
+          data: { isActive: false, updatedBy: req.auth!.userId },
+        });
+        res.status(200).json({
+          success: true,
+          deleted: false,
+          deactivated: true,
+          message:
+            "This account has history (roles, sessions, or orders) and can't be permanently deleted, so it was deactivated instead.",
+        });
+        return;
+      }
+
       await prisma.user.delete({ where: { id } });
-      res.status(204).send();
+      res.status(200).json({ success: true, deleted: true, deactivated: false });
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "internal error" });

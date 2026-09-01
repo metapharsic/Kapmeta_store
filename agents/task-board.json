@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-09-01T18:45:00Z",
+  "lastUpdated": "2026-09-01T19:10:00Z",
   "activeTasks": [
     {
       "taskId": "TSK-001",
@@ -262,6 +262,22 @@
       "status": "COMPLETED",
       "priority": "P2",
       "relatedGate": "CP-10"
+    },
+    {
+      "taskId": "TSK-011a",
+      "title": "User Management: fix wrong auth-guard permission (security hole), add outlet validation + picker on create-user/assign-role, add GET /outlets",
+      "assignedTo": "frontend-agent",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "relatedGate": "CP-12"
+    },
+    {
+      "taskId": "TSK-011b",
+      "title": "User Management: safe-delete guard (deactivate instead of hard-delete when user has dependencies), surface dropped permission IDs",
+      "assignedTo": "backend-agent",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "relatedGate": "CP-12"
     }
   ]
 }

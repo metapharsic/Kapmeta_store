@@ -111,3 +111,14 @@ Incident during this round: one agent's git stash diagnostic step briefly revert
 tsc: 101 errors, same baseline, no regression.
 
 CP-10 P0/P1/P2 done. Still not started: P3+ UI (floor view seat picker, merge-preview confirmation dialog, split-by-seat settlement screen) — this is the part staff actually touch. Also still pending: prisma generate + running the 13 new migrations (0025-0037) against a real DB — both need to happen outside this sandboxed shell before any of this code path actually works end-to-end.
+
+## 2026-09-01 — CP-12 User Management design/wiring audit — complete
+
+Audited apps/api/src/routes/user-management.ts + apps/pos-web/pages/user-management.tsx (already had most CRUD, unlike other tabs this session). Found and fixed:
+
+- SECURITY: page's useAuthGuard checked "menu.category.manage" (copy-paste leftover) instead of "users.manage" — any staff with menu access could open the whole user/role admin screen (API calls would 403 but the UI rendered and leaked org structure). Fixed.
+- POST /users didn't validate outletId existed before use (role-assign endpoint did, create didn't) — fixed, plus added GET /outlets and replaced two raw-text "paste an outlet UUID" inputs with real dropdowns.
+- DELETE /users/:id was a naive hard delete — would either throw an FK error or orphan Order.waiterId references for any user who ever worked a shift. Now checks UserRole/Session/UserQuickLink/Notification/Order.waiterId dependencies first and deactivates instead of deleting when any exist, same soft-delete-over-hard-delete convention used for vendors/recipes/customers earlier this session.
+- PUT /roles/:id/permissions silently dropped invalid permission IDs — now reports them back, frontend surfaces a warning banner.
+
+tsc: 101/0 (api/pos-web), unchanged baseline. Both agents touched the same 2 files concurrently, verified no corruption.
