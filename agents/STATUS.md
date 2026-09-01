@@ -122,3 +122,13 @@ Audited apps/api/src/routes/user-management.ts + apps/pos-web/pages/user-managem
 - PUT /roles/:id/permissions silently dropped invalid permission IDs — now reports them back, frontend surfaces a warning banner.
 
 tsc: 101/0 (api/pos-web), unchanged baseline. Both agents touched the same 2 files concurrently, verified no corruption.
+
+## 2026-09-01 — CP-13 Company Details sidebar — complete
+
+New self-serve company profile, nothing hardcoded, blank until admin fills it:
+- Outlet gained phone/email/logoUrl (migration 0038); GST/tax stays on Organization (was already there).
+- GET/PATCH /settings/company — combined outlet+org read/write, scoped strictly to req.auth.outletId, gated settings.manage.
+- GET /auth/me now passes phone/email/logoUrl through, so PosBillingView.tsx's receipt header picks up admin edits automatically without a second data source.
+- New CompanyDetailsPanel.tsx + pages/settings/company.tsx + Nav.tsx sidebar entry under "Management", gated settings.manage. Every field starts truly empty (null → "") until saved for real.
+
+tsc: 101/0, unchanged baseline.

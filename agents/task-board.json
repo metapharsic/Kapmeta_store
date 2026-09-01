@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-09-01T19:10:00Z",
+  "lastUpdated": "2026-09-01T19:30:00Z",
   "activeTasks": [
     {
       "taskId": "TSK-001",
@@ -278,6 +278,22 @@
       "status": "COMPLETED",
       "priority": "P1",
       "relatedGate": "CP-12"
+    },
+    {
+      "taskId": "TSK-012a",
+      "title": "Company profile: Outlet phone/email/logoUrl fields, GET/PATCH /settings/company, /auth/me passthrough",
+      "assignedTo": "backend-agent",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "relatedGate": "CP-13"
+    },
+    {
+      "taskId": "TSK-012b",
+      "title": "Company Details sidebar panel, page, Nav wiring \u2014 no hardcoded/placeholder data",
+      "assignedTo": "frontend-agent",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "relatedGate": "CP-13"
     }
   ]
 }

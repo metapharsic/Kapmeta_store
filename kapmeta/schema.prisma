@@ -131,6 +131,9 @@ model Outlet {
   code           String
   name           String
   address        String?
+  phone          String?
+  email          String?
+  logoUrl        String?    @map("logo_url")
   fssaiNumber    String?    @map("fssai_number")
   upiVpa         String?    @map("upi_vpa")
   timezone       String     @default("Asia/Kolkata")

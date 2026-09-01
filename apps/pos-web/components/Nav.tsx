@@ -93,6 +93,7 @@ const SIDEBAR_GROUPS: SidebarGroupDef[] = [
     links: [
       { href: "/user-management", permission: "users.manage", label: "User & Role Management" },
       { href: "/table-management", permission: "table.manage", label: "Table Management" },
+      { href: "/settings/company", permission: "settings.manage", label: "Company Details" },
     ],
   },
   { header: null, links: [{ href: "/crm", permission: "crm.read", label: "CRM" }] },

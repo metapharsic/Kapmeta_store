@@ -39,6 +39,9 @@ export interface MeOutlet {
   name: string;
   code: string | null;
   address: string | null;
+  phone: string | null;
+  email: string | null;
+  logoUrl: string | null;
   fssaiNumber: string | null;
   upiVpa: string | null;
   taxNumber: string | null;
