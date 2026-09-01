@@ -54,7 +54,7 @@ export default function KapMetaHeader({
   // Left Drawer Expanded Submenu States
   const [dailyOpsExpanded, setDailyOpsExpanded] = useState(true);
   const [adminExpanded, setAdminExpanded] = useState(true);
-  const [reportsExpanded, setReportsExpanded] = useState(false);
+  const [reportsExpanded, setReportsExpanded] = useState(true);
   const [operationsExpanded, setOperationsExpanded] = useState(false);
   const [settingsExpanded, setSettingsExpanded] = useState(false);
   const [activeMenuItem, setActiveMenuItem] = useState<string>("Billing");
@@ -683,7 +683,7 @@ export default function KapMetaHeader({
               {/* Operations Sub-items */}
               {operationsExpanded && (
                 <div className="submenu-container">
-                  <Link href="/admin" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
+                  <Link href="/admin?tab=analytics" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
                     Cash Flow & Sales
                   </Link>
                   <Link href="/menu" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
@@ -730,17 +730,20 @@ export default function KapMetaHeader({
               {/* Reports Sub-items */}
               {reportsExpanded && (
                 <div className="submenu-container">
+                  <Link href="/admin?tab=analytics" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
+                    Sales & Analytics
+                  </Link>
                   <Link href="/finance" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
                     Day-End Settlement / Z-Report
                   </Link>
-                  <Link href="/admin" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
-                    Executive Sales Summary
+                  <Link href="/kitchen-analytics" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
+                    Kitchen Prep Times
                   </Link>
-                  <Link href="/orders?tab=recent" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
-                    Order Sales Audit Report
+                  <Link href="/waiter-monitor" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
+                    Waiter Floor Monitor
                   </Link>
-                  <Link href="/inventory" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
-                    Item & Category Sales
+                  <Link href="/admin?tab=audit" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
+                    Audit Log
                   </Link>
                 </div>
               )}

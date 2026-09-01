@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-09-01T20:10:00Z",
+  "lastUpdated": "2026-09-01T20:35:00Z",
   "activeTasks": [
     {
       "taskId": "TSK-001",
@@ -325,6 +325,14 @@
       "assignedTo": "backend-agent",
       "status": "COMPLETED",
       "priority": "P1",
+      "relatedGate": "CP-14"
+    },
+    {
+      "taskId": "TSK-014d",
+      "title": "Reports discoverability: nav links landed on daily-ops instead of analytics tab; added 15-report jump index to analytics tab",
+      "assignedTo": "frontend-agent",
+      "status": "COMPLETED",
+      "priority": "P0",
       "relatedGate": "CP-14"
     }
   ]

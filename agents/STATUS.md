@@ -157,3 +157,18 @@ Audit found the existing reports (sales summary, item performance, payment/chann
 All new endpoints reuse the existing CSV/JSON export pattern in admin.tsx. tsc: 101/0, unchanged baseline.
 
 Known gap, not fixed: reason-level discount breakdown needs a schema addition (Discount entity or discountReason field) if that granularity is wanted later.
+
+## 2026-09-01 — CP-14 follow-up: "I don't see the reports"
+
+Same disease as the User Management complaint, different limb. The reports were all real and rendering — but nothing led the user to them:
+
+- Every nav link labeled "Sales Analytics"/"Sales Reports" pointed at bare /admin, which defaults to the daily-ops tab. The reports live in the analytics tab. So the label promised reports and the click delivered an ops dashboard. Fixed in both nav systems (Nav.tsx lines 34/86, KapMetaHeader line 686 + the whole Reports submenu) to carry ?tab=analytics. Nav.tsx's isActive already handled query-carrying hrefs, so highlighting was correct once the hrefs were.
+- KapMetaHeader's "Reports" drawer section was collapsed by default (adminExpanded was already true — this one was just inconsistent). Now open by default.
+- Reports submenu was also misleading: "Executive Sales Summary" went to bare /admin, "Order Sales Audit Report" went to an order list, "Item & Category Sales" went to /inventory. Rebuilt it to point at the five report surfaces that actually exist (analytics, Z-report/finance, kitchen prep times, waiter floor monitor, audit log).
+- The analytics tab itself had become one ~1000-line scroll of 15 panels with no way to see what was in it. Added a report index at the top: a card grid, one per report, each with a plain-English line about what question it answers, click to smooth-scroll to it (scroll-margin-top clears the sticky topbar). Panels got stable ids; no data/computation touched.
+
+Real report inventory confirmed while doing this (differs from what the earlier audit assumed): there is no standalone Revenue Trend panel and no standalone Table Turnaround panel — turnaround is a sub-line inside Channel Breakdown. 15 panels indexed.
+
+tsc: 0 errors, pos-web baseline held.
+
+Standing architectural debt, still unfixed: the two-nav-system split (Nav.tsx sidebar vs KapMetaHeader drawer) is what made both this and the User Management miss possible. Every new page must currently be wired into both or it silently disappears for half the app's pages.

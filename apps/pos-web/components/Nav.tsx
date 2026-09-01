@@ -31,7 +31,7 @@ const NAV_LINKS: NavLinkDef[] = [
   { href: "/inventory", permission: "inventory.read", topbarLabel: "Stock & 86-List", pillLabel: "📦 Stock Control" },
   { href: "/menu", permission: "menu.category.manage", topbarLabel: "Menu Management", pillLabel: "🍽️ Menu Management" },
   { href: "/channel-availability", permission: "integration.manage", topbarLabel: "Online Item Status", pillLabel: "📡 Online Status" },
-  { href: "/admin", permission: "report.read", topbarLabel: "Sales Analytics", pillLabel: "📊 Sales Reports" },
+  { href: "/admin?tab=analytics", permission: "report.read", topbarLabel: "Sales Analytics", pillLabel: "📊 Sales Reports" },
   { href: "/finance", permission: "report.read", topbarLabel: "Finance & Z-Report", pillLabel: "💰 Finance" },
   { href: "/crm", permission: "crm.read", topbarLabel: "Customers & Loyalty", pillLabel: "🎁 Customers" },
   { href: "/marketing", permission: "crm.write", topbarLabel: "Marketing Campaigns", pillLabel: "📣 Marketing" },
@@ -83,7 +83,7 @@ const SIDEBAR_GROUPS: SidebarGroupDef[] = [
   {
     header: "Reports",
     links: [
-      { href: "/admin", permission: "report.read", label: "Sales Analytics" },
+      { href: "/admin?tab=analytics", permission: "report.read", label: "Sales Analytics" },
       { href: "/waiter-monitor", permission: "report.read", label: "Waiter Floor Monitor" },
       { href: "/kitchen-analytics", permission: "report.read", label: "Kitchen Prep Times" },
     ],

@@ -400,6 +400,30 @@ function rangeFor(timeRange: TimeRange): { fromDate: string; toDate: string } {
   return { fromDate: from.toISOString(), toDate };
 }
 
+/** Report index for the analytics tab — one entry per report panel rendered below. */
+const REPORT_INDEX: ReadonlyArray<{ id: string; icon: string; name: string; desc: string }> = [
+  { id: "report-sales-summary", icon: "💰", name: "Sales Summary", desc: "Net sales, orders, average bill and table occupancy at a glance" },
+  { id: "report-payment-breakdown", icon: "💳", name: "Payment Methods", desc: "How guests paid — cash, card, UPI — and what actually settled" },
+  { id: "report-tax-breakdown", icon: "🧾", name: "GST Statutory Audit", desc: "Tax collected by slab, ready for filing and audit" },
+  { id: "report-top-items", icon: "🍽️", name: "Top Items by Net Sales", desc: "Which dishes bring in the revenue, ranked" },
+  { id: "report-menu-margin", icon: "📐", name: "Menu Margin / Food Cost", desc: "Food cost and profit per dish, costed from each recipe" },
+  { id: "report-inventory-variance", icon: "📦", name: "Inventory Variance", desc: "What the kitchen should have used vs what was purchased" },
+  { id: "report-staff-performance", icon: "🧑", name: "Staff / Waiter Performance", desc: "Sales, tips and cash handled by each waiter" },
+  { id: "report-table-utilization", icon: "🪑", name: "Table / Floor Utilization", desc: "Which tables earn, and when they sit empty" },
+  { id: "report-channel-breakdown", icon: "🛵", name: "Sales by Order Channel", desc: "Dine-in vs takeaway vs delivery, plus table turnaround time" },
+  { id: "report-leakage", icon: "🚨", name: "Leakage & Loss Detection", desc: "Unbilled KOTs, reprints and waived bills worth a second look" },
+  { id: "report-hourly-heatmap", icon: "⏰", name: "Hourly Sales Heatmap", desc: "Which hours of the day actually make the money" },
+  { id: "report-category-mix", icon: "🥗", name: "Category Mix", desc: "How revenue splits across menu categories" },
+  { id: "report-customer-insights", icon: "👥", name: "Customer Insights (CRM)", desc: "New vs repeat guests, and how often they come back" },
+  { id: "report-discounts-voids", icon: "✂️", name: "Discounts & Voids", desc: "What got comped or cancelled, by whom, and why" },
+  { id: "report-invoices", icon: "📄", name: "Recent Settled Invoices", desc: "The settled-bill ledger with payment mode and reprint history" },
+];
+
+function jumpToReport(id: string) {
+  if (typeof document === "undefined") return;
+  document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 export default function AdminDashboard() {
   const router = useRouter();
   const { me, loading: authLoading } = useAuthGuard("report.read");
@@ -2302,6 +2326,37 @@ export default function AdminDashboard() {
               </div>
             </section>
 
+            {/* Report Index — jump navigation for every panel rendered below */}
+            {!loading && !loadError && summary && (
+              <section className="panel-card report-index-card">
+                <div className="panel-header">
+                  <div>
+                    <h3>Reports</h3>
+                    <p className="panel-sub">
+                      Every report below is live data for the selected date range ({timeRange.toLowerCase()} view). Pick one to jump straight to it.
+                    </p>
+                  </div>
+                  <span className="total-badge">{REPORT_INDEX.length} reports</span>
+                </div>
+
+                <div className="report-index-grid">
+                  {REPORT_INDEX.map((r) => (
+                    <button
+                      key={r.id}
+                      type="button"
+                      className="report-index-item"
+                      onClick={() => jumpToReport(r.id)}
+                    >
+                      <span className="report-index-name">
+                        <span aria-hidden="true">{r.icon}</span> {r.name}
+                      </span>
+                      <span className="report-index-desc">{r.desc}</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
+
             {/* Reports Generator & ERP Export Console */}
             <section className="panel-card" style={{ marginBottom: "24px", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: "24px" }}>
               <div className="panel-header" style={{ marginBottom: "20px" }}>
@@ -2491,7 +2546,7 @@ export default function AdminDashboard() {
             {!loading && !loadError && summary && (
               <>
                 {/* KPI Grid — only real fields from /sales-summary */}
-                <section className="kpi-cards-grid">
+                <section id="report-sales-summary" className="kpi-cards-grid report-anchor">
                   <div className="kpi-card">
                     <div className="kpi-top">
                       <div className="icon-badge green">
@@ -2550,7 +2605,7 @@ export default function AdminDashboard() {
                 {/* Middle Two-Column Grid — payment breakdown from GET /payment-breakdown;
                     GST is not exposed by the reporting API yet. */}
                 <section className="two-col-grid">
-                  <div className="panel-card">
+                  <div id="report-payment-breakdown" className="panel-card report-anchor">
                     <div className="panel-header">
                       <div>
                         <h3>Payment Methods & Settlement Split</h3>
@@ -2593,7 +2648,7 @@ export default function AdminDashboard() {
                     )}
                   </div>
 
-                  <div className="panel-card">
+                  <div id="report-tax-breakdown" className="panel-card report-anchor">
                     <div className="panel-header">
                       <div>
                         <h3>GST Statutory Audit</h3>
@@ -2642,7 +2697,7 @@ export default function AdminDashboard() {
                 </section>
 
                 {/* Item Performance — real data from /item-performance */}
-                <section className="panel-card invoices-table-card">
+                <section id="report-top-items" className="panel-card invoices-table-card report-anchor">
                   <div className="panel-header">
                     <div>
                       <h3>Top Items by Net Sales</h3>
@@ -2684,7 +2739,7 @@ export default function AdminDashboard() {
                 </section>
 
                 {/* Menu Margin / Food Cost — real data from /item-margin */}
-                <section className="panel-card invoices-table-card">
+                <section id="report-menu-margin" className="panel-card invoices-table-card report-anchor">
                   <div className="panel-header">
                     <div>
                       <h3>Menu Margin / Food Cost</h3>
@@ -2749,7 +2804,7 @@ export default function AdminDashboard() {
                 </section>
 
                 {/* Inventory Consumption vs Purchase — real data from /inventory-variance */}
-                <section className="panel-card invoices-table-card">
+                <section id="report-inventory-variance" className="panel-card invoices-table-card report-anchor">
                   <div className="panel-header">
                     <div>
                       <h3>Inventory Consumption vs Purchase</h3>
@@ -2798,7 +2853,7 @@ export default function AdminDashboard() {
                 </section>
 
                 {/* Staff / Waiter Performance — real data from /staff-performance */}
-                <section className="panel-card invoices-table-card">
+                <section id="report-staff-performance" className="panel-card invoices-table-card report-anchor">
                   <div className="panel-header">
                     <div>
                       <h3>Staff / Waiter Performance</h3>
@@ -2857,7 +2912,7 @@ export default function AdminDashboard() {
                 </section>
 
                 {/* Table / Floor Utilization — real data from /table-utilization */}
-                <section className="panel-card invoices-table-card">
+                <section id="report-table-utilization" className="panel-card invoices-table-card report-anchor">
                   <div className="panel-header">
                     <div>
                       <h3>Table / Floor Utilization</h3>
@@ -2940,7 +2995,7 @@ export default function AdminDashboard() {
                 </section>
 
                 {/* Channel Breakdown — real data from /channel-breakdown */}
-                <section className="panel-card invoices-table-card">
+                <section id="report-channel-breakdown" className="panel-card invoices-table-card report-anchor">
                   <div className="panel-header">
                     <div>
                       <h3>Sales by Order Channel</h3>
@@ -2998,7 +3053,7 @@ export default function AdminDashboard() {
                 </section>
 
                 {/* Leakage — real data from /leakage-report (Phase B anomaly/loss detection) */}
-                <section className="panel-card invoices-table-card">
+                <section id="report-leakage" className="panel-card invoices-table-card report-anchor">
                   <div className="panel-header">
                     <div>
                       <h3>Leakage & Loss Detection</h3>
@@ -3118,7 +3173,7 @@ export default function AdminDashboard() {
 
                 {/* Hourly Sales Heatmap & Category Mix — real data from /reporting/dashboard */}
                 <section className="two-col-grid">
-                  <div className="panel-card">
+                  <div id="report-hourly-heatmap" className="panel-card report-anchor">
                     <div className="panel-header">
                       <div>
                         <h3>Hourly Sales Heatmap</h3>
@@ -3159,7 +3214,7 @@ export default function AdminDashboard() {
                     )}
                   </div>
 
-                  <div className="panel-card">
+                  <div id="report-category-mix" className="panel-card report-anchor">
                     <div className="panel-header">
                       <div>
                         <h3>Category Mix</h3>
@@ -3199,7 +3254,7 @@ export default function AdminDashboard() {
                 </section>
 
                 {/* Customer Insights — real data from /reporting/customer-insights */}
-                <section className="panel-card invoices-table-card">
+                <section id="report-customer-insights" className="panel-card invoices-table-card report-anchor">
                   <div className="panel-header">
                     <div>
                       <h3>Customer Insights (CRM)</h3>
@@ -3295,7 +3350,7 @@ export default function AdminDashboard() {
                 </section>
 
                 {/* Discounts & Voids — real data from /reporting/discount-void-analysis */}
-                <section className="panel-card invoices-table-card">
+                <section id="report-discounts-voids" className="panel-card invoices-table-card report-anchor">
                   <div className="panel-header">
                     <div>
                       <h3>Discounts & Voids</h3>
@@ -3415,7 +3470,7 @@ export default function AdminDashboard() {
                 </section>
 
                                 {/* Recent Settled Invoices — real data from /reporting/invoices */}
-                <section className="panel-card invoices-table-card">
+                <section id="report-invoices" className="panel-card invoices-table-card report-anchor">
                   <div className="panel-header">
                     <div>
                       <h3>Recent Settled Invoices</h3>
@@ -4053,6 +4108,50 @@ export default function AdminDashboard() {
           font-size: 40px;
           display: block;
           margin-bottom: 12px;
+        }
+
+        /* Report Index (analytics tab jump navigation) */
+        .report-index-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+          gap: 10px;
+        }
+
+        .report-index-item {
+          display: flex;
+          flex-direction: column;
+          gap: 3px;
+          text-align: left;
+          padding: 12px 14px;
+          background: var(--bg-base);
+          border: 1px solid var(--border);
+          border-radius: var(--radius-md);
+          cursor: pointer;
+          font-family: inherit;
+          transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+        }
+
+        .report-index-item:hover {
+          transform: translateY(-2px);
+          border-color: var(--accent);
+          box-shadow: var(--shadow-pop);
+        }
+
+        .report-index-name {
+          font-size: 0.8125rem;
+          font-weight: 800;
+          color: var(--text-primary);
+        }
+
+        .report-index-desc {
+          font-size: 0.75rem;
+          line-height: 1.4;
+          color: var(--text-secondary);
+        }
+
+        /* Offset for the 64px sticky topbar when jumping to a report */
+        .report-anchor {
+          scroll-margin-top: 88px;
         }
       ` }} />
       </div>
