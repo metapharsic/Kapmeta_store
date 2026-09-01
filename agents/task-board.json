@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-09-01T19:30:00Z",
+  "lastUpdated": "2026-09-01T19:45:00Z",
   "activeTasks": [
     {
       "taskId": "TSK-001",
@@ -293,6 +293,14 @@
       "assignedTo": "frontend-agent",
       "status": "COMPLETED",
       "priority": "P1",
+      "relatedGate": "CP-13"
+    },
+    {
+      "taskId": "TSK-013",
+      "title": "Surface User Management + Company Details as top-level always-visible links in KapMetaHeader (were buried 3 clicks deep, or only wired into the other nav system entirely)",
+      "assignedTo": "frontend-agent",
+      "status": "COMPLETED",
+      "priority": "P0",
       "relatedGate": "CP-13"
     }
   ]

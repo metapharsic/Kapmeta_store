@@ -554,6 +554,46 @@ export default function KapMetaHeader({
                 <span className="item-label-text">Billing (POS)</span>
               </div>
 
+              {/* Item 1a: User Management (always-visible top-level link) */}
+              <div
+                className={`menu-row-item ${activeMenuItem === "UserManagement" ? "is-selected" : ""}`}
+                onClick={() => {
+                  setActiveMenuItem("UserManagement");
+                  setShowMenuDrawer(false);
+                  router.push("/user-management");
+                }}
+              >
+                <div className="item-icon-col">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                    <circle cx="9" cy="7" r="4" />
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                  </svg>
+                </div>
+                <span className="item-label-text">User Management</span>
+              </div>
+
+              {/* Item 1b: Company Details (always-visible top-level link) */}
+              <div
+                className={`menu-row-item ${activeMenuItem === "CompanyDetails" ? "is-selected" : ""}`}
+                onClick={() => {
+                  setActiveMenuItem("CompanyDetails");
+                  setShowMenuDrawer(false);
+                  router.push("/settings/company");
+                }}
+              >
+                <div className="item-icon-col">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
+                    <path d="M3 21h18" />
+                    <path d="M5 21V7l8-4v18" />
+                    <path d="M19 21V11l-6-4" />
+                    <line x1="9" y1="9" x2="9" y2="9.01" />
+                  </svg>
+                </div>
+                <span className="item-label-text">Company Details</span>
+              </div>
+
               {/* Item 2: Admin Console & Multi-Agent Operations (Expandable) */}
               <div
                 className={`menu-row-item ${activeMenuItem === "Admin" ? "is-selected" : ""}`}

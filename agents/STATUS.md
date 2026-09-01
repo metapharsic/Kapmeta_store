@@ -132,3 +132,11 @@ New self-serve company profile, nothing hardcoded, blank until admin fills it:
 - New CompanyDetailsPanel.tsx + pages/settings/company.tsx + Nav.tsx sidebar entry under "Management", gated settings.manage. Every field starts truly empty (null → "") until saved for real.
 
 tsc: 101/0, unchanged baseline.
+
+## 2026-09-01 — CP-13 follow-up: User Management / Company Details were invisible on the POS Terminal
+
+Root cause: this app has two disconnected nav systems. Nav.tsx's SIDEBAR_GROUPS (where User Management + Company Details links live) only renders on 12 admin-ish pages. The POS Terminal (pages/index.tsx, the default landing page) and several others (orders/kitchen/table-management/table-view) instead render the older KapMetaHeader.tsx drawer, which had a User Management link but buried 3 clicks deep inside a collapsed "Admin & A2A Operations" section under a confusing label ("Staff & RBAC Permissions"), and had NO Company Details link at all since that page was added directly into Nav.tsx only.
+
+Fixed: added both as always-visible top-level rows in KapMetaHeader's drawer, sibling to the existing "Billing (POS)" item, no expand-to-find-it needed. tsc clean.
+
+Flagging for a later pass, not fixed now: this two-nav-system split is itself worth resolving properly (either migrate the 5 remaining KapMetaHeader-only pages to the shared Nav sidebar, or vice versa) so future additions to one system don't silently fail to appear on the other's pages.
