@@ -79,27 +79,6 @@ export async function settleOrderCommand(
 
   const existingInvoice = await prisma.invoice.findUnique({ where: { orderId } }).catch(() => null);
   if (order.status === "COMPLETED") {
-    // #region agent log
-    fetch("http://127.0.0.1:7323/ingest/28c85a32-5ef1-4fe5-9437-78139f7a5bfb", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c675b" },
-      body: JSON.stringify({
-        sessionId: "9c675b",
-        runId: "post-merge",
-        hypothesisId: "W",
-        location: "settle-order.ts:alreadySettled",
-        message: "settle skipped, order already COMPLETED",
-        data: {
-          orderId,
-          diningTableId: order.diningTableId,
-          dissolvedIds: [],
-          deductedCount: 0,
-          alreadySettled: true,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
 
     const existingPays = await prisma.payment.findMany({
       where: { orderId, outletId, status: "CAPTURED" },
@@ -134,30 +113,6 @@ export async function settleOrderCommand(
       });
     }
     const bom = await deductBomStockForOrder(orderId, outletId, prisma, userId, "ORDER_SETTLED");
-    // #region agent log
-    fetch("http://127.0.0.1:7323/ingest/28c85a32-5ef1-4fe5-9437-78139f7a5bfb", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c675b" },
-      body: JSON.stringify({
-        sessionId: "9c675b",
-        runId: "post-fix",
-        hypothesisId: "W",
-        location: "settle-order.ts:alreadySettled:finalize",
-        message: "alreadySettled still dissolve + invoice + inventory",
-        data: {
-          orderId,
-          diningTableId: order.diningTableId,
-          invoiceNumber: invoice.invoiceNumber,
-          dissolvedIds: dissolved.ids,
-          dissolvedNumbers: dissolved.numbers,
-          deductedCount: bom.deductedCount,
-          skippedDuplicate: bom.skippedDuplicate,
-          alreadySettled: true,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     await enqueueOutbox(prisma, outletId, "order.settled", {
       orderId,
       invoiceNumber: invoice.invoiceNumber,
@@ -165,22 +120,22 @@ export async function settleOrderCommand(
       amountMinor: alreadyPaid.toString(),
     });
     import("../websockets").then(({ broadcast }) => {
-      broadcast("finance.order_settled", {
+      broadcast(outletId, "finance.order_settled", {
         orderId,
         outletId,
         paymentMethod: input.paymentMethod || null,
         amountMinor: alreadyPaid.toString(),
         invoiceNumber: invoice!.invoiceNumber,
       });
-      broadcast("table.unmerged", { tableIds: dissolved.ids, orderId });
+      broadcast(outletId, "table.unmerged", { tableIds: dissolved.ids, orderId });
       const vacantIds = dissolved.ids.length > 0
         ? dissolved.ids
         : (order.diningTableId ? [order.diningTableId] : []);
       for (const id of vacantIds) {
-        broadcast("table.status_updated", { tableId: id, orderId, status: "VACANT" });
+        broadcast(outletId, "table.status_updated", { tableId: id, orderId, status: "VACANT" });
       }
       if (bom.deductedCount > 0) {
-        broadcast("inventory.stock_updated", { orderId, deductedCount: bom.deductedCount });
+        broadcast(outletId, "inventory.stock_updated", { orderId, deductedCount: bom.deductedCount });
       }
     }).catch(() => undefined);
     return {
@@ -279,30 +234,6 @@ export async function settleOrderCommand(
   }
 
   const bom = await deductBomStockForOrder(orderId, outletId, prisma, userId, "ORDER_SETTLED");
-  // #region agent log
-  fetch("http://127.0.0.1:7323/ingest/28c85a32-5ef1-4fe5-9437-78139f7a5bfb", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c675b" },
-    body: JSON.stringify({
-      sessionId: "9c675b",
-      runId: "post-merge",
-      hypothesisId: "W",
-      location: "settle-order.ts:settleOrderCommand",
-      message: "settle dissolve + inventory",
-      data: {
-        orderId,
-        diningTableId: order.diningTableId,
-        invoiceNumber: invoice.invoiceNumber,
-        dissolvedIds: dissolved.ids,
-        dissolvedNumbers: dissolved.numbers,
-        deductedCount: bom.deductedCount,
-        skippedDuplicate: bom.skippedDuplicate,
-        alreadySettled: false,
-      },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
 
   if (order.customerId) {
     const outlet = await prisma.outlet.findUnique({ where: { id: outletId } });
@@ -335,28 +266,28 @@ export async function settleOrderCommand(
   });
 
   import("../websockets").then(({ broadcast }) => {
-    broadcast("finance.order_settled", {
+    broadcast(outletId, "finance.order_settled", {
       orderId,
       outletId,
       paymentMethod: payMethod,
       amountMinor: payAmount.toString(),
       invoiceNumber: invoice!.invoiceNumber,
     });
-    broadcast("table.status_updated", {
+    broadcast(outletId, "table.status_updated", {
       tableId: order.diningTableId,
       orderId,
       status: "VACANT",
     });
     for (const id of dissolved.ids) {
       if (id !== order.diningTableId) {
-        broadcast("table.status_updated", { tableId: id, orderId, status: "VACANT" });
+        broadcast(outletId, "table.status_updated", { tableId: id, orderId, status: "VACANT" });
       }
     }
     if (dissolved.ids.length > 0) {
-      broadcast("table.unmerged", { tableIds: dissolved.ids, orderId });
+      broadcast(outletId, "table.unmerged", { tableIds: dissolved.ids, orderId });
     }
     if (bom.deductedCount > 0) {
-      broadcast("inventory.stock_updated", { orderId, deductedCount: bom.deductedCount });
+      broadcast(outletId, "inventory.stock_updated", { orderId, deductedCount: bom.deductedCount });
     }
   }).catch(() => undefined);
 

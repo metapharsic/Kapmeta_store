@@ -151,6 +151,16 @@ crmRouter.get("/customers/:id", requireAuth, requirePermission("crm.read"), asyn
 crmRouter.post("/customers/:id/anonymize", requireAuth, requirePermission("crm.anonymize"), async (req: AuthedRequest, res) => {
   try {
     const outletId = req.auth!.outletId;
+    // TSK-008k: this write used to run unscoped — any authed user could
+    // anonymize a customer belonging to another outlet by guessing an id.
+    // Confirm tenancy before mutating, same guard as PATCH/DELETE below.
+    const existing = await prisma.customer.findFirst({
+      where: { id: req.params.id, outletId },
+    });
+    if (!existing) {
+      res.status(404).json({ error: "Customer not found" });
+      return;
+    }
     const customer = await prisma.customer.update({
       where: { id: req.params.id },
       data: {
@@ -211,5 +221,79 @@ crmRouter.post("/loyalty/redeem", requireAuth, requirePermission("crm.write"), a
   } catch (error: any) {
     console.error("Error redeeming loyalty points:", error);
     res.status(400).json({ error: error.message });
+  }
+});
+
+// Update Customer
+crmRouter.patch("/customers/:id", requireAuth, requirePermission("crm.write"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const existing = await prisma.customer.findFirst({
+      where: { id: req.params.id, outletId },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: "Customer not found" });
+    }
+
+    let firstName = req.body.firstName;
+    let lastName = req.body.lastName;
+    if (!firstName && req.body.name) {
+      const parts = String(req.body.name).trim().split(" ");
+      firstName = parts[0];
+      lastName = parts.slice(1).join(" ") || undefined;
+    }
+
+    const data: any = {};
+    if (firstName !== undefined) data.firstName = String(firstName).trim();
+    if (lastName !== undefined) data.lastName = lastName ? String(lastName).trim() : null;
+    if (firstName !== undefined || lastName !== undefined) {
+      data.name = `${data.firstName ?? existing.firstName ?? ""} ${data.lastName ?? existing.lastName ?? ""}`.trim();
+    }
+    if (req.body.phone !== undefined) data.phone = String(req.body.phone).trim();
+    if (req.body.email !== undefined) data.email = req.body.email ? String(req.body.email).trim() : null;
+    if (req.body.birthDate !== undefined || req.body.dob !== undefined) {
+      const birthDate = req.body.birthDate || req.body.dob;
+      data.birthDate = birthDate ? new Date(birthDate) : null;
+    }
+
+    if (Object.keys(data).length === 0) {
+      return res.status(400).json({ error: "No updatable fields provided" });
+    }
+
+    const customer = await prisma.customer.update({
+      where: { id: existing.id },
+      data,
+    });
+
+    res.status(200).json(mapCustomerResponse(customer));
+  } catch (error: any) {
+    console.error("Error updating customer:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete Customer (soft delete — customers are referenced by orders/loyalty
+// records, so we deactivate rather than hard-delete to preserve order history)
+crmRouter.delete("/customers/:id", requireAuth, requirePermission("crm.write"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const existing = await prisma.customer.findFirst({
+      where: { id: req.params.id, outletId },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: "Customer not found" });
+    }
+
+    const customer = await prisma.customer.update({
+      where: { id: existing.id },
+      data: { isActive: false },
+    });
+
+    res.status(200).json(mapCustomerResponse(customer));
+  } catch (error: any) {
+    console.error("Error deleting customer:", error);
+    res.status(500).json({ error: error.message });
   }
 });

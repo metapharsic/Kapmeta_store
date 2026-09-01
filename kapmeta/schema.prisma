@@ -189,6 +189,8 @@ model DiningTable {
   isActive             Boolean  @default(true) @map("is_active")
   mergeGroupId         String?  @map("merge_group_id") @db.Uuid
   mergePrimaryTableId  String?  @map("merge_primary_table_id") @db.Uuid
+  version              Int      @default(1)
+  covers               Int?
   createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   orders               Order[]
@@ -197,6 +199,117 @@ model DiningTable {
   @@index([outletId], map: "idx_dining_tables_outlet")
   @@index([mergeGroupId], map: "idx_dining_tables_merge_group")
   @@map("dining_tables")
+}
+
+model areas {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  outlet_id  String   @db.Uuid
+  name       String
+  sort_order Int      @default(0)
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([outlet_id, name], map: "areas_outlet_id_name_key")
+  @@index([outlet_id], map: "idx_areas_outlet")
+}
+
+model table_merge_groups {
+  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  outlet_id         String              @db.Uuid
+  primary_table_id  String              @db.Uuid
+  status            table_merge_status  @default(ACTIVE)
+  total_capacity    Int?
+  covers            Int?
+  opened_at         DateTime            @default(now()) @db.Timestamptz(6)
+  closed_at         DateTime?           @db.Timestamptz(6)
+  created_by        String?             @db.Uuid
+  reason            String?
+
+  @@index([outlet_id], map: "idx_table_merge_groups_outlet")
+  @@index([primary_table_id], map: "idx_table_merge_groups_primary_table")
+  @@map("table_merge_groups")
+}
+
+model table_merge_members {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  outlet_id        String    @db.Uuid
+  merge_group_id   String    @db.Uuid
+  dining_table_id  String    @db.Uuid
+  is_primary       Boolean   @default(false)
+  joined_at        DateTime  @default(now()) @db.Timestamptz(6)
+  left_at          DateTime? @db.Timestamptz(6)
+
+  @@index([outlet_id], map: "idx_table_merge_members_outlet")
+  @@index([merge_group_id], map: "idx_table_merge_members_group")
+  @@index([dining_table_id], map: "idx_table_merge_members_table")
+  @@map("table_merge_members")
+}
+
+model table_seats {
+  id               String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  outlet_id        String      @db.Uuid
+  dining_table_id  String      @db.Uuid
+  seat_number      Int
+  label            String?
+  status           seat_status @default(EMPTY)
+  guest_name       String?
+
+  @@unique([outlet_id, dining_table_id, seat_number], map: "uq_table_seats_outlet_table_seat")
+  @@index([outlet_id], map: "idx_table_seats_outlet")
+  @@index([dining_table_id], map: "idx_table_seats_table")
+  @@map("table_seats")
+}
+
+model order_seat_bills {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  outlet_id             String    @db.Uuid
+  order_id              String    @db.Uuid
+  seat_number           Int
+  split_group_id        String?   @db.Uuid
+  subtotal              BigInt    @default(0)
+  discount_total        BigInt    @default(0)
+  tax_total              BigInt    @default(0)
+  service_charge_total  BigInt    @default(0)
+  tip_total             BigInt    @default(0)
+  grand_total           BigInt    @default(0)
+  paid_total            BigInt    @default(0)
+  status                String    @default("OPEN")
+  settled_at            DateTime? @db.Timestamptz(6)
+  created_at            DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@unique([outlet_id, order_id, seat_number], map: "uq_order_seat_bills_outlet_order_seat")
+  @@index([outlet_id], map: "idx_order_seat_bills_outlet")
+  @@index([order_id], map: "idx_order_seat_bills_order")
+  @@map("order_seat_bills")
+}
+
+model order_item_seat_shares {
+  id                  String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  outlet_id           String  @db.Uuid
+  order_item_id       String  @db.Uuid
+  seat_number         Int
+  share_numerator     Int
+  share_denominator   Int
+  allocated_subtotal  BigInt  @default(0)
+
+  @@unique([order_item_id, seat_number], map: "uq_order_item_seat_shares_item_seat")
+  @@index([outlet_id], map: "idx_order_item_seat_shares_outlet")
+  @@index([order_item_id], map: "idx_order_item_seat_shares_order_item")
+  @@map("order_item_seat_shares")
+}
+
+model table_operation_idempotency {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  outlet_id       String   @db.Uuid
+  idempotency_key String
+  endpoint        String
+  response_json   Json
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([outlet_id, endpoint, idempotency_key], map: "uq_table_operation_idempotency_key")
+  @@map("table_operation_idempotency")
 }
 
 model UserQuickLink {
@@ -269,6 +382,10 @@ model Order {
   waiterId            String?      @map("waiter_id") @db.Uuid
   serviceChargeTotal  BigInt       @default(0) @map("service_charge_total")
   tipTotal            BigInt       @default(0) @map("tip_total")
+  mergeGroupId        String?      @map("merge_group_id") @db.Uuid
+  covers              Int?
+  splitMode           String?      @map("split_mode")
+  mergedIntoOrderId   String?      @map("merged_into_order_id")
   createdAt           DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   diningTable         DiningTable? @relation(fields: [diningTableId], references: [id])
@@ -295,6 +412,10 @@ model OrderItem {
   voidedBy    String?   @map("voided_by")
   course      String?   @map("course")
   seatNumber  Int?      @map("seat_number")
+  seatId      String?   @map("seat_id") @db.Uuid
+  splitGroupId String?  @map("split_group_id") @db.Uuid
+  isShared    Boolean   @default(false) @map("is_shared")
+  originTableId String? @map("origin_table_id")
   order       Order     @relation(fields: [orderId], references: [id])
   menuItem    MenuItem? @relation(fields: [menuItemId], references: [id])
 
@@ -358,18 +479,22 @@ model KOTTicket {
 
 model KOTItem {
   id          String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  outletId    String     @map("outlet_id") @db.Uuid
   kotTicketId String     @map("kot_ticket_id") @db.Uuid
   menuItemId  String     @map("menu_item_id") @db.Uuid
   orderItemId String?    @map("order_item_id") @db.Uuid
   quantity    Int
   notes       String?
   course      String?
+  seatNumber  Int?       @map("seat_number")
+  seatId      String?    @map("seat_id") @db.Uuid
   servedAt    DateTime?  @map("served_at") @db.Timestamptz(6)
   kotTicket   KOTTicket  @relation(fields: [kotTicketId], references: [id])
   menuItem    MenuItem?  @relation(fields: [menuItemId], references: [id])
 
   @@index([menuItemId], map: "idx_kot_items_menu_item")
   @@index([kotTicketId], map: "idx_kot_items_ticket")
+  @@index([outletId], map: "idx_kot_items_outlet")
   @@map("kot_items")
 }
 
@@ -452,6 +577,8 @@ model Payment {
   transactionId  String?   @map("transaction_id")
   idempotencyKey String?   @map("idempotency_key")
   seatNumber     Int?      @map("seat_number")
+  seatId         String?   @map("seat_id") @db.Uuid
+  orderSeatBillId String?  @map("order_seat_bill_id") @db.Uuid
   createdAt      DateTime  @default(now()) @map("created_at")
 
   @@index([outletId], map: "idx_payments_outlet")
@@ -734,6 +861,33 @@ model item_availability {
   @@index([outlet_id], map: "idx_item_availability_outlet")
 }
 
+model modifier_options {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  outlet_id         String   @db.Uuid
+  modifier_group_id String   @db.Uuid
+  name              String
+  price             BigInt   @default(0)
+  is_active         Boolean  @default(true)
+  sort_order        Int      @default(0)
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([outlet_id], map: "idx_modifier_options_outlet")
+  @@index([modifier_group_id], map: "idx_modifier_options_group")
+}
+
+model special_notes {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  outlet_id  String   @db.Uuid
+  text       String
+  sort_order Int      @default(0)
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([outlet_id], map: "idx_special_notes_outlet")
+}
+
 model item_modifier_groups {
   id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   outlet_id  String   @db.Uuid
@@ -944,6 +1098,29 @@ enum sync_status {
   FAILED
 }
 
+enum dining_table_status {
+  VACANT
+  SEATED
+  OCCUPIED
+  RESERVED
+  MERGED_MEMBER
+  DIRTY
+  BLOCKED
+}
+
+enum table_merge_status {
+  ACTIVE
+  CLOSED
+}
+
+enum seat_status {
+  EMPTY
+  SEATED
+  ORDERED
+  BILLED
+  SETTLED
+}
+
 model cash_drawer_sessions {
   id                           String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   outlet_id                    String              @db.Uuid
@@ -1101,8 +1278,10 @@ model Invoice {
   reprintCount    Int       @default(0) @map("reprint_count")
   waivedOffMinor  BigInt    @default(0) @map("waived_off_minor")
   waivedOffReason String?   @map("waived_off_reason")
+  seatNumber      Int       @default(0) @map("seat_number")
   createdAt       DateTime  @default(now()) @map("created_at")
 
+  @@unique([orderId, seatNumber], map: "uq_invoices_order_seat")
   @@index([outletId], map: "idx_invoices_outlet")
   @@index([orderId], map: "idx_invoices_order")
   @@map("invoices")

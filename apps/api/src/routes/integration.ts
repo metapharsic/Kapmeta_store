@@ -395,14 +395,14 @@ router.post(["/webhooks/:channel", "/webhooks/swiggy", "/webhooks/zomato"], asyn
 
     // 7. Broadcast Real-Time WebSocket Alerts
     import("../websockets").then(({ broadcast }) => {
-      broadcast("order.created", {
+      broadcast(outletId, "order.created", {
         orderId: createdOrder.id,
         orderNumber: createdOrder.orderNumber,
         channel: channelParam,
         status: "CONFIRMED",
         grandTotalMinor: String(grandTotal),
       });
-      broadcast("kot.created", {
+      broadcast(outletId, "kot.created", {
         orderId: createdOrder.id,
         channel: channelParam,
       });

@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-08-14T14:40:00Z",
+  "lastUpdated": "2026-09-01T18:45:00Z",
   "activeTasks": [
     {
       "taskId": "TSK-001",
@@ -48,6 +48,220 @@
       "status": "IN_PROGRESS",
       "priority": "CRITICAL",
       "relatedGate": "CP-09"
+    },
+    {
+      "taskId": "TSK-008a",
+      "title": "Menu CRUD completion + modifier-options schema fix (P0' + P6 start)",
+      "assignedTo": "agent-backend",
+      "status": "COMPLETED",
+      "priority": "CRITICAL",
+      "relatedGate": "CP-11",
+      "notes": "Fixed 2 live bugs: POST /menu/modifier-options targeted a nonexistent table (added modifier_options via migration 0025 + schema.prisma model); linkModifierToItem used wrong field names + missing outlet_id (would 500 at runtime). Added PATCH/DELETE for items+categories, GET/PATCH/DELETE modifier-groups, GET modifier-group options, DELETE unlink. Added settings.manage gate to outlet-status/store-status toggles and table create (previously requireAuth only). Frontend wiring (menu.tsx edit/delete rows, 86-toggle, modifier UI) not yet done \u2014 that is TSK-008g."
+    },
+    {
+      "taskId": "TSK-008b",
+      "title": "Wire Tax service (PgTaxRepository) into API \u2014 was fully built, zero HTTP surface",
+      "assignedTo": "agent-backend",
+      "status": "COMPLETED",
+      "priority": "HIGH",
+      "relatedGate": "CP-11",
+      "notes": "New apps/api/src/routes/tax-settings.ts mounted in app.ts. GET/POST/PATCH/DELETE /settings/taxes, GET/POST/PATCH /settings/taxes/channel-rules. All outletId-scoped from JWT, cross-outlet writes 404. tsc clean."
+    },
+    {
+      "taskId": "TSK-008c",
+      "title": "Wire Print/Billing settings (PgSettingsRepository) into API \u2014 was fully built, zero HTTP surface",
+      "assignedTo": "agent-backend",
+      "status": "COMPLETED",
+      "priority": "HIGH",
+      "relatedGate": "CP-11",
+      "notes": "Extended apps/api/src/routes/settings.ts. GET/PUT /settings/print, GET/PUT /settings/billing. requirePermission(settings.manage). tsc clean."
+    },
+    {
+      "taskId": "TSK-008f-crm",
+      "title": "CRM customer Update/Delete (was Create+Read only)",
+      "assignedTo": "agent-backend",
+      "status": "COMPLETED",
+      "priority": "MEDIUM",
+      "relatedGate": "CP-11",
+      "notes": "PATCH/DELETE /crm/customers/:id added to crm.ts. Soft delete (isActive=false) \u2014 Customer.id is FK'd by Order/CampaignRecipient/customer_addresses/loyalty_accounts, hard delete would break history. outletId-scoped. FLAGGED: pre-existing anonymize route does not scope by outletId \u2014 not fixed yet, needs its own task."
+    },
+    {
+      "taskId": "TSK-008g",
+      "title": "Menu Management UI \u2014 Edit/Delete rows + 86-toggle wiring (was fully read-only)",
+      "assignedTo": "agent-frontend",
+      "status": "COMPLETED",
+      "priority": "HIGH",
+      "relatedGate": "CP-11",
+      "notes": "apps/pos-web/pages/menu.tsx: items table gets Status toggle (wired to versioned PATCH availability), Edit modal, Delete w/ confirm. Categories header gets Edit/Delete. Reused existing btn/modal CSS. Modifier-group UI NOT built (no surface existed) \u2014 separate follow-up. tsc clean."
+    },
+    {
+      "taskId": "TSK-008k",
+      "title": "Fix unscoped anonymize route in crm.ts (tenant-isolation gap found during 008f-crm)",
+      "assignedTo": "agent-backend",
+      "status": "COMPLETED",
+      "priority": "MEDIUM",
+      "relatedGate": "CP-11",
+      "notes": "POST /customers/:id/anonymize updates without checking outletId first \u2014 found as a side-effect of the CRM CRUD pass, not yet fixed."
+    },
+    {
+      "taskId": "TSK-008d",
+      "title": "Special notes CRUD (add/list/edit/delete)",
+      "assignedTo": "backend-agent",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "relatedGate": "CP-11"
+    },
+    {
+      "taskId": "TSK-008e",
+      "title": "Areas/sections CRUD, kill hardcoded section fallback",
+      "assignedTo": "backend-agent",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "relatedGate": "CP-11"
+    },
+    {
+      "taskId": "TSK-008h-backend",
+      "title": "Inventory (vendors/recipes/PO) + Marketing campaign CRUD, backend half",
+      "assignedTo": "backend-agent",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "relatedGate": "CP-11"
+    },
+    {
+      "taskId": "TSK-008i",
+      "title": "Kill hardcoded catalogs (waiter.tsx menu list, MenuCustomizerModal addons)",
+      "assignedTo": "frontend-agent",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "relatedGate": "CP-11"
+    },
+    {
+      "taskId": "TSK-008h-frontend",
+      "title": "Inventory/Marketing UI wiring for CRUD endpoints",
+      "assignedTo": "frontend-agent",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "relatedGate": "CP-11"
+    },
+    {
+      "taskId": "TSK-008j",
+      "title": "Permission-gate sweep: orders.ts, tables.ts, admin.ts mutating routes",
+      "assignedTo": "sre-agent",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "relatedGate": "CP-11"
+    },
+    {
+      "taskId": "TSK-010-D1",
+      "title": "Merge: reassign Payment rows to survivor order",
+      "assignedTo": "backend-agent",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "relatedGate": "CP-10"
+    },
+    {
+      "taskId": "TSK-010-D2",
+      "title": "Merge: make merge-group creation atomic with order fold",
+      "assignedTo": "backend-agent",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "relatedGate": "CP-10"
+    },
+    {
+      "taskId": "TSK-010-D9",
+      "title": "Unmerge: transaction + audit log + live-order guard",
+      "assignedTo": "backend-agent",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "relatedGate": "CP-10"
+    },
+    {
+      "taskId": "TSK-010-D5",
+      "title": "Kill implicit table auto-create on unresolved anchor id",
+      "assignedTo": "backend-agent",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "relatedGate": "CP-10"
+    },
+    {
+      "taskId": "TSK-010-D6",
+      "title": "Kill hardcoded tbl-07/B1 demo alias",
+      "assignedTo": "backend-agent",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "relatedGate": "CP-10"
+    },
+    {
+      "taskId": "TSK-010-D7",
+      "title": "GET /tables no longer mutates; added GET /tables/merge-groups",
+      "assignedTo": "backend-agent",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "relatedGate": "CP-10"
+    },
+    {
+      "taskId": "TSK-010-D8",
+      "title": "Remove all 19 debug beacon fetch calls (127.0.0.1:7323)",
+      "assignedTo": "backend-agent",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "relatedGate": "CP-10"
+    },
+    {
+      "taskId": "TSK-010-D3",
+      "title": "Split-bill: largest-remainder split, no lost paise",
+      "assignedTo": "frontend-agent",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "relatedGate": "CP-10"
+    },
+    {
+      "taskId": "TSK-010-D4",
+      "title": "KOT partial-transfer tax split: exact remainder, no truncation drift",
+      "assignedTo": "backend-agent",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "relatedGate": "CP-10"
+    },
+    {
+      "taskId": "TSK-010-D10",
+      "title": "requirePermission on POST /tables/merge",
+      "assignedTo": "backend-agent",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "relatedGate": "CP-10"
+    },
+    {
+      "taskId": "TSK-010-D11",
+      "title": "WS handshake auth + outletId-scoped broadcast",
+      "assignedTo": "backend-agent",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "relatedGate": "CP-10"
+    },
+    {
+      "taskId": "TSK-010-P1",
+      "title": "Seat/merge data model: enums, 5 new tables, field additions, migrations 0028-0036",
+      "assignedTo": "database-agent",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "relatedGate": "CP-10"
+    },
+    {
+      "taskId": "TSK-010-P2-merge",
+      "title": "Merge preview/hardened merge/unmerge API + seat CRUD API",
+      "assignedTo": "backend-agent",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "relatedGate": "CP-10"
+    },
+    {
+      "taskId": "TSK-010-P2-billing",
+      "title": "Split-by-seat billing API: item assignment, shared items, persisted seat bills, per-seat settle",
+      "assignedTo": "backend-agent",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "relatedGate": "CP-10"
     }
   ]
 }

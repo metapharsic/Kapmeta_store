@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { getWsBase } from "./auth";
+import { getSession, getWsBase } from "./auth";
 
 export const FLOOR_EVENT_TOPICS = new Set([
   "table.status_updated",
@@ -36,8 +36,15 @@ export function useKapmetaSocket(
 
     const connect = () => {
       if (closed) return;
+      const session = getSession();
+      if (!session?.accessToken) {
+        // Not logged in yet; retry shortly rather than opening an unauthenticated socket.
+        if (!closed) retry = setTimeout(connect, 3000);
+        return;
+      }
       try {
-        ws = new WebSocket(getWsBase());
+        const url = `${getWsBase()}?token=${encodeURIComponent(session.accessToken)}`;
+        ws = new WebSocket(url);
       } catch {
         if (!closed) retry = setTimeout(connect, 3000);
         return;

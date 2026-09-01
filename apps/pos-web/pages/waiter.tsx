@@ -258,7 +258,10 @@ const DEFAULT_WAITER_TABLES: DiningTable[] = [
   { id: "tbl_b12", tableNumber: "B12", capacity: 4, section: "Non-AC", status: "VACANT", isActive: true },
 ];
 
-const DEFAULT_WAITER_MENU_ITEMS: MenuItem[] = [
+// Offline/network-failure fallback ONLY — used when /menu/items cannot be reached.
+// This is NOT the happy-path default; the captain tablet always fetches live menu
+// data from the API on mount (see fetchMenu below).
+const OFFLINE_FALLBACK_MENU_ITEMS: MenuItem[] = [
   // Breakfast Items (Exact Match)
   { id: "bk_1", name: "(2) Idly (1) Vada", category: "Breakfast", description: "Fresh steamed idlies with crispy medu vada & piping hot sambar", priceMinor: 7000, isVeg: true, isStocked: true, stockQty: 100, icon: "🥟" },
   { id: "bk_2", name: "(S) Idly", category: "Breakfast", description: "Single steamed soft idly served with coconut chutney", priceMinor: 4000, isVeg: true, isStocked: true, stockQty: 100, icon: "🥟" },
@@ -425,7 +428,8 @@ export default function WaiterDashboard() {
 
   // Floor Map & Catalog States
   const [tables, setTables] = useState<DiningTable[]>(DEFAULT_WAITER_TABLES);
-  const [menuItems, setMenuItems] = useState<MenuItem[]>(DEFAULT_WAITER_MENU_ITEMS);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [loadingMenu, setLoadingMenu] = useState<boolean>(true);
   const [categories, setCategories] = useState<string[]>(ORDER_CATEGORIES);
   const [myKots, setMyKots] = useState<KOTTicket[]>([]);
   const kotFetchGen = useRef(0);
@@ -552,6 +556,7 @@ export default function WaiterDashboard() {
 
   // Load Menu
   const fetchMenu = async () => {
+    setLoadingMenu(true);
     try {
       const res = await authedFetch("/menu/items");
       if (res.ok) {
@@ -575,9 +580,22 @@ export default function WaiterDashboard() {
         setMenuItems(mapped);
         const cats = Array.from(new Set(mapped.map((item) => item.category).filter(Boolean)));
         setCategories(["All", ...cats]);
+      } else if (menuItems.length === 0) {
+        // Live fetch failed and we have nothing on screen yet — fall back to the
+        // offline snapshot so the tablet isn't blank, rather than as the default.
+        setMenuItems(OFFLINE_FALLBACK_MENU_ITEMS);
+        const cats = Array.from(new Set(OFFLINE_FALLBACK_MENU_ITEMS.map((item) => item.category).filter(Boolean)));
+        setCategories(["All", ...cats]);
       }
     } catch (e) {
       console.error("Failed to fetch menu items", e);
+      if (menuItems.length === 0) {
+        setMenuItems(OFFLINE_FALLBACK_MENU_ITEMS);
+        const cats = Array.from(new Set(OFFLINE_FALLBACK_MENU_ITEMS.map((item) => item.category).filter(Boolean)));
+        setCategories(["All", ...cats]);
+      }
+    } finally {
+      setLoadingMenu(false);
     }
   };
 
@@ -1747,7 +1765,11 @@ export default function WaiterDashboard() {
 
                 {/* High-Resolution Dishes Photo Grid (Clear & Visible) */}
                 <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 min-h-[580px] max-h-[calc(100vh-280px)] overflow-y-auto shadow-inner">
-                  {filteredMenu.length === 0 ? (
+                  {loadingMenu && menuItems.length === 0 ? (
+                    <div className="text-center py-20 text-slate-500 text-sm">
+                      Loading menu…
+                    </div>
+                  ) : filteredMenu.length === 0 ? (
                     <div className="text-center py-20 text-slate-500 text-sm">
                       No dishes found matching the current filters.
                     </div>

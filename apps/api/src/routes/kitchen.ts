@@ -170,7 +170,7 @@ router.post("/kot", requireAuth, requirePermission("order.create"), async (req: 
     const results = await createKot(req.body, repository);
 
     import("../websockets").then(({ broadcast }) => {
-      broadcast("kot.created", { results });
+      broadcast(req.auth!.outletId, "kot.created", { results });
     });
 
     res.status(201).json(results);
@@ -254,15 +254,15 @@ router.patch("/kot/:kotTicketId/status", requireAuth, async (req: AuthedRequest,
       }
 
       import("../websockets").then(({ broadcast }) => {
-        broadcast("kot.status_updated", { kotTicketId, status: result.newStatus });
-        broadcast("order.status_updated", {
+        broadcast(req.auth!.outletId, "kot.status_updated", { kotTicketId, status: result.newStatus });
+        broadcast(req.auth!.outletId, "order.status_updated", {
           orderId: ticket.orderId,
           tableId: ticket.order?.diningTableId,
           orderStatus: orderTargetStatus || ticket.order?.status,
           kotStatus: result.newStatus,
           stage,
         });
-        broadcast("table.status_updated", {
+        broadcast(req.auth!.outletId, "table.status_updated", {
           tableId: ticket.order?.diningTableId,
           orderId: ticket.orderId,
           stage,
@@ -290,7 +290,7 @@ router.post("/kot/:kotTicketId/recall", requireAuth, requirePermission("kot.stat
     }
 
     import("../websockets").then(({ broadcast }) => {
-      broadcast("kot.status_updated", { kotTicketId, status: "READY" });
+      broadcast(req.auth!.outletId, "kot.status_updated", { kotTicketId, status: "READY" });
     });
 
     res.status(200).json({ status: "READY" });

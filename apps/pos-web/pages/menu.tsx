@@ -61,6 +61,26 @@ export default function MenuManagement() {
   const [newItemTaxRate, setNewItemTaxRate] = useState("5");
   const [savingItem, setSavingItem] = useState(false);
 
+  const [isEditItemOpen, setIsEditItemOpen] = useState(false);
+  const [editItemId, setEditItemId] = useState("");
+  const [editItemCategoryId, setEditItemCategoryId] = useState("");
+  const [editItemName, setEditItemName] = useState("");
+  const [editItemDescription, setEditItemDescription] = useState("");
+  const [editItemPrice, setEditItemPrice] = useState("");
+  const [editItemIsVeg, setEditItemIsVeg] = useState(true);
+  const [editItemTaxRate, setEditItemTaxRate] = useState("5");
+  const [savingEditItem, setSavingEditItem] = useState(false);
+
+  const [isEditCategoryOpen, setIsEditCategoryOpen] = useState(false);
+  const [editCategoryId, setEditCategoryId] = useState("");
+  const [editCategoryName, setEditCategoryName] = useState("");
+  const [editCategoryDescription, setEditCategoryDescription] = useState("");
+  const [savingEditCategory, setSavingEditCategory] = useState(false);
+
+  const [togglingItemId, setTogglingItemId] = useState<string | null>(null);
+  const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
+  const [deletingCategoryId, setDeletingCategoryId] = useState<string | null>(null);
+
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [bulkCsvText, setBulkCsvText] = useState("");
   const [isImporting, setIsImporting] = useState(false);
@@ -203,6 +223,159 @@ export default function MenuManagement() {
       showToast(`❌ Error: ${err.message}`);
     } finally {
       setSavingItem(false);
+    }
+  };
+
+  const openEditItem = (item: MenuItemRow) => {
+    setEditItemId(item.id);
+    setEditItemCategoryId(item.categoryId);
+    setEditItemName(item.name);
+    setEditItemDescription(item.description || "");
+    setEditItemPrice((Number(BigInt(item.priceMinor)) / 100).toString());
+    setEditItemIsVeg(item.isVeg);
+    setEditItemTaxRate(item.taxRate);
+    setIsEditItemOpen(true);
+  };
+
+  const handleEditItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const nameTrimmed = editItemName.trim();
+    const priceNum = parseFloat(editItemPrice);
+    const taxNum = parseFloat(editItemTaxRate);
+
+    if (!nameTrimmed) {
+      showToast("⚠️ Item name is required");
+      return;
+    }
+    if (isNaN(priceNum) || priceNum <= 0) {
+      showToast("⚠️ Please enter a valid price in Rupees");
+      return;
+    }
+
+    setSavingEditItem(true);
+    try {
+      const res = await authedFetch(`/menu/items/${editItemId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          categoryId: editItemCategoryId,
+          name: nameTrimmed,
+          description: editItemDescription.trim() || undefined,
+          priceMinor: Math.round(priceNum * 100),
+          isVeg: editItemIsVeg,
+          taxRate: isNaN(taxNum) ? undefined : taxNum,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to update menu item");
+      }
+      setIsEditItemOpen(false);
+      showToast(`✅ Dish "${nameTrimmed}" updated`);
+      fetchCategoriesAndItems();
+    } catch (err: any) {
+      showToast(`❌ Error: ${err.message}`);
+    } finally {
+      setSavingEditItem(false);
+    }
+  };
+
+  const handleDeleteItem = async (item: MenuItemRow) => {
+    if (!window.confirm(`Delete "${item.name}"? This cannot be undone.`)) return;
+    setDeletingItemId(item.id);
+    try {
+      const res = await authedFetch(`/menu/items/${item.id}`, { method: "DELETE" });
+      if (!res.ok && res.status !== 204) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to delete menu item");
+      }
+      showToast(`✅ Dish "${item.name}" deleted`);
+      fetchCategoriesAndItems();
+    } catch (err: any) {
+      showToast(`❌ Error: ${err.message}`);
+    } finally {
+      setDeletingItemId(null);
+    }
+  };
+
+  const handleToggleAvailability = async (item: MenuItemRow) => {
+    const nextStocked = !item.isActive;
+    setTogglingItemId(item.id);
+    try {
+      const res = await authedFetch(`/menu/items/${item.id}/availability`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          isStocked: nextStocked,
+          expectedVersion: item.availability?.version,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to update availability");
+      }
+      showToast(`✅ "${item.name}" marked ${nextStocked ? "Active" : "Inactive"}`);
+      fetchCategoriesAndItems();
+    } catch (err: any) {
+      showToast(`❌ Error: ${err.message}`);
+    } finally {
+      setTogglingItemId(null);
+    }
+  };
+
+  const openEditCategory = (cat: Category) => {
+    setEditCategoryId(cat.id);
+    setEditCategoryName(cat.name);
+    setEditCategoryDescription(cat.description || "");
+    setIsEditCategoryOpen(true);
+  };
+
+  const handleEditCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = editCategoryName.trim();
+    if (!trimmed) {
+      showToast("⚠️ Category name cannot be empty");
+      return;
+    }
+    setSavingEditCategory(true);
+    try {
+      const res = await authedFetch(`/menu/categories/${editCategoryId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: trimmed,
+          description: editCategoryDescription.trim() || undefined,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to update category");
+      }
+      setIsEditCategoryOpen(false);
+      showToast(`✅ Category "${trimmed}" updated`);
+      fetchCategoriesAndItems();
+    } catch (err: any) {
+      showToast(`❌ Error: ${err.message}`);
+    } finally {
+      setSavingEditCategory(false);
+    }
+  };
+
+  const handleDeleteCategory = async (cat: Category) => {
+    if (!window.confirm(`Delete category "${cat.name}"? Items in it will remain but the category will be hidden.`)) return;
+    setDeletingCategoryId(cat.id);
+    try {
+      const res = await authedFetch(`/menu/categories/${cat.id}`, { method: "DELETE" });
+      if (!res.ok && res.status !== 204) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to delete category");
+      }
+      showToast(`✅ Category "${cat.name}" deleted`);
+      fetchCategoriesAndItems();
+    } catch (err: any) {
+      showToast(`❌ Error: ${err.message}`);
+    } finally {
+      setDeletingCategoryId(null);
     }
   };
 
@@ -379,18 +552,37 @@ Desserts,Gulab Jamun,90,true,5,Fried milk dumplings in rose syrup,SKU-006`;
                   const expanded = expandedCategoryId === cat.id;
                   return (
                     <div key={cat.id} className="category-card">
-                      <button
-                        type="button"
-                        className="category-header"
-                        onClick={() => setExpandedCategoryId(expanded ? null : cat.id)}
-                      >
-                        <div className="category-header-left">
-                          <span className={`chevron ${expanded ? "open" : ""}`}>▶</span>
-                          <span className="category-name">{cat.name}</span>
-                          <span className="category-count">{items.length} items</span>
+                      <div className="category-header-row">
+                        <button
+                          type="button"
+                          className="category-header"
+                          onClick={() => setExpandedCategoryId(expanded ? null : cat.id)}
+                        >
+                          <div className="category-header-left">
+                            <span className={`chevron ${expanded ? "open" : ""}`}>▶</span>
+                            <span className="category-name">{cat.name}</span>
+                            <span className="category-count">{items.length} items</span>
+                          </div>
+                          {cat.description && <span className="category-desc">{cat.description}</span>}
+                        </button>
+                        <div className="category-actions">
+                          <button
+                            type="button"
+                            className="btn-secondary small"
+                            onClick={() => openEditCategory(cat)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-secondary small btn-danger"
+                            disabled={deletingCategoryId === cat.id}
+                            onClick={() => handleDeleteCategory(cat)}
+                          >
+                            {deletingCategoryId === cat.id ? "Deleting..." : "Delete"}
+                          </button>
                         </div>
-                        {cat.description && <span className="category-desc">{cat.description}</span>}
-                      </button>
+                      </div>
 
                       {expanded && (
                         <div className="category-body">
@@ -416,6 +608,7 @@ Desserts,Gulab Jamun,90,true,5,Fried milk dumplings in rose syrup,SKU-006`;
                                   <th>Veg</th>
                                   <th>Tax Rate</th>
                                   <th>Status</th>
+                                  <th>Actions</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -427,9 +620,34 @@ Desserts,Gulab Jamun,90,true,5,Fried milk dumplings in rose syrup,SKU-006`;
                                     <td>{item.isVeg ? "🟢 Pure Veg" : "🔴 Non-Veg"}</td>
                                     <td>{item.taxRate}%</td>
                                     <td>
-                                      <span className={`status-pill ${item.isActive ? "active" : "inactive"}`}>
-                                        {item.isActive ? "Active" : "Inactive"}
-                                      </span>
+                                      <button
+                                        type="button"
+                                        className={`status-pill ${item.isActive ? "active" : "inactive"} status-toggle`}
+                                        disabled={togglingItemId === item.id}
+                                        onClick={() => handleToggleAvailability(item)}
+                                        title="Click to toggle 86 / availability"
+                                      >
+                                        {togglingItemId === item.id ? "..." : item.isActive ? "Active" : "Inactive"}
+                                      </button>
+                                    </td>
+                                    <td>
+                                      <div className="row-actions">
+                                        <button
+                                          type="button"
+                                          className="btn-secondary small"
+                                          onClick={() => openEditItem(item)}
+                                        >
+                                          Edit
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="btn-secondary small btn-danger"
+                                          disabled={deletingItemId === item.id}
+                                          onClick={() => handleDeleteItem(item)}
+                                        >
+                                          {deletingItemId === item.id ? "Deleting..." : "Delete"}
+                                        </button>
+                                      </div>
                                     </td>
                                   </tr>
                                 ))}
@@ -553,6 +771,116 @@ Desserts,Gulab Jamun,90,true,5,Fried milk dumplings in rose syrup,SKU-006`;
                 </button>
                 <button type="submit" className="btn-primary" disabled={savingItem}>
                   {savingItem ? "Saving..." : "Save Item"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {isEditItemOpen && (
+        <div className="modal-overlay" onClick={() => setIsEditItemOpen(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Edit Menu Item</h3>
+            <form onSubmit={handleEditItem}>
+              <label>
+                Category
+                <select value={editItemCategoryId} onChange={(e) => setEditItemCategoryId(e.target.value)}>
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Item Name
+                <input
+                  type="text"
+                  value={editItemName}
+                  onChange={(e) => setEditItemName(e.target.value)}
+                  autoFocus
+                />
+              </label>
+              <label>
+                Description (optional)
+                <textarea
+                  value={editItemDescription}
+                  onChange={(e) => setEditItemDescription(e.target.value)}
+                  placeholder="Short description"
+                />
+              </label>
+              <div className="field-row">
+                <label>
+                  Price (₹)
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={editItemPrice}
+                    onChange={(e) => setEditItemPrice(e.target.value)}
+                  />
+                </label>
+                <label>
+                  Tax Rate (%)
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value={editItemTaxRate}
+                    onChange={(e) => setEditItemTaxRate(e.target.value)}
+                  />
+                </label>
+              </div>
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={editItemIsVeg}
+                  onChange={(e) => setEditItemIsVeg(e.target.checked)}
+                />
+                Vegetarian
+              </label>
+              <div className="modal-actions">
+                <button type="button" className="btn-secondary" onClick={() => setIsEditItemOpen(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary" disabled={savingEditItem}>
+                  {savingEditItem ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {isEditCategoryOpen && (
+        <div className="modal-overlay" onClick={() => setIsEditCategoryOpen(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Edit Category</h3>
+            <form onSubmit={handleEditCategory}>
+              <label>
+                Category Name
+                <input
+                  type="text"
+                  value={editCategoryName}
+                  onChange={(e) => setEditCategoryName(e.target.value)}
+                  autoFocus
+                />
+              </label>
+              <label>
+                Description (optional)
+                <textarea
+                  value={editCategoryDescription}
+                  onChange={(e) => setEditCategoryDescription(e.target.value)}
+                  placeholder="Short description"
+                />
+              </label>
+              <div className="modal-actions">
+                <button type="button" className="btn-secondary" onClick={() => setIsEditCategoryOpen(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary" disabled={savingEditCategory}>
+                  {savingEditCategory ? "Saving..." : "Save Changes"}
                 </button>
               </div>
             </form>
@@ -886,6 +1214,49 @@ Desserts,Gulab Jamun,90,true,5,Fried milk dumplings in rose syrup,SKU-006`;
         .btn-secondary.small {
           padding: 6px 10px;
           font-size: 12px;
+        }
+
+        .btn-danger {
+          border-color: #fecaca;
+          color: #991b1b;
+        }
+
+        .btn-danger:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        .category-header-row {
+          display: flex;
+          align-items: stretch;
+          gap: 8px;
+        }
+
+        .category-header-row .category-header {
+          flex: 1;
+          min-width: 0;
+        }
+
+        .category-actions {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 0 16px;
+        }
+
+        .row-actions {
+          display: flex;
+          gap: 6px;
+        }
+
+        .status-toggle {
+          border: none;
+          cursor: pointer;
+        }
+
+        .status-toggle:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
         }
 
         .empty-state {

@@ -22,7 +22,7 @@ export async function drainOutbox(prisma: PrismaClient): Promise<number> {
   for (const event of pending) {
     try {
       const { broadcast } = await import("../websockets");
-      broadcast(event.eventType, event.payload);
+      broadcast(event.outletId, event.eventType, event.payload);
       await prisma.outboxEvent.update({
         where: { id: event.id },
         data: { status: "PROCESSED", processedAt: new Date() },

@@ -306,6 +306,108 @@ inventoryRouter.post("/recipes", requireAuth, requirePermission("inventory.write
   }
 });
 
+// Update a recipe / BOM
+inventoryRouter.patch("/recipes/:id", requireAuth, requirePermission("inventory.write"), async (req: AuthedRequest, res) => {
+  const recipeId = req.params.id;
+  const { name, yieldPortions, ingredients } = req.body;
+
+  try {
+    const outletId = req.auth!.outletId;
+    const userId = req.auth!.userId;
+
+    const existing = await (prisma as any).recipes.findFirst({
+      where: { id: recipeId, outlet_id: outletId, is_active: true },
+    });
+    if (!existing) {
+      return res.status(404).json({ error: "Recipe not found" });
+    }
+
+    const data: any = { updated_at: new Date(), updated_by: userId };
+    if (name !== undefined) data.name = String(name).trim();
+    if (yieldPortions !== undefined) data.yield_portions = Number(yieldPortions);
+
+    const updated = await (prisma as any).recipes.update({
+      where: { id: recipeId },
+      data,
+    });
+
+    if (Array.isArray(ingredients)) {
+      await (prisma as any).recipe_ingredients.deleteMany({ where: { recipe_id: recipeId } });
+      for (const ing of ingredients) {
+        await (prisma as any).recipe_ingredients.create({
+          data: {
+            recipe_id: recipeId,
+            ingredient_id: ing.ingredientId || ing.id,
+            quantity: Number(ing.quantity || 1),
+          },
+        });
+      }
+    }
+
+    await prisma.auditLog.create({
+      data: {
+        outletId,
+        actor_id: userId,
+        action: "UPDATE",
+        entityType: "INVENTORY_RECIPE",
+        entityId: recipeId,
+        beforeState: { name: existing.name, yieldPortions: Number(existing.yield_portions) },
+        afterState: { name: updated.name, yieldPortions: Number(updated.yield_portions), ingredients },
+        createdAt: new Date(),
+      },
+    });
+
+    res.status(200).json({ id: updated.id, name: updated.name, yieldPortions: Number(updated.yield_portions) });
+  } catch (error: any) {
+    console.error("Error updating recipe:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete (soft) a recipe / BOM.
+// Soft-delete via is_active=false: recipes already carry an is_active flag
+// (GET /recipes filters on it), and even though no other table FKs to
+// recipes today, keeping the row preserves historical BOM/costing context
+// for orders/reports that referenced this recipe while it was active.
+inventoryRouter.delete("/recipes/:id", requireAuth, requirePermission("inventory.write"), async (req: AuthedRequest, res) => {
+  const recipeId = req.params.id;
+
+  try {
+    const outletId = req.auth!.outletId;
+    const userId = req.auth!.userId;
+
+    const existing = await (prisma as any).recipes.findFirst({
+      where: { id: recipeId, outlet_id: outletId, is_active: true },
+    });
+    if (!existing) {
+      return res.status(404).json({ error: "Recipe not found" });
+    }
+
+    await (prisma as any).recipes.update({
+      where: { id: recipeId },
+      data: { is_active: false, updated_at: new Date(), updated_by: userId },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        outletId,
+        actor_id: userId,
+        action: "DELETE",
+        entityType: "INVENTORY_RECIPE",
+        entityId: recipeId,
+        beforeState: { name: existing.name, isActive: true },
+        afterState: { isActive: false },
+        createdAt: new Date(),
+      },
+    });
+
+    res.status(200).json({ success: true });
+  } catch (error: any) {
+    console.error("Error deleting recipe:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // List vendors
 inventoryRouter.get("/vendors", requireAuth, requirePermission("inventory.read"), async (req: AuthedRequest, res) => {
   try {
@@ -376,6 +478,113 @@ inventoryRouter.post("/vendors", requireAuth, requirePermission("inventory.write
     });
   } catch (error: any) {
     console.error("Error creating vendor:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update a vendor
+inventoryRouter.patch("/vendors/:id", requireAuth, requirePermission("inventory.write"), async (req: AuthedRequest, res) => {
+  const vendorId = req.params.id;
+  const { name, contactName, contactPhone, contactEmail, paymentTerms } = req.body;
+
+  try {
+    const outletId = req.auth!.outletId;
+    const userId = req.auth!.userId;
+
+    const existing = await (prisma as any).vendors.findFirst({
+      where: { id: vendorId, outlet_id: outletId, is_active: true },
+    });
+    if (!existing) {
+      return res.status(404).json({ error: "Vendor not found" });
+    }
+
+    const data: any = { updated_at: new Date(), updated_by: userId };
+    if (name !== undefined) data.name = String(name).trim();
+    if (contactName !== undefined) data.contact_name = contactName || null;
+    if (contactPhone !== undefined) data.contact_phone = contactPhone || null;
+    if (contactEmail !== undefined) data.contact_email = contactEmail || null;
+    if (paymentTerms !== undefined) data.payment_terms = paymentTerms || null;
+
+    const updated = await (prisma as any).vendors.update({
+      where: { id: vendorId },
+      data,
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        outletId,
+        actor_id: userId,
+        action: "UPDATE",
+        entityType: "INVENTORY_VENDOR",
+        entityId: vendorId,
+        beforeState: {
+          name: existing.name,
+          contactName: existing.contact_name,
+          contactPhone: existing.contact_phone,
+          contactEmail: existing.contact_email,
+          paymentTerms: existing.payment_terms,
+        },
+        afterState: { name: updated.name, contactName: updated.contact_name, contactPhone: updated.contact_phone, contactEmail: updated.contact_email, paymentTerms: updated.payment_terms },
+        createdAt: new Date(),
+      },
+    });
+
+    res.status(200).json({
+      id: updated.id,
+      name: updated.name,
+      contactName: updated.contact_name,
+      contactPhone: updated.contact_phone,
+      contactEmail: updated.contact_email,
+      paymentTerms: updated.payment_terms,
+    });
+  } catch (error: any) {
+    console.error("Error updating vendor:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete (soft) a vendor.
+// Soft-delete via is_active=false: purchase_orders.vendor_id has an onDelete:
+// NoAction FK to vendors, so a hard delete would throw a raw DB constraint
+// error for any vendor with PO history (draft or otherwise) instead of a
+// clean API response — and vendors already carries an is_active flag that
+// GET /vendors filters on, so soft-delete is the consistent, safe default
+// regardless of whether this particular vendor has POs yet.
+inventoryRouter.delete("/vendors/:id", requireAuth, requirePermission("inventory.write"), async (req: AuthedRequest, res) => {
+  const vendorId = req.params.id;
+
+  try {
+    const outletId = req.auth!.outletId;
+    const userId = req.auth!.userId;
+
+    const existing = await (prisma as any).vendors.findFirst({
+      where: { id: vendorId, outlet_id: outletId, is_active: true },
+    });
+    if (!existing) {
+      return res.status(404).json({ error: "Vendor not found" });
+    }
+
+    await (prisma as any).vendors.update({
+      where: { id: vendorId },
+      data: { is_active: false, updated_at: new Date(), updated_by: userId },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        outletId,
+        actor_id: userId,
+        action: "DELETE",
+        entityType: "INVENTORY_VENDOR",
+        entityId: vendorId,
+        beforeState: { name: existing.name, isActive: true },
+        afterState: { isActive: false },
+        createdAt: new Date(),
+      },
+    });
+
+    res.status(200).json({ success: true });
+  } catch (error: any) {
+    console.error("Error deleting vendor:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -589,6 +798,127 @@ inventoryRouter.post("/purchase-orders/:id/receive", requireAuth, requirePermiss
     });
   } catch (error: any) {
     console.error("Error receiving purchase order:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update a DRAFT purchase order (vendor, items). Once a PO has moved past
+// DRAFT (PARTIALLY_RECEIVED/RECEIVED/CANCELLED) its items may already have
+// received_qty applied to real stock, so editing them after that point would
+// desync the PO from what was actually received. Only DRAFT is editable.
+inventoryRouter.patch("/purchase-orders/:id", requireAuth, requirePermission("inventory.write"), async (req: AuthedRequest, res) => {
+  const poId = req.params.id;
+  const { vendorId, items } = req.body;
+
+  try {
+    const outletId = req.auth!.outletId;
+    const userId = req.auth!.userId;
+
+    const existing = await (prisma as any).purchase_orders.findFirst({
+      where: { id: poId, outlet_id: outletId },
+      include: { purchase_order_items: true },
+    });
+    if (!existing) {
+      return res.status(404).json({ error: "Purchase order not found" });
+    }
+    if (existing.status !== "DRAFT") {
+      return res.status(400).json({ error: `Cannot edit a purchase order with status ${existing.status}. Only DRAFT purchase orders can be edited.` });
+    }
+
+    const data: any = { updated_at: new Date(), updated_by: userId };
+    if (vendorId !== undefined) data.vendor_id = vendorId;
+
+    let total = Number(existing.total_amount_minor) / 100;
+    if (Array.isArray(items)) {
+      total = items.reduce((sum: number, it: any) => sum + Number(it.unitPrice || 0) * Number(it.quantity || 0), 0);
+      data.total_amount_minor = Math.round(total * 100);
+    }
+
+    const updated = await (prisma as any).purchase_orders.update({
+      where: { id: poId },
+      data,
+    });
+
+    if (Array.isArray(items)) {
+      await (prisma as any).purchase_order_items.deleteMany({ where: { po_id: poId } });
+      for (const item of items) {
+        const unitPriceMinor = Math.round(Number(item.unitPrice) * 100);
+        const qty = Number(item.quantity);
+        await (prisma as any).purchase_order_items.create({
+          data: {
+            po_id: poId,
+            ingredient_id: item.ingredientId,
+            quantity: qty,
+            unit_price_minor: unitPriceMinor,
+            total_minor: unitPriceMinor * qty,
+          },
+        });
+      }
+    }
+
+    await prisma.auditLog.create({
+      data: {
+        outletId,
+        actor_id: userId,
+        action: "UPDATE",
+        entityType: "INVENTORY_PURCHASE_ORDER",
+        entityId: poId,
+        beforeState: { vendorId: existing.vendor_id, totalAmount: Number(existing.total_amount_minor) / 100 },
+        afterState: { vendorId: updated.vendor_id, items, totalAmount: total },
+        createdAt: new Date(),
+      },
+    });
+
+    res.status(200).json({ id: updated.id, poNumber: updated.po_number, vendorId: updated.vendor_id, items, totalAmount: total, status: updated.status });
+  } catch (error: any) {
+    console.error("Error updating purchase order:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Cancel a purchase order that has not been received (partially or fully).
+// Once any receive has landed, real ingredient stock has already been
+// incremented from it, so cancelling at that point could not honestly
+// reverse the effect without a separate stock-reversal decision — out of
+// scope here. Only DRAFT (never received) POs may be cancelled.
+inventoryRouter.post("/purchase-orders/:id/cancel", requireAuth, requirePermission("inventory.write"), async (req: AuthedRequest, res) => {
+  const poId = req.params.id;
+
+  try {
+    const outletId = req.auth!.outletId;
+    const userId = req.auth!.userId;
+
+    const existing = await (prisma as any).purchase_orders.findFirst({
+      where: { id: poId, outlet_id: outletId },
+    });
+    if (!existing) {
+      return res.status(404).json({ error: "Purchase order not found" });
+    }
+    if (existing.status !== "DRAFT") {
+      return res.status(400).json({ error: `Cannot cancel a purchase order with status ${existing.status}. Only DRAFT purchase orders (nothing received yet) can be cancelled.` });
+    }
+
+    const updated = await (prisma as any).purchase_orders.update({
+      where: { id: poId },
+      data: { status: "CANCELLED", updated_at: new Date(), updated_by: userId },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        outletId,
+        actor_id: userId,
+        action: "UPDATE",
+        entityType: "INVENTORY_PURCHASE_ORDER",
+        entityId: poId,
+        beforeState: { status: existing.status },
+        afterState: { status: "CANCELLED" },
+        createdAt: new Date(),
+      },
+    });
+
+    res.status(200).json({ id: updated.id, poNumber: updated.po_number, status: updated.status });
+  } catch (error: any) {
+    console.error("Error cancelling purchase order:", error);
     res.status(500).json({ error: error.message });
   }
 });

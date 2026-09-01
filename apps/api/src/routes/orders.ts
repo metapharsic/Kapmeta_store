@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireAuth, checkPermissionDirect, type AuthedRequest } from "../middleware/require-auth";
+import { requireAuth, requirePermission, checkPermissionDirect, type AuthedRequest } from "../middleware/require-auth";
 import { prisma } from "../prisma";
 import {
   createOrder,
@@ -47,7 +47,7 @@ ordersRouter.get("/orders", requireAuth, async (req: AuthedRequest, res) => {
 });
 
 // POST /orders - Create order
-ordersRouter.post("/orders", requireAuth, async (req: AuthedRequest, res) => {
+ordersRouter.post("/orders", requireAuth, requirePermission("order.create"), async (req: AuthedRequest, res) => {
   try {
     const outletId = req.auth!.outletId;
     const body = req.body;
@@ -110,34 +110,11 @@ ordersRouter.post("/orders", requireAuth, async (req: AuthedRequest, res) => {
         await stampOrderMergeLabel(prisma, outletId, existingLive.id, diningTableId);
         const orderDetail = await getOrderDetail(outletId, existingLive.id, orderRepo);
         const attachMembers = await expandMergeMemberIds(prisma, outletId, [diningTableId]);
-        // #region agent log
-        fetch("http://127.0.0.1:7323/ingest/28c85a32-5ef1-4fe5-9437-78139f7a5bfb", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c675b" },
-          body: JSON.stringify({
-            sessionId: "9c675b",
-            runId: "post-merge",
-            hypothesisId: "T",
-            location: "orders.ts:POST /orders:attach",
-            message: "attach to existing live order",
-            data: {
-              requestedTableId: body.diningTableId || null,
-              anchorTableId: diningTableId,
-              orderId: existingLive.id,
-              attachedToExisting: true,
-              memberCount: attachMembers.length,
-              memberIds: attachMembers,
-              broadcastTables: [diningTableId],
-            },
-            timestamp: Date.now(),
-          }),
-        }).catch(() => {});
-        // #endregion
         import("../websockets").then(({ broadcast }) => {
-          broadcast("order.updated", { orderId: existingLive.id, diningTableId });
-          broadcast("kot.created", { orderId: existingLive.id, diningTableId });
+          broadcast(outletId, "order.updated", { orderId: existingLive.id, diningTableId });
+          broadcast(outletId, "kot.created", { orderId: existingLive.id, diningTableId });
           for (const id of attachMembers.length > 0 ? attachMembers : [diningTableId]) {
-            broadcast("table.status_updated", { tableId: id, orderId: existingLive.id, status: "OCCUPIED" });
+            broadcast(outletId, "table.status_updated", { tableId: id, orderId: existingLive.id, status: "OCCUPIED" });
           }
         }).catch(() => {});
         return res.status(200).json({ ...orderDetail, added, attachedToExisting: true });
@@ -212,41 +189,18 @@ ordersRouter.post("/orders", requireAuth, async (req: AuthedRequest, res) => {
     const createMembers = diningTableId
       ? await expandMergeMemberIds(prisma, outletId, [diningTableId])
       : [];
-    // #region agent log
-    fetch("http://127.0.0.1:7323/ingest/28c85a32-5ef1-4fe5-9437-78139f7a5bfb", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c675b" },
-      body: JSON.stringify({
-        sessionId: "9c675b",
-        runId: "post-merge",
-        hypothesisId: "T",
-        location: "orders.ts:POST /orders:create",
-        message: "created new order (did not attach)",
-        data: {
-          requestedTableId: body.diningTableId || null,
-          pinTableId: diningTableId || null,
-          orderId: result.id,
-          attachedToExisting: false,
-          memberCount: createMembers.length,
-          memberIds: createMembers,
-          action: body.action || null,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
 
     import("../websockets").then(({ broadcast }) => {
-      broadcast("order.created", {
+      broadcast(outletId, "order.created", {
         orderId: result.id,
         orderNumber: orderDetail?.orderNumber || "NEW",
         tableId: diningTableId,
         status: orderDetail?.status || result.status,
       });
-      broadcast("kot.created", { orderId: result.id, diningTableId });
+      broadcast(outletId, "kot.created", { orderId: result.id, diningTableId });
       const occupyIds = createMembers.length > 0 ? createMembers : (diningTableId ? [diningTableId] : []);
       for (const id of occupyIds) {
-        broadcast("table.status_updated", {
+        broadcast(outletId, "table.status_updated", {
           tableId: id,
           orderId: result.id,
           status: body.action === "BILL" ? "AVAILABLE" : "OCCUPIED",
@@ -360,26 +314,6 @@ ordersRouter.get("/orders/:id", requireAuth, async (req: AuthedRequest, res) => 
       }
     }
 
-    // #region agent log
-    fetch("http://127.0.0.1:7323/ingest/28c85a32-5ef1-4fe5-9437-78139f7a5bfb", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c675b" },
-      body: JSON.stringify({
-        sessionId: "9c675b",
-        runId: "waiter-lifecycle",
-        hypothesisId: "H",
-        location: "orders.ts:GET /orders/:id",
-        message: "order kitchenStatus joined from KOT tickets",
-        data: {
-          orderId: order.id,
-          orderStatus: order.status,
-          itemCount: (order.items || []).length,
-          kitchenStatuses: Array.from(kitchenByOrderItem.values()),
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
 
     res.status(200).json({
       ...order,
@@ -410,7 +344,7 @@ ordersRouter.get("/orders/:id", requireAuth, async (req: AuthedRequest, res) => 
 });
 
 // PATCH /orders/:id/status - Status transition
-ordersRouter.patch("/orders/:id/status", requireAuth, async (req: AuthedRequest, res) => {
+ordersRouter.patch("/orders/:id/status", requireAuth, requirePermission("order.update"), async (req: AuthedRequest, res) => {
   try {
     const userId = req.auth!.userId;
     const targetStatus = (req.body.toStatus || req.body.status) as OrderStatus;
@@ -525,10 +459,10 @@ const handleRecordPayment = async (req: AuthedRequest, res: any) => {
   }
 };
 
-ordersRouter.post("/orders/:id/payments", requireAuth, handleRecordPayment);
+ordersRouter.post("/orders/:id/payments", requireAuth, requirePermission("bill.settle"), handleRecordPayment);
 
 // POST /orders/:id/items - Add items to existing running order
-ordersRouter.post("/orders/:id/items", requireAuth, async (req: AuthedRequest, res) => {
+ordersRouter.post("/orders/:id/items", requireAuth, requirePermission("order.create"), async (req: AuthedRequest, res) => {
   try {
     const outletId = req.auth!.outletId;
     const userId = req.auth!.userId;
@@ -559,57 +493,13 @@ ordersRouter.post("/orders/:id/items", requireAuth, async (req: AuthedRequest, r
     const itemMembers = live?.diningTableId
       ? await expandMergeMemberIds(prisma, outletId, [live.diningTableId])
       : [];
-    // #region agent log
-    fetch("http://127.0.0.1:7323/ingest/28c85a32-5ef1-4fe5-9437-78139f7a5bfb", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c675b" },
-      body: JSON.stringify({
-        sessionId: "9c675b",
-        runId: "post-merge",
-        hypothesisId: "U",
-        location: "orders.ts:POST /orders/:id/items",
-        message: "add items to running order",
-        data: {
-          orderId: req.params.id,
-          diningTableId: live?.diningTableId || null,
-          tableNumber: live?.table_number || null,
-          memberCount: itemMembers.length,
-          memberIds: itemMembers,
-          lineCount: lines.length,
-          broadcastTopics: [],
-        },
-        timestamp: Date.now(),
-      }),
-      }).catch(() => {});
-    // #endregion
     import("../websockets").then(({ broadcast }) => {
-      broadcast("order.updated", { orderId: req.params.id, diningTableId: live?.diningTableId || null });
-      broadcast("kot.created", { orderId: req.params.id, diningTableId: live?.diningTableId || null });
+      broadcast(outletId, "order.updated", { orderId: req.params.id, diningTableId: live?.diningTableId || null });
+      broadcast(outletId, "kot.created", { orderId: req.params.id, diningTableId: live?.diningTableId || null });
       for (const id of itemMembers) {
-        broadcast("table.status_updated", { tableId: id, orderId: req.params.id, status: "OCCUPIED" });
+        broadcast(outletId, "table.status_updated", { tableId: id, orderId: req.params.id, status: "OCCUPIED" });
       }
     }).catch(() => {});
-    // #region agent log
-    fetch("http://127.0.0.1:7323/ingest/28c85a32-5ef1-4fe5-9437-78139f7a5bfb", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c675b" },
-      body: JSON.stringify({
-        sessionId: "9c675b",
-        runId: "post-fix",
-        hypothesisId: "U",
-        location: "orders.ts:POST /orders/:id/items:fanout",
-        message: "add-items fanout after KOT",
-        data: {
-          orderId: req.params.id,
-          diningTableId: live?.diningTableId || null,
-          memberCount: itemMembers.length,
-          memberIds: itemMembers,
-          broadcastTopics: ["order.updated", "kot.created", "table.status_updated"],
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     res.status(200).json(added);
   } catch (err: any) {
     console.error("Error adding items to order:", err);
@@ -641,8 +531,8 @@ const handleVoidItem = async (req: AuthedRequest, res: any) => {
   }
 };
 
-ordersRouter.post("/orders/:id/items/:itemId/void", requireAuth, handleVoidItem);
-ordersRouter.patch("/orders/:id/items/:itemId/void", requireAuth, handleVoidItem);
+ordersRouter.post("/orders/:id/items/:itemId/void", requireAuth, requirePermission("order.void"), handleVoidItem);
+ordersRouter.patch("/orders/:id/items/:itemId/void", requireAuth, requirePermission("order.void"), handleVoidItem);
 
 // POST & PATCH /orders/:id/charges - Apply discounts / tips / service charges
 const handleCharges = async (req: AuthedRequest, res: any) => {
@@ -656,27 +546,6 @@ const handleCharges = async (req: AuthedRequest, res: any) => {
       BigInt(tipMinor || 0),
       BigInt(serviceChargeMinor || 0)
     );
-    // #region agent log
-    fetch("http://127.0.0.1:7323/ingest/28c85a32-5ef1-4fe5-9437-78139f7a5bfb", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c675b" },
-      body: JSON.stringify({
-        sessionId: "9c675b",
-        runId: "waiter-charges",
-        hypothesisId: "K",
-        location: "orders.ts:handleCharges",
-        message: "charges API applied",
-        data: {
-          orderId: req.params.id,
-          tipMinor: String(tipMinor || 0),
-          serviceChargeMinor: String(serviceChargeMinor || 0),
-          persistedTip: updated.tipTotalMinor.toString(),
-          persistedService: updated.serviceChargeTotalMinor.toString(),
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     res.status(200).json({
       ...updated,
       tipTotalMinor: updated.tipTotalMinor.toString(),
@@ -689,8 +558,8 @@ const handleCharges = async (req: AuthedRequest, res: any) => {
   }
 };
 
-ordersRouter.post("/orders/:id/charges", requireAuth, handleCharges);
-ordersRouter.patch("/orders/:id/charges", requireAuth, handleCharges);
+ordersRouter.post("/orders/:id/charges", requireAuth, requirePermission("order.discount"), handleCharges);
+ordersRouter.patch("/orders/:id/charges", requireAuth, requirePermission("order.discount"), handleCharges);
 
 // POST /orders/:id/settle - Settle and complete order with payment.
 // Cashiers use bill.settle. Captains with order.create may settle a table they collected payment on.
@@ -716,7 +585,7 @@ ordersRouter.post("/orders/:id/settle", requireAuth, async (req: AuthedRequest, 
   }
 });
 
-ordersRouter.post("/orders/:id/hold", requireAuth, async (req: AuthedRequest, res) => {
+ordersRouter.post("/orders/:id/hold", requireAuth, requirePermission("order.update"), async (req: AuthedRequest, res) => {
   try {
     const order = await prisma.order.findFirst({
       where: { id: req.params.id, outletId: req.auth!.outletId },
@@ -736,7 +605,7 @@ ordersRouter.post("/orders/:id/hold", requireAuth, async (req: AuthedRequest, re
 });
 
 // POST /orders/:id/fire-advance - Dispatch a scheduled advance order to Kitchen KDS
-ordersRouter.post("/orders/:id/fire-advance", requireAuth, async (req: AuthedRequest, res) => {
+ordersRouter.post("/orders/:id/fire-advance", requireAuth, requirePermission("order.update"), async (req: AuthedRequest, res) => {
   try {
     const outletId = req.auth!.outletId;
     const orderId = req.params.id;
@@ -757,7 +626,7 @@ ordersRouter.post("/orders/:id/fire-advance", requireAuth, async (req: AuthedReq
 });
 
 // POST /orders/:id/cancel - Cancel order
-ordersRouter.post("/orders/:id/cancel", requireAuth, async (req: AuthedRequest, res) => {
+ordersRouter.post("/orders/:id/cancel", requireAuth, requirePermission("order.void"), async (req: AuthedRequest, res) => {
   try {
     const orderId = req.params.id;
     const userId = req.auth!.userId;
@@ -786,9 +655,9 @@ ordersRouter.post("/orders/:id/cancel", requireAuth, async (req: AuthedRequest, 
       : { ids: [] as string[] };
 
     import("../websockets").then(({ broadcast }) => {
-      broadcast("order.status_updated", { orderId, status: "CANCELLED", tableId: order.diningTableId });
+      broadcast(order.outletId, "order.status_updated", { orderId, status: "CANCELLED", tableId: order.diningTableId });
       for (const id of dissolved.ids.length > 0 ? dissolved.ids : order.diningTableId ? [order.diningTableId] : []) {
-        broadcast("table.status_updated", { tableId: id, orderId, status: "VACANT" });
+        broadcast(order.outletId, "table.status_updated", { tableId: id, orderId, status: "VACANT" });
       }
     }).catch(() => {});
 
@@ -809,7 +678,6 @@ ordersRouter.get("/orders/by-table/:tableId/active", requireAuth, async (req: Au
     const candidateIds = Array.from(new Set([
       anchor?.id,
       tableId,
-      tableId === "B1" ? "tbl-07" : (tableId === "tbl-07" ? "B1" : undefined),
       ...memberIds,
     ].filter(Boolean) as string[]));
     const liveOrders = await findLiveOrdersOnTables(
@@ -862,3 +730,394 @@ ordersRouter.get("/orders/:id/bill/by-seat", requireAuth, async (req: AuthedRequ
     res.status(500).json({ error: err.message || "Failed to generate seat bill" });
   }
 });
+
+// ---------------------------------------------------------------------------
+// Seat-level billing (persisted split-by-seat) — see docs/02-requirements/
+// artifact-02-seat-and-merge-plan.md §3/§4. The 5 new Prisma models below
+// (table_merge_groups, table_merge_members, table_seats, order_seat_bills,
+// order_item_seat_shares) predate `prisma generate` being re-run in this
+// environment, so every access goes through `(prisma as any).<model>` —
+// same pattern as services/menu/src/menu-catalog-repository.ts:linkModifierToItem.
+// ---------------------------------------------------------------------------
+
+
+// POST /orders/:id/seats/:seatNumber/items - assign order items to a seat
+ordersRouter.post(
+  "/orders/:id/seats/:seatNumber/items",
+  requireAuth,
+  requirePermission("order.update"),
+  async (req: AuthedRequest, res) => {
+    try {
+      const outletId = req.auth!.outletId;
+      const orderId = req.params.id;
+      const seatNumber = Number(req.params.seatNumber);
+      const itemIds: string[] = Array.isArray(req.body?.itemIds) ? req.body.itemIds : [];
+
+      if (!Number.isInteger(seatNumber) || seatNumber < 1) {
+        return res.status(400).json({ error: "seatNumber must be a positive integer" });
+      }
+      if (itemIds.length === 0) {
+        return res.status(400).json({ error: "itemIds is required" });
+      }
+
+      const order = await prisma.order.findFirst({ where: { id: orderId, outletId } });
+      if (!order) {
+        return res.status(404).json({ error: "Order not found" });
+      }
+
+      // Resolve the seat's id (table_seats) if the order's table has one seeded
+      // for this seat number — OrderItem.seatId is nullable, seatNumber always set.
+      let seatId: string | null = null;
+      if (order.diningTableId) {
+        const seatRow = await (prisma as any).table_seats.findFirst({
+          where: { outlet_id: outletId, dining_table_id: order.diningTableId, seat_number: seatNumber },
+        });
+        seatId = seatRow?.id ?? null;
+      }
+
+      const result = await (prisma.orderItem.updateMany as any)({
+        where: { id: { in: itemIds }, orderId, outletId },
+        data: { seatNumber, seatId },
+      });
+
+      res.status(200).json({ ok: true, updatedCount: result.count, seatNumber, seatId });
+    } catch (err: any) {
+      console.error("Error assigning items to seat:", err);
+      res.status(400).json({ error: err.message || "Failed to assign items to seat" });
+    }
+  }
+);
+
+// POST /orders/:id/items/:itemId/seat-shares - split ONE item across multiple seats
+ordersRouter.post(
+  "/orders/:id/items/:itemId/seat-shares",
+  requireAuth,
+  requirePermission("order.update"),
+  async (req: AuthedRequest, res) => {
+    try {
+      const outletId = req.auth!.outletId;
+      const orderId = req.params.id;
+      const itemId = req.params.itemId;
+      const shares: { seatNumber: number; shareNumerator: number; shareDenominator: number }[] =
+        Array.isArray(req.body?.shares) ? req.body.shares : [];
+
+      if (shares.length < 2) {
+        return res.status(400).json({ error: "At least two shares are required to split an item across seats" });
+      }
+      for (const s of shares) {
+        if (
+          !Number.isInteger(s.seatNumber) || s.seatNumber < 1 ||
+          !Number.isInteger(s.shareNumerator) || s.shareNumerator <= 0 ||
+          !Number.isInteger(s.shareDenominator) || s.shareDenominator <= 0
+        ) {
+          return res.status(400).json({ error: "Each share needs a positive seatNumber, shareNumerator, shareDenominator" });
+        }
+      }
+      // Validation: all denominators must agree, and numerators must sum to that
+      // denominator exactly (the item is fully and exclusively allocated).
+      const denominator = shares[0].shareDenominator;
+      const allSameDenominator = shares.every((s) => s.shareDenominator === denominator);
+      const numeratorSum = shares.reduce((sum, s) => sum + s.shareNumerator, 0);
+      if (!allSameDenominator || numeratorSum !== denominator) {
+        return res.status(400).json({
+          error: "Shares must use a common denominator and numerators must sum to it (fully allocate the item)",
+        });
+      }
+
+      const item = await prisma.orderItem.findFirst({ where: { id: itemId, orderId, outletId } });
+      if (!item) {
+        return res.status(404).json({ error: "Order item not found" });
+      }
+
+      // Allocate the item's subtotal across shares with the same largest-remainder
+      // technique used elsewhere in this file, so shares sum exactly to item.subtotal.
+      const amounts = shares.map((s) => (item.subtotal * BigInt(s.shareNumerator)) / BigInt(denominator));
+      const allocated = amounts.reduce((sum, a) => sum + a, 0n);
+      let leftover = item.subtotal - allocated;
+      const allocatedSubtotals = amounts.map((a) => {
+        if (leftover > 0n) {
+          leftover -= 1n;
+          return a + 1n;
+        }
+        return a;
+      });
+
+      const created = await prisma.$transaction(async (tx) => {
+        await (tx as any).order_item_seat_shares.deleteMany({ where: { order_item_id: itemId } });
+        const rows: any[] = [];
+        for (let i = 0; i < shares.length; i++) {
+          const s = shares[i];
+          rows.push(
+            await (tx as any).order_item_seat_shares.create({
+              data: {
+                outlet_id: outletId,
+                order_item_id: itemId,
+                seat_number: s.seatNumber,
+                share_numerator: s.shareNumerator,
+                share_denominator: s.shareDenominator,
+                allocated_subtotal: allocatedSubtotals[i],
+              },
+            })
+          );
+        }
+        await (tx.orderItem.update as any)({ where: { id: itemId }, data: { isShared: true } });
+        return rows;
+      });
+
+      res.status(200).json({
+        ok: true,
+        itemId,
+        shares: created.map((r: any) => ({
+          seatNumber: r.seat_number,
+          shareNumerator: r.share_numerator,
+          shareDenominator: r.share_denominator,
+          allocatedSubtotalMinor: r.allocated_subtotal.toString(),
+        })),
+      });
+    } catch (err: any) {
+      console.error("Error recording seat shares:", err);
+      res.status(400).json({ error: err.message || "Failed to record seat shares" });
+    }
+  }
+);
+
+// POST /orders/:id/split-by-seat - compute and PERSIST per-seat bills.
+//
+// Idempotency choice: split-by-seat is RE-RUNNABLE, not one-shot. If
+// order_seat_bills rows already exist for this order they are updated in
+// place (upsert on the (outlet_id, order_id, seat_number) unique key) rather
+// than 409ing, so re-running after items move between seats (or after a
+// void) recomputes cleanly. Rows for seat numbers that no longer have items
+// are left untouched but zeroed out for subtotal/tax/etc — paidTotal is
+// never reset by this endpoint, only settle writes to it.
+ordersRouter.post(
+  "/orders/:id/split-by-seat",
+  requireAuth,
+  requirePermission("order.update"),
+  async (req: AuthedRequest, res) => {
+    try {
+      const outletId = req.auth!.outletId;
+      const orderId = req.params.id;
+
+      const order = await prisma.order.findFirst({ where: { id: orderId, outletId } });
+      if (!order) {
+        return res.status(404).json({ error: "Order not found" });
+      }
+
+      // Reuse the same per-seat subtotal/paid grouping logic as the
+      // read-only GET /orders/:id/bill/by-seat reporting endpoint.
+      const bySeat = await orderRepo.getBillBySeat(outletId, orderId);
+      const namedSeats = bySeat.filter((s) => s.seatNumber != null) as { seatNumber: number; subtotalMinor: string; paidMinor: string }[];
+
+      if (namedSeats.length === 0) {
+        return res.status(400).json({ error: "Order has no items assigned to a seat yet" });
+      }
+
+      const seatNumbers = namedSeats.map((s) => s.seatNumber).sort((a, b) => a - b);
+      const subtotalsBySeat = new Map(namedSeats.map((s) => [s.seatNumber, BigInt(s.subtotalMinor)]));
+      const itemSubtotalSum = namedSeats.reduce((sum, s) => sum + BigInt(s.subtotalMinor), 0n);
+
+      // Allocate order-level discount/tax/service-charge/tip proportionally
+      // to each seat's share of item subtotal, using largest-remainder
+      // rounding so the per-seat components sum exactly to the order totals.
+      const discountTotal = order.discountTotal ?? 0n;
+      const taxTotal = order.taxTotal ?? 0n;
+      const serviceChargeTotal = order.serviceChargeTotal ?? 0n;
+      const tipTotal = order.tipTotal ?? 0n;
+
+      function allocateProportional(total: bigint): Map<number, bigint> {
+        if (itemSubtotalSum === 0n || total === 0n) {
+          return new Map(seatNumbers.map((n) => [n, 0n]));
+        }
+        // Proportional shares first (floor), then hand out the remainder
+        // (total - sum of floors) one unit at a time, largest-fraction-first,
+        // to the seats — deterministic tie-break by seat number ascending.
+        const raw = seatNumbers.map((n) => {
+          const subtotal = subtotalsBySeat.get(n)!;
+          return (subtotal * total) / itemSubtotalSum;
+        });
+        let allocated = raw.reduce((sum, v) => sum + v, 0n);
+        let leftover = total - allocated;
+        const result = new Map<number, bigint>();
+        seatNumbers.forEach((n, i) => result.set(n, raw[i]));
+        let i = 0;
+        while (leftover > 0n && seatNumbers.length > 0) {
+          const n = seatNumbers[i % seatNumbers.length];
+          result.set(n, result.get(n)! + 1n);
+          leftover -= 1n;
+          i++;
+        }
+        return result;
+      }
+
+      const discountBySeat = allocateProportional(discountTotal);
+      const taxBySeat = allocateProportional(taxTotal);
+      const serviceChargeBySeat = allocateProportional(serviceChargeTotal);
+      const tipBySeat = allocateProportional(tipTotal);
+
+      const results = await prisma.$transaction(async (tx) => {
+        const rows: any[] = [];
+        for (const seatNumber of seatNumbers) {
+          const subtotal = subtotalsBySeat.get(seatNumber)!;
+          const discount = discountBySeat.get(seatNumber)!;
+          const tax = taxBySeat.get(seatNumber)!;
+          const serviceCharge = serviceChargeBySeat.get(seatNumber)!;
+          const tip = tipBySeat.get(seatNumber)!;
+          const grandTotal = subtotal - discount + tax + serviceCharge + tip;
+
+          const existing = await (tx as any).order_seat_bills.findFirst({
+            where: { outlet_id: outletId, order_id: orderId, seat_number: seatNumber },
+          });
+
+          const row = existing
+            ? await (tx as any).order_seat_bills.update({
+                where: { id: existing.id },
+                data: {
+                  subtotal,
+                  discount_total: discount,
+                  tax_total: tax,
+                  service_charge_total: serviceCharge,
+                  tip_total: tip,
+                  grand_total: grandTotal,
+                  updated_at: new Date(),
+                },
+              })
+            : await (tx as any).order_seat_bills.create({
+                data: {
+                  outlet_id: outletId,
+                  order_id: orderId,
+                  seat_number: seatNumber,
+                  subtotal,
+                  discount_total: discount,
+                  tax_total: tax,
+                  service_charge_total: serviceCharge,
+                  tip_total: tip,
+                  grand_total: grandTotal,
+                  paid_total: 0n,
+                  status: "PENDING",
+                },
+              });
+          rows.push(row);
+        }
+        await (tx.order.update as any)({ where: { id: orderId }, data: { splitMode: "BY_SEAT" } });
+        return rows;
+      });
+
+      res.status(200).json({
+        ok: true,
+        orderId,
+        seats: results.map((r: any) => ({
+          seatNumber: r.seat_number,
+          subtotalMinor: r.subtotal.toString(),
+          discountTotalMinor: r.discount_total.toString(),
+          taxTotalMinor: r.tax_total.toString(),
+          serviceChargeTotalMinor: r.service_charge_total.toString(),
+          tipTotalMinor: r.tip_total.toString(),
+          grandTotalMinor: r.grand_total.toString(),
+          paidTotalMinor: r.paid_total.toString(),
+          status: r.status,
+        })),
+      });
+    } catch (err: any) {
+      console.error("Error splitting bill by seat:", err);
+      res.status(400).json({ error: err.message || "Failed to split bill by seat" });
+    }
+  }
+);
+
+// POST /orders/:id/seats/:seatNumber/settle - record a payment against one seat's bill
+ordersRouter.post(
+  "/orders/:id/seats/:seatNumber/settle",
+  requireAuth,
+  requirePermission("order.update"),
+  async (req: AuthedRequest, res) => {
+    try {
+      const outletId = req.auth!.outletId;
+      const userId = req.auth!.userId;
+      const orderId = req.params.id;
+      const seatNumber = Number(req.params.seatNumber);
+      const method = req.body?.method || "CASH";
+
+      const order = await prisma.order.findFirst({ where: { id: orderId, outletId } });
+      if (!order) {
+        return res.status(404).json({ error: "Order not found" });
+      }
+
+      const seatBill = await (prisma as any).order_seat_bills.findFirst({
+        where: { outlet_id: outletId, order_id: orderId, seat_number: seatNumber },
+      });
+      if (!seatBill) {
+        return res.status(404).json({ error: "No seat bill found — run split-by-seat first" });
+      }
+
+      const dueMinor = (seatBill.grand_total as bigint) - (seatBill.paid_total as bigint);
+      const amountMinor: bigint = req.body?.amountMinor != null ? BigInt(req.body.amountMinor) : dueMinor;
+      if (amountMinor <= 0n) {
+        return res.status(400).json({ error: "amountMinor must be positive" });
+      }
+
+      let seatId: string | null = null;
+      if (order.diningTableId) {
+        const seatRow = await (prisma as any).table_seats.findFirst({
+          where: { outlet_id: outletId, dining_table_id: order.diningTableId, seat_number: seatNumber },
+        });
+        seatId = seatRow?.id ?? null;
+      }
+
+      const { updatedSeatBill, allSettled } = await prisma.$transaction(async (tx) => {
+        await tx.payment.create({
+          data: {
+            outletId,
+            orderId,
+            amount: amountMinor,
+            method,
+            status: "CAPTURED",
+            seatNumber,
+            seatId,
+            orderSeatBillId: seatBill.id,
+          } as any,
+        });
+
+        const newPaidTotal = (seatBill.paid_total as bigint) + amountMinor;
+        const newStatus = newPaidTotal >= (seatBill.grand_total as bigint) ? "SETTLED" : "PENDING";
+        const updated = await (tx as any).order_seat_bills.update({
+          where: { id: seatBill.id },
+          data: {
+            paid_total: newPaidTotal,
+            status: newStatus,
+            settled_at: newStatus === "SETTLED" ? new Date() : seatBill.settled_at,
+          },
+        });
+
+        const allBills = await (tx as any).order_seat_bills.findMany({
+          where: { outlet_id: outletId, order_id: orderId },
+        });
+        const settled = allBills.length > 0 && allBills.every((b: any) => b.status === "SETTLED");
+        return { updatedSeatBill: updated, allSettled: settled };
+      });
+
+      let settleResult: Awaited<ReturnType<typeof settleOrderCommand>> | null = null;
+      if (allSettled) {
+        // Converge with the existing all-at-once settlement path instead of
+        // diverging into a separate "order fully paid via seats" code path:
+        // per-seat Payment rows already sum to grandTotal, so this call
+        // records no additional payment — it only advances order status,
+        // writes the invoice, dissolves the merge group and deducts stock.
+        settleResult = await settleOrderCommand(prisma, { outletId, orderId, userId });
+      }
+
+      res.status(200).json({
+        ok: true,
+        seatNumber,
+        paidTotalMinor: updatedSeatBill.paid_total.toString(),
+        grandTotalMinor: updatedSeatBill.grand_total.toString(),
+        status: updatedSeatBill.status,
+        orderSettled: allSettled,
+        orderStatus: settleResult?.status ?? order.status,
+      });
+    } catch (err: any) {
+      console.error("Error settling seat:", err);
+      res.status(400).json({ error: err.message || "Failed to settle seat" });
+    }
+  }
+);

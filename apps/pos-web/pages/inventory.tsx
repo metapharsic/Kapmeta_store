@@ -69,6 +69,10 @@ interface VendorApi {
   phone: string;
   email?: string;
   taxNumber?: string;
+  contactName?: string | null;
+  contactPhone?: string | null;
+  contactEmail?: string | null;
+  paymentTerms?: string | null;
 }
 
 interface PurchaseOrderApi {
@@ -167,6 +171,27 @@ export default function InventoryDashboard() {
     { ingredientId: "", quantity: 10, unitPrice: 50 },
   ]);
   const [receivingPoId, setReceivingPoId] = useState<string | null>(null);
+
+  // Vendor Edit/Delete State
+  const [editingVendor, setEditingVendor] = useState<VendorApi | null>(null);
+  const [editVendorName, setEditVendorName] = useState("");
+  const [editVendorPhone, setEditVendorPhone] = useState("");
+  const [editVendorEmail, setEditVendorEmail] = useState("");
+  const [savingVendorEdit, setSavingVendorEdit] = useState(false);
+  const [deletingVendorId, setDeletingVendorId] = useState<string | null>(null);
+
+  // Recipe Edit/Delete State
+  const [editingRecipe, setEditingRecipe] = useState<RecipeApi | null>(null);
+  const [editRecipeLines, setEditRecipeLines] = useState<{ ingredientId: string; quantity: number; yieldPercent: number }[]>([]);
+  const [savingRecipeEdit, setSavingRecipeEdit] = useState(false);
+  const [deletingRecipeId, setDeletingRecipeId] = useState<string | null>(null);
+
+  // Purchase Order Edit/Cancel State
+  const [editingPo, setEditingPo] = useState<PurchaseOrderApi | null>(null);
+  const [editPoVendorId, setEditPoVendorId] = useState("");
+  const [editPoLines, setEditPoLines] = useState<{ ingredientId: string; quantity: number; unitPrice: number }[]>([]);
+  const [savingPoEdit, setSavingPoEdit] = useState(false);
+  const [cancellingPoId, setCancellingPoId] = useState<string | null>(null);
 
   const fetchAvailability = () => {
     setLoading(true);
@@ -456,6 +481,181 @@ export default function InventoryDashboard() {
       alert("Network error receiving PO");
     } finally {
       setReceivingPoId(null);
+    }
+  };
+
+  const openEditVendor = (v: VendorApi) => {
+    setEditingVendor(v);
+    setEditVendorName(v.name);
+    setEditVendorPhone(v.contactPhone || v.phone || "");
+    setEditVendorEmail(v.contactEmail || v.email || "");
+  };
+
+  const handleEditVendor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingVendor) return;
+    if (!editVendorName.trim()) return;
+    setSavingVendorEdit(true);
+    try {
+      const res = await authedFetch(`/inventory/vendors/${editingVendor.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editVendorName.trim(),
+          contactPhone: editVendorPhone.trim() || undefined,
+          contactEmail: editVendorEmail.trim() || undefined,
+        }),
+      });
+      if (res.ok) {
+        setEditingVendor(null);
+        await fetchVendorsAndPOs();
+      } else {
+        const err = await res.json();
+        alert(err.error || "Failed to update vendor");
+      }
+    } catch (e) {
+      alert("Failed to update vendor");
+    } finally {
+      setSavingVendorEdit(false);
+    }
+  };
+
+  const handleDeleteVendor = async (v: VendorApi) => {
+    if (!confirm(`Deactivate vendor "${v.name}"? This cannot be undone.`)) return;
+    setDeletingVendorId(v.id);
+    try {
+      const res = await authedFetch(`/inventory/vendors/${v.id}`, { method: "DELETE" });
+      if (res.ok) {
+        await fetchVendorsAndPOs();
+      } else {
+        const err = await res.json();
+        alert(err.error || "Failed to delete vendor");
+      }
+    } catch (e) {
+      alert("Failed to delete vendor");
+    } finally {
+      setDeletingVendorId(null);
+    }
+  };
+
+  const openEditRecipe = (rec: RecipeApi) => {
+    setEditingRecipe(rec);
+    setEditRecipeLines(
+      (rec.recipeIngredients || []).map((ri) => ({
+        ingredientId: ri.ingredientId,
+        quantity: ri.quantity,
+        yieldPercent: ri.yieldPercent ?? 100,
+      }))
+    );
+  };
+
+  const handleEditRecipe = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingRecipe) return;
+    const validLines = editRecipeLines.filter((l) => l.ingredientId && l.quantity > 0);
+    if (validLines.length === 0) {
+      alert("Please add at least one valid ingredient line");
+      return;
+    }
+    setSavingRecipeEdit(true);
+    try {
+      const res = await authedFetch(`/inventory/recipes/${editingRecipe.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ingredients: validLines }),
+      });
+      if (res.ok) {
+        setEditingRecipe(null);
+        await fetchRecipes();
+      } else {
+        const err = await res.json();
+        alert(err.error || "Failed to update recipe");
+      }
+    } catch (e) {
+      alert("Failed to update recipe");
+    } finally {
+      setSavingRecipeEdit(false);
+    }
+  };
+
+  const handleDeleteRecipe = async (rec: RecipeApi) => {
+    if (!confirm(`Delete recipe for "${rec.menuItem?.name || "this dish"}"? This cannot be undone.`)) return;
+    setDeletingRecipeId(rec.id);
+    try {
+      const res = await authedFetch(`/inventory/recipes/${rec.id}`, { method: "DELETE" });
+      if (res.ok) {
+        await fetchRecipes();
+      } else {
+        const err = await res.json();
+        alert(err.error || "Failed to delete recipe");
+      }
+    } catch (e) {
+      alert("Failed to delete recipe");
+    } finally {
+      setDeletingRecipeId(null);
+    }
+  };
+
+  const openEditPo = (po: PurchaseOrderApi) => {
+    setEditingPo(po);
+    setEditPoVendorId(po.vendor?.id || "");
+    setEditPoLines(
+      (po.items || []).map((it) => ({
+        ingredientId: it.ingredient?.id || "",
+        quantity: it.quantity,
+        unitPrice: it.unitCost,
+      }))
+    );
+  };
+
+  const handleEditPo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPo) return;
+    if (!editPoVendorId) {
+      alert("Please select a supplier / vendor");
+      return;
+    }
+    const validLines = editPoLines.filter((l) => l.ingredientId && l.quantity > 0);
+    if (validLines.length === 0) {
+      alert("Please add at least one valid raw ingredient line item");
+      return;
+    }
+    setSavingPoEdit(true);
+    try {
+      const res = await authedFetch(`/inventory/purchase-orders/${editingPo.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vendorId: editPoVendorId, items: validLines }),
+      });
+      if (res.ok) {
+        setEditingPo(null);
+        await fetchVendorsAndPOs();
+      } else {
+        const err = await res.json();
+        alert(err.error || "Failed to update purchase order");
+      }
+    } catch (e) {
+      alert("Failed to update purchase order");
+    } finally {
+      setSavingPoEdit(false);
+    }
+  };
+
+  const handleCancelPo = async (po: PurchaseOrderApi) => {
+    if (!confirm(`Cancel purchase order ${po.poNumber}? This cannot be undone.`)) return;
+    setCancellingPoId(po.id);
+    try {
+      const res = await authedFetch(`/inventory/purchase-orders/${po.id}/cancel`, { method: "POST" });
+      if (res.ok) {
+        await fetchVendorsAndPOs();
+      } else {
+        const err = await res.json();
+        alert(err.error || "Failed to cancel purchase order");
+      }
+    } catch (e) {
+      alert("Failed to cancel purchase order");
+    } finally {
+      setCancellingPoId(null);
     }
   };
 
@@ -760,9 +960,25 @@ export default function InventoryDashboard() {
                       </div>
                     </div>
 
-                    <div className="border-t border-slate-800 pt-2 text-[10px] text-slate-500 flex justify-between">
+                    <div className="border-t border-slate-800 pt-2 text-[10px] text-slate-500 flex justify-between items-center mb-2">
                       <span>Status: Active</span>
                       <span className="text-emerald-400 font-bold">● Auto-depletes on KOT</span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => openEditRecipe(rec)}
+                        className="flex-1 bg-slate-800 hover:bg-slate-700 text-indigo-400 border border-slate-700 py-1.5 rounded-lg text-[10px] font-bold transition"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDeleteRecipe(rec)}
+                        disabled={deletingRecipeId === rec.id}
+                        className="flex-1 bg-slate-800 hover:bg-slate-700 text-rose-400 border border-slate-700 py-1.5 rounded-lg text-[10px] font-bold transition disabled:opacity-50"
+                      >
+                        {deletingRecipeId === rec.id ? "Deleting..." : "Delete"}
+                      </button>
                     </div>
                   </div>
                 ))
@@ -807,12 +1023,28 @@ export default function InventoryDashboard() {
                     <p className="text-xs text-slate-500 p-4 text-center">No suppliers registered. Click "+ Register Vendor" above.</p>
                   ) : (
                     vendors.map((v) => (
-                      <div key={v.id} className="bg-slate-950 p-3 rounded-lg border border-slate-800/80 flex justify-between items-center">
-                        <div>
+                      <div key={v.id} className="bg-slate-950 p-3 rounded-lg border border-slate-800/80 flex justify-between items-center gap-2">
+                        <div className="min-w-0">
                           <div className="font-bold text-xs text-slate-200">{v.name}</div>
-                          <div className="text-[11px] text-slate-400">{v.phone} {v.email ? `• ${v.email}` : ""}</div>
+                          <div className="text-[11px] text-slate-400">
+                            {v.contactPhone || v.phone} {(v.contactEmail || v.email) ? `• ${v.contactEmail || v.email}` : ""}
+                          </div>
                         </div>
-                        <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded font-bold">Supplier</span>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <button
+                            onClick={() => openEditVendor(v)}
+                            className="bg-slate-800 hover:bg-slate-700 text-indigo-400 border border-slate-700 px-2 py-1 rounded-lg text-[10px] font-bold transition"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleDeleteVendor(v)}
+                            disabled={deletingVendorId === v.id}
+                            className="bg-slate-800 hover:bg-slate-700 text-rose-400 border border-slate-700 px-2 py-1 rounded-lg text-[10px] font-bold transition disabled:opacity-50"
+                          >
+                            {deletingVendorId === v.id ? "..." : "Delete"}
+                          </button>
+                        </div>
                       </div>
                     ))
                   )}
@@ -868,24 +1100,44 @@ export default function InventoryDashboard() {
                             </div>
                           )}
 
-                          <div className="flex justify-between items-center pt-2 border-t border-slate-800/80">
+                          <div className="flex flex-wrap justify-between items-center gap-2 pt-2 border-t border-slate-800/80">
                             <span className="text-[11px] text-slate-500">
                               {isReceived ? "Stock updated and verified via GRN" : "Physical shipment pending receipt"}
                             </span>
 
-                            {!isReceived ? (
-                              <button
-                                onClick={() => handleReceivePO(po.id)}
-                                disabled={receivingPoId === po.id}
-                                className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
-                              >
-                                <span>📥</span> {receivingPoId === po.id ? "Receiving..." : "Receive Goods (GRN)"}
-                              </button>
-                            ) : (
-                              <span className="text-emerald-400 font-bold text-xs flex items-center gap-1">
-                                <span>✅</span> Goods Received & Stock Incremented
-                              </span>
-                            )}
+                            <div className="flex items-center gap-1.5">
+                              {po.status === "DRAFT" && (
+                                <>
+                                  <button
+                                    onClick={() => openEditPo(po)}
+                                    className="bg-slate-800 hover:bg-slate-700 text-indigo-400 border border-slate-700 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    onClick={() => handleCancelPo(po)}
+                                    disabled={cancellingPoId === po.id}
+                                    className="bg-slate-800 hover:bg-slate-700 text-rose-400 border border-slate-700 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition disabled:opacity-50"
+                                  >
+                                    {cancellingPoId === po.id ? "Cancelling..." : "Cancel"}
+                                  </button>
+                                </>
+                              )}
+
+                              {!isReceived ? (
+                                <button
+                                  onClick={() => handleReceivePO(po.id)}
+                                  disabled={receivingPoId === po.id}
+                                  className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+                                >
+                                  <span>📥</span> {receivingPoId === po.id ? "Receiving..." : "Receive Goods (GRN)"}
+                                </button>
+                              ) : (
+                                <span className="text-emerald-400 font-bold text-xs flex items-center gap-1">
+                                  <span>✅</span> Goods Received & Stock Incremented
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
                       );
@@ -1334,6 +1586,261 @@ export default function InventoryDashboard() {
                   className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-2 rounded-lg text-xs font-bold"
                 >
                   Create Purchase Order
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: EDIT VENDOR */}
+      {editingVendor && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={() => setEditingVendor(null)}>
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h2 className="font-bold text-base text-slate-100 mb-4">Edit Supplier / Vendor</h2>
+            <form onSubmit={handleEditVendor} className="flex flex-col gap-3">
+              <div>
+                <label className="text-[10px] text-slate-400 font-bold uppercase">Supplier Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editVendorName}
+                  onChange={(e) => setEditVendorName(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white mt-1"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-400 font-bold uppercase">Phone Number</label>
+                <input
+                  type="tel"
+                  value={editVendorPhone}
+                  onChange={(e) => setEditVendorPhone(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white mt-1"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-400 font-bold uppercase">Email (Optional)</label>
+                <input
+                  type="email"
+                  value={editVendorEmail}
+                  onChange={(e) => setEditVendorEmail(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white mt-1"
+                />
+              </div>
+              <div className="flex gap-2 mt-4">
+                <button
+                  type="button"
+                  onClick={() => setEditingVendor(null)}
+                  className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 rounded-lg text-xs font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingVendorEdit}
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white py-2 rounded-lg text-xs font-bold"
+                >
+                  {savingVendorEdit ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: EDIT RECIPE BOM */}
+      {editingRecipe && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={() => setEditingRecipe(null)}>
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-lg shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h2 className="font-bold text-base text-slate-100 mb-1">Edit Recipe BOM</h2>
+            <p className="text-xs text-slate-400 mb-4">{editingRecipe.menuItem?.name || "Dish"}</p>
+            <form onSubmit={handleEditRecipe} className="flex flex-col gap-3">
+              <div>
+                <label className="text-[10px] text-slate-400 font-bold uppercase mb-2 block">Ingredients Breakdown</label>
+                <div className="flex flex-col gap-2 max-h-48 overflow-y-auto">
+                  {editRecipeLines.map((line, idx) => (
+                    <div key={idx} className="flex items-center gap-2 bg-slate-950 p-2 rounded-lg border border-slate-800">
+                      <select
+                        value={line.ingredientId}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setEditRecipeLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ingredientId: val } : l)));
+                        }}
+                        className="flex-1 bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white"
+                      >
+                        <option value="">-- Select Raw Item --</option>
+                        {ingredients.map((ing) => (
+                          <option key={ing.id} value={ing.id}>
+                            {ing.name} ({ing.unitOfMeasure})
+                          </option>
+                        ))}
+                      </select>
+
+                      <input
+                        type="number"
+                        placeholder="Qty"
+                        value={line.quantity}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value) || 0;
+                          setEditRecipeLines((prev) => prev.map((l, i) => (i === idx ? { ...l, quantity: val } : l)));
+                        }}
+                        className="w-20 bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() => setEditRecipeLines((prev) => prev.filter((_, i) => i !== idx))}
+                        className="text-rose-400 hover:text-rose-300 px-1 font-bold text-xs"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditRecipeLines((prev) => [...prev, { ingredientId: "", quantity: 10, yieldPercent: 100 }])}
+                  className="text-xs text-indigo-400 hover:text-indigo-300 font-bold mt-2 inline-block"
+                >
+                  + Add Ingredient Line
+                </button>
+              </div>
+
+              <div className="flex gap-2 mt-4">
+                <button
+                  type="button"
+                  onClick={() => setEditingRecipe(null)}
+                  className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 rounded-lg text-xs font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingRecipeEdit}
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white py-2 rounded-lg text-xs font-bold"
+                >
+                  {savingRecipeEdit ? "Saving..." : "Save Recipe BOM"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: EDIT PURCHASE ORDER (PO) */}
+      {editingPo && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={() => setEditingPo(null)}>
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-lg shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h2 className="font-bold text-base text-slate-100 mb-1">Edit Purchase Order ({editingPo.poNumber})</h2>
+            <p className="text-xs text-slate-400 mb-4">Only DRAFT purchase orders can be edited</p>
+
+            <form onSubmit={handleEditPo} className="flex flex-col gap-3">
+              <div>
+                <label className="text-[10px] text-slate-400 font-bold uppercase">Select Supplier / Vendor</label>
+                <select
+                  required
+                  value={editPoVendorId}
+                  onChange={(e) => setEditPoVendorId(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white mt-1"
+                >
+                  <option value="">-- Choose Registered Vendor --</option>
+                  {vendors.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.name} ({v.contactPhone || v.phone})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] text-slate-400 font-bold uppercase mb-2 block">Order Line Items</label>
+                <div className="flex flex-col gap-2 max-h-48 overflow-y-auto">
+                  {editPoLines.map((line, idx) => (
+                    <div key={idx} className="flex items-center gap-2 bg-slate-950 p-2 rounded-lg border border-slate-800">
+                      <select
+                        value={line.ingredientId}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setEditPoLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ingredientId: val } : l)));
+                        }}
+                        className="flex-1 bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white"
+                      >
+                        <option value="">-- Raw Material --</option>
+                        {ingredients.map((ing) => (
+                          <option key={ing.id} value={ing.id}>
+                            {ing.name} ({ing.unitOfMeasure})
+                          </option>
+                        ))}
+                      </select>
+
+                      <input
+                        type="number"
+                        placeholder="Qty"
+                        value={line.quantity}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value) || 0;
+                          setEditPoLines((prev) => prev.map((l, i) => (i === idx ? { ...l, quantity: val } : l)));
+                        }}
+                        className="w-16 bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white text-right"
+                      />
+
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px] text-slate-400">@₹</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          placeholder="Cost"
+                          value={line.unitPrice}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value) || 0;
+                            setEditPoLines((prev) => prev.map((l, i) => (i === idx ? { ...l, unitPrice: val } : l)));
+                          }}
+                          className="w-16 bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-white text-right"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setEditPoLines((prev) => prev.filter((_, i) => i !== idx))}
+                        className="text-rose-400 hover:text-rose-300 px-1 font-bold text-xs"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex justify-between items-center mt-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEditPoLines((prev) => [...prev, { ingredientId: "", quantity: 10, unitPrice: 50 }])
+                    }
+                    className="text-xs text-indigo-400 hover:text-indigo-300 font-bold"
+                  >
+                    + Add Item Line
+                  </button>
+
+                  <span className="text-xs font-bold text-slate-300">
+                    Est. Total: <strong className="text-emerald-400">₹{editPoLines.reduce((sum, l) => sum + (l.quantity || 0) * (l.unitPrice || 0), 0).toFixed(2)}</strong>
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex gap-2 mt-4">
+                <button
+                  type="button"
+                  onClick={() => setEditingPo(null)}
+                  className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 rounded-lg text-xs font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingPoEdit}
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white py-2 rounded-lg text-xs font-bold"
+                >
+                  {savingPoEdit ? "Saving..." : "Save Purchase Order"}
                 </button>
               </div>
             </form>

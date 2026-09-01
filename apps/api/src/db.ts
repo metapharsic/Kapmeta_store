@@ -485,6 +485,7 @@ const ALL_PERMISSIONS = [
   "finance.read", "finance.expense.create", "finance.ledger.manage",
   "report.read", "report.financial.read",
   "settings.manage", "users.manage", "roles.manage", "outlets.manage",
+  "admin.system.manage",
 ];
 
 const hashedPassword123 = bcrypt.hashSync("password123", 10);

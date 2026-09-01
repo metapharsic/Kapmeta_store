@@ -72,7 +72,7 @@ notificationsRouter.post("/notifications", requireAuth, async (req: AuthedReques
 
     import("../websockets")
       .then(({ broadcast }) => {
-        broadcast("outlet.notification_created", {
+        broadcast(outletId, "outlet.notification_created", {
           outletId,
           notification,
         });

@@ -1,5 +1,6 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { MenuItemData } from "./AttractiveMenuItemCard";
+import { authedFetch } from "../../lib/auth";
 
 export interface CustomizedItemSelection {
   portion: "REGULAR" | "HALF" | "FULL";
@@ -27,6 +28,51 @@ export default function MenuCustomizerModal({
   const [spiceLevel, setSpiceLevel] = useState<"MILD" | "MEDIUM" | "SPICY" | "EXTRA_HOT">("MEDIUM");
   const [selectedAddons, setSelectedAddons] = useState<Array<{ name: string; priceMinor: number }>>([]);
   const [notes, setNotes] = useState("");
+  const [availableAddons, setAvailableAddons] = useState<Array<{ name: string; priceMinor: number }>>([]);
+  const [loadingAddons, setLoadingAddons] = useState(false);
+
+  // Available addons — pulled from the real modifier-group configuration
+  // (Menu Management > Modifiers), not a hardcoded list. There is currently no
+  // API to scope modifier groups to a single item, so this surfaces every
+  // active modifier group/option configured for the outlet.
+  useEffect(() => {
+    if (!isOpen || !item) return;
+    let cancelled = false;
+    setLoadingAddons(true);
+    (async () => {
+      try {
+        const groupsRes = await authedFetch("/menu/modifier-groups");
+        if (!groupsRes.ok) throw new Error("failed to load modifier groups");
+        const groups = await groupsRes.json();
+        const groupList = Array.isArray(groups) ? groups : groups.groups || [];
+        const optionLists = await Promise.all(
+          groupList.map(async (g: any) => {
+            try {
+              const optRes = await authedFetch(`/menu/modifier-groups/${g.id}/options`);
+              if (!optRes.ok) return [];
+              const opts = await optRes.json();
+              const optList = Array.isArray(opts) ? opts : opts.options || [];
+              return optList.map((o: any) => ({
+                name: g.name ? `${o.name} (${g.name})` : o.name,
+                priceMinor: Number(o.priceMinor ?? o.price ?? 0),
+              }));
+            } catch {
+              return [];
+            }
+          })
+        );
+        if (!cancelled) setAvailableAddons(optionLists.flat());
+      } catch (e) {
+        console.error("Failed to fetch modifier options", e);
+        if (!cancelled) setAvailableAddons([]);
+      } finally {
+        if (!cancelled) setLoadingAddons(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, item]);
 
   if (!isOpen || !item) return null;
 
@@ -35,15 +81,6 @@ export default function MenuCustomizerModal({
   // Portion multiplier calculation
   const portionMultiplier = portion === "HALF" ? 0.65 : portion === "FULL" ? 1.4 : 1.0;
   const portionAdjustedBase = Math.round(basePrice * portionMultiplier);
-
-  // Available addons
-  const availableAddons = [
-    { name: "Extra Pure Ghee", priceMinor: 2500 },
-    { name: "Extra Amul Butter", priceMinor: 2000 },
-    { name: "Extra Sambar Cup", priceMinor: 1500 },
-    { name: "Grated Cheese Topping", priceMinor: 3000 },
-    { name: "Jain Style (No Onion/Garlic)", priceMinor: 0 },
-  ];
 
   const toggleAddon = (addon: { name: string; priceMinor: number }) => {
     setSelectedAddons((prev) => {
@@ -141,7 +178,12 @@ export default function MenuCustomizerModal({
           <div className="customizer-section">
             <label className="section-label">3. Add-on Extras</label>
             <div className="addons-list">
-              {availableAddons.map((addon) => {
+              {loadingAddons ? (
+                <div className="addons-empty">Loading add-ons…</div>
+              ) : availableAddons.length === 0 ? (
+                <div className="addons-empty">No add-ons configured for this outlet yet.</div>
+              ) : (
+                availableAddons.map((addon) => {
                 const isChecked = selectedAddons.some((a) => a.name === addon.name);
                 return (
                   <div
@@ -163,7 +205,8 @@ export default function MenuCustomizerModal({
                     </span>
                   </div>
                 );
-              })}
+              })
+              )}
             </div>
           </div>
 
@@ -342,6 +385,12 @@ export default function MenuCustomizerModal({
           display: flex;
           flex-direction: column;
           gap: 6px;
+        }
+        .addons-empty {
+          padding: 12px;
+          text-align: center;
+          font-size: 0.8rem;
+          color: #94a3b8;
         }
         .addon-row {
           display: flex;

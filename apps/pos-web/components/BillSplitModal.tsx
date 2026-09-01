@@ -23,7 +23,15 @@ export default function BillSplitModal({
   const [splitType, setSplitType] = useState<"EQUAL" | "BY_ITEM">("EQUAL");
   const [numGuests, setNumGuests] = useState(2);
 
-  const perGuestMinor = Math.floor(totalMinor / (numGuests || 1));
+  const guestCount = numGuests || 1;
+  const baseSplitMinor = Math.floor(totalMinor / guestCount);
+  const splitRemainder = totalMinor - baseSplitMinor * guestCount;
+  // Largest-remainder-style split (mirrors tests/unit/tax-engine.test.ts equal-split logic):
+  // give the leftover paise to the first `splitRemainder` splits, one each, so splits sum exactly.
+  const splitsMinor = Array.from({ length: guestCount }, (_, i) =>
+    baseSplitMinor + (i < splitRemainder ? 1 : 0)
+  );
+  const perGuestMinor = splitsMinor[0];
 
   return (
     <div className="split-modal-backdrop" onClick={onClose}>
@@ -108,7 +116,7 @@ export default function BillSplitModal({
           <button
             className="btn-primary"
             onClick={() => {
-              onConfirmSplit({ splitType, numGuests, perGuestMinor });
+              onConfirmSplit({ splitType, numGuests, perGuestMinor, splitsMinor });
               onClose();
             }}
           >

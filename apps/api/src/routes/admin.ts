@@ -176,6 +176,7 @@ adminRouter.get(
 adminRouter.post(
   "/agents/heartbeat",
   requireAuth,
+  requirePermission("admin.system.manage"),
   async (req: AuthedRequest, res) => {
     try {
       const { id, status, currentTask, latencyMs, metrics } = req.body;
@@ -310,6 +311,7 @@ adminRouter.get(
 adminRouter.post(
   "/e2e-simulation",
   requireAuth,
+  requirePermission("admin.system.manage"),
   async (req: AuthedRequest, res) => {
     try {
       const outletId = req.auth!.outletId;
@@ -317,19 +319,19 @@ adminRouter.post(
       const simOrderNo = `SIM-${Math.floor(1000 + Math.random() * 9000)}`;
 
       // 1. Emit table updated
-      broadcast("table.status_updated", { tableNumber: "A1", status: "OCCUPIED" });
+      broadcast(outletId, "table.status_updated", { tableNumber: "A1", status: "OCCUPIED" });
 
       // 2. Emit KOT created
-      broadcast("kot.created", { ticketNumber: `KOT-${simOrderNo}`, status: "QUEUED", tableNumber: "A1" });
+      broadcast(outletId, "kot.created", { ticketNumber: `KOT-${simOrderNo}`, status: "QUEUED", tableNumber: "A1" });
 
       // 3. Emit KOT preparing
-      broadcast("kot.status_updated", { ticketNumber: `KOT-${simOrderNo}`, status: "PREPARING" });
+      broadcast(outletId, "kot.status_updated", { ticketNumber: `KOT-${simOrderNo}`, status: "PREPARING" });
 
       // 4. Emit KOT ready
-      broadcast("kot.status_updated", { ticketNumber: `KOT-${simOrderNo}`, status: "READY" });
+      broadcast(outletId, "kot.status_updated", { ticketNumber: `KOT-${simOrderNo}`, status: "READY" });
 
       // 5. Emit order updated
-      broadcast("order.status_updated", { orderNumber: simOrderNo, status: "READY" });
+      broadcast(outletId, "order.status_updated", { orderNumber: simOrderNo, status: "READY" });
 
       // 6. Record audit log
       const crypto = await import("crypto");

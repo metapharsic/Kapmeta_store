@@ -71,6 +71,19 @@ export default function MarketingPage() {
   const [recipients, setRecipients] = useState<Record<string, CampaignRecipientApi[]>>({});
   const [recipientsLoading, setRecipientsLoading] = useState<string | null>(null);
 
+  const [editingCampaign, setEditingCampaign] = useState<CampaignApi | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editTriggerType, setEditTriggerType] = useState<CampaignApi["triggerType"]>("MANUAL");
+  const [editInactiveDays, setEditInactiveDays] = useState("30");
+  const [editManualCustomerIds, setEditManualCustomerIds] = useState("");
+  const [editDiscountId, setEditDiscountId] = useState("");
+  const [editMessageTemplate, setEditMessageTemplate] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [pausingId, setPausingId] = useState<string | null>(null);
+
   const loadCampaigns = () => {
     setListLoading(true);
     setListError(null);
@@ -167,6 +180,108 @@ export default function MarketingPage() {
           [campaignId]: err instanceof Error ? err.message : "Failed to queue campaign",
         }));
         setQueueLoadingId(null);
+      });
+  };
+
+  const openEdit = (c: CampaignApi) => {
+    setEditingCampaign(c);
+    setEditName(c.name);
+    setEditTriggerType(c.triggerType);
+    const filter = (c.segmentFilter || {}) as Record<string, unknown>;
+    setEditInactiveDays(typeof filter.inactiveDays === "number" ? String(filter.inactiveDays) : "30");
+    setEditManualCustomerIds(Array.isArray(filter.customerIds) ? (filter.customerIds as string[]).join(", ") : "");
+    setEditDiscountId(c.discountId || "");
+    setEditMessageTemplate(c.messageTemplate);
+    setEditError(null);
+  };
+
+  const submitEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCampaign) return;
+    const trimmedName = editName.trim();
+    const trimmedMessage = editMessageTemplate.trim();
+    if (!trimmedName || !trimmedMessage) {
+      setEditError("Name and message template are required");
+      return;
+    }
+
+    const segmentFilter: Record<string, unknown> = {};
+    if (editTriggerType === "INACTIVE_CUSTOMER") {
+      const days = Number(editInactiveDays);
+      if (!Number.isFinite(days) || days <= 0) {
+        setEditError("Inactive-days must be a positive number");
+        return;
+      }
+      segmentFilter.inactiveDays = days;
+    }
+    if (editTriggerType === "MANUAL") {
+      const ids = editManualCustomerIds
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      segmentFilter.customerIds = ids;
+    }
+
+    setSavingEdit(true);
+    setEditError(null);
+    authedFetch(`/marketing/campaigns/${editingCampaign.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: trimmedName,
+        triggerType: editTriggerType,
+        segmentFilter: Object.keys(segmentFilter).length > 0 ? segmentFilter : undefined,
+        discountId: editDiscountId.trim() || undefined,
+        messageTemplate: trimmedMessage,
+      }),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || "HTTP error " + res.status);
+        }
+        setEditingCampaign(null);
+        setSavingEdit(false);
+        loadCampaigns();
+      })
+      .catch((err) => {
+        setEditError(err instanceof Error ? err.message : "Failed to update campaign");
+        setSavingEdit(false);
+      });
+  };
+
+  const handleDelete = (c: CampaignApi) => {
+    if (!window.confirm(`Delete campaign "${c.name}"? This cannot be undone.`)) return;
+    setDeletingId(c.id);
+    authedFetch(`/marketing/campaigns/${c.id}`, { method: "DELETE" })
+      .then(async (res) => {
+        if (!res.ok && res.status !== 204) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || "Failed to delete campaign");
+        }
+        setDeletingId(null);
+        loadCampaigns();
+      })
+      .catch((err) => {
+        alert(err instanceof Error ? err.message : "Failed to delete campaign");
+        setDeletingId(null);
+      });
+  };
+
+  const handlePause = (c: CampaignApi) => {
+    setPausingId(c.id);
+    authedFetch(`/marketing/campaigns/${c.id}/pause`, { method: "POST" })
+      .then(async (res) => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || "Failed to pause campaign");
+        }
+        setPausingId(null);
+        loadCampaigns();
+      })
+      .catch((err) => {
+        alert(err instanceof Error ? err.message : "Failed to pause campaign");
+        setPausingId(null);
       });
   };
 
@@ -414,6 +529,31 @@ export default function MarketingPage() {
                         <button type="button" className="export-btn secondary" onClick={() => toggleRecipients(c.id)}>
                           {expandedId === c.id ? "Hide Recipients" : "View Recipients"}
                         </button>
+                        {c.status === "DRAFT" && (
+                          <button type="button" className="export-btn secondary" onClick={() => openEdit(c)}>
+                            Edit
+                          </button>
+                        )}
+                        {c.status === "DRAFT" && (
+                          <button
+                            type="button"
+                            className="export-btn danger"
+                            disabled={deletingId === c.id}
+                            onClick={() => handleDelete(c)}
+                          >
+                            {deletingId === c.id ? "Deleting..." : "Delete"}
+                          </button>
+                        )}
+                        {c.status === "ACTIVE" && (
+                          <button
+                            type="button"
+                            className="export-btn secondary"
+                            disabled={pausingId === c.id}
+                            onClick={() => handlePause(c)}
+                          >
+                            {pausingId === c.id ? "Pausing..." : "Pause Campaign"}
+                          </button>
+                        )}
                       </div>
 
                       {queueErrors[c.id] && (
@@ -472,6 +612,87 @@ export default function MarketingPage() {
           </>
         )}
       </main>
+
+      {editingCampaign && (
+        <div className="modal-overlay" onClick={() => setEditingCampaign(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Edit Campaign</h3>
+            <form onSubmit={submitEdit} className="create-form">
+              <input
+                type="text"
+                className="text-input wide"
+                placeholder="Campaign name *"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                autoFocus
+              />
+              <select
+                className="text-input wide"
+                value={editTriggerType}
+                onChange={(e) => setEditTriggerType(e.target.value as CampaignApi["triggerType"])}
+              >
+                {(Object.keys(TRIGGER_LABELS) as CampaignApi["triggerType"][]).map((t) => (
+                  <option key={t} value={t}>
+                    {TRIGGER_LABELS[t]}
+                  </option>
+                ))}
+              </select>
+
+              {editTriggerType === "INACTIVE_CUSTOMER" && (
+                <input
+                  type="number"
+                  min={1}
+                  className="text-input wide"
+                  placeholder="Inactive days *"
+                  value={editInactiveDays}
+                  onChange={(e) => setEditInactiveDays(e.target.value)}
+                />
+              )}
+
+              {editTriggerType === "MANUAL" && (
+                <input
+                  type="text"
+                  className="text-input wide"
+                  placeholder="Customer IDs, comma-separated (leave blank to pick later)"
+                  value={editManualCustomerIds}
+                  onChange={(e) => setEditManualCustomerIds(e.target.value)}
+                />
+              )}
+
+              <input
+                type="text"
+                className="text-input wide"
+                placeholder="Discount ID (optional)"
+                value={editDiscountId}
+                onChange={(e) => setEditDiscountId(e.target.value)}
+              />
+
+              <textarea
+                className="text-input wide"
+                placeholder="Message template *"
+                rows={3}
+                value={editMessageTemplate}
+                onChange={(e) => setEditMessageTemplate(e.target.value)}
+              />
+
+              {editError && (
+                <div className="not-available-box wide-box">
+                  <p>{editError}</p>
+                </div>
+              )}
+
+              <div className="modal-actions">
+                <button type="button" className="export-btn secondary" onClick={() => setEditingCampaign(null)}>
+                  Cancel
+                </button>
+                <button type="submit" className="export-btn" disabled={savingEdit}>
+                  {savingEdit ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       <style dangerouslySetInnerHTML={{ __html: `
         .admin-app {
@@ -727,6 +948,49 @@ export default function MarketingPage() {
         .export-btn:disabled {
           opacity: 0.6;
           cursor: not-allowed;
+        }
+
+        .export-btn.danger {
+          background: #fef2f2;
+          color: #991b1b;
+          border: 1px solid #fecaca;
+        }
+
+        .modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(15, 23, 42, 0.4);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 100;
+        }
+
+        .modal {
+          background: var(--bg-card);
+          border-radius: var(--radius-lg);
+          padding: 24px;
+          width: 480px;
+          max-width: 90vw;
+          box-shadow: 0 10px 40px rgba(15, 23, 42, 0.2);
+        }
+
+        .modal h3 {
+          margin: 0 0 16px 0;
+          font-size: 1.125rem;
+          font-weight: 800;
+        }
+
+        .modal-actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 10px;
+          margin-top: 4px;
+          flex-basis: 100%;
+        }
+
+        .wide-box {
+          flex-basis: 100%;
         }
 
         .total-badge {

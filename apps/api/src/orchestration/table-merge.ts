@@ -58,6 +58,7 @@ export async function applyMergeGroup(
       mergeGroupId,
       mergePrimaryTableId: opts.primaryTableId,
       status: "OCCUPIED",
+      version: { increment: 1 },
     },
   });
   return { mergeGroupId, memberIds: opts.memberIds };
@@ -120,45 +121,6 @@ export async function resolveAnchorTable(
     },
   }).catch(() => null));
 
-  if (!table) {
-    const aliasNumber = tableId === "tbl-07" ? "B1" : (tableId === "B1" ? "tbl-07" : tableId);
-    table = await prisma.diningTable.findFirst({
-      where: { tableNumber: aliasNumber, outletId },
-      select: {
-        id: true,
-        tableNumber: true,
-        mergeGroupId: true,
-        mergePrimaryTableId: true,
-      },
-    }).catch(() => null);
-  }
-
-  if (!table) {
-    try {
-      const num = tableId === "tbl-07" ? "B1" : tableId;
-      const created = await prisma.diningTable.create({
-        data: {
-          id: randomUUID(),
-          outletId,
-          tableNumber: num,
-          capacity: 4,
-          section: "Main Floor",
-          status: "VACANT",
-        },
-      });
-      table = {
-        id: created.id,
-        tableNumber: created.tableNumber,
-        mergeGroupId: null,
-        mergePrimaryTableId: null,
-      };
-    } catch (e: any) {
-      table = await prisma.diningTable.findFirst({
-        where: { outletId, tableNumber: tableId },
-      }).catch(() => null);
-    }
-  }
-
   if (!table) return null;
   const primaryId = table.mergePrimaryTableId;
   if (primaryId && primaryId !== table.id) {
@@ -210,6 +172,10 @@ export async function foldOrdersInto(
       data: { orderId: survivor.id },
     });
     await tx.kOTTicket.updateMany({
+      where: { orderId: ord.id },
+      data: { orderId: survivor.id },
+    });
+    await tx.payment.updateMany({
       where: { orderId: ord.id },
       data: { orderId: survivor.id },
     });

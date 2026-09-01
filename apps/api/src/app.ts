@@ -7,6 +7,7 @@ import cors from 'cors';
 // brain/API_AND_EVENTS_CATALOG.md and brain/WIRING_GUIDE.md.
 import { authRouter } from './routes/auth';
 import { menuRouter } from './routes/menu';
+import { specialNotesRouter } from './routes/special-notes';
 import { kitchenRouter } from './routes/kitchen';
 import { financeRouter } from './routes/finance';
 import { crmRouter } from './routes/crm';
@@ -22,6 +23,7 @@ import { waitersRouter } from './routes/waiters';
 import { tablesRouter } from './routes/tables';
 import { ordersRouter } from './routes/orders';
 import { settingsRouter } from './routes/settings';
+import { taxSettingsRouter } from './routes/tax-settings';
 import { adminRouter } from './routes/admin';
 import { mapDomainError } from './errors';
 
@@ -45,6 +47,7 @@ export function createApp(): Express {
   app.use('/auth', authRouter);
   app.use('/admin', adminRouter);
   app.use('/menu', menuRouter);
+  app.use('/special-notes', specialNotesRouter);
   app.use('/kitchen', kitchenRouter);
   app.use('/finance', financeRouter);
   app.use('/crm', crmRouter);
@@ -65,6 +68,7 @@ export function createApp(): Express {
   app.use(tablesRouter);
   app.use(ordersRouter);
   app.use(settingsRouter);
+  app.use(taxSettingsRouter);
 
   app.get('/health', (_req, res) => res.json({ status: 'ok' }));
   app.get('/healthz', (_req, res) => res.json({ status: 'ok' }));

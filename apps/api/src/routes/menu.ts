@@ -264,13 +264,135 @@ router.post("/modifier-options", requireAuth, requirePermission("menu.item.manag
 
 router.post("/items/:menuItemId/modifiers/:modifierGroupId", requireAuth, requirePermission("menu.item.manage"), async (req: AuthedRequest, res) => {
   try {
+    const outletId = req.auth!.outletId;
     const catalogRepository = new PrismaMenuCatalogRepository(prisma);
-    const link = await catalogRepository.linkModifierToItem(req.params.menuItemId, req.params.modifierGroupId);
+    const link = await catalogRepository.linkModifierToItem(outletId, req.params.menuItemId, req.params.modifierGroupId);
 
     res.status(201).json(link);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "internal error" });
+  }
+});
+
+router.delete("/items/:menuItemId/modifiers/:modifierGroupId", requireAuth, requirePermission("menu.item.manage"), async (req: AuthedRequest, res) => {
+  try {
+    const catalogRepository = new PrismaMenuCatalogRepository(prisma);
+    await catalogRepository.unlinkModifierFromItem(req.params.menuItemId, req.params.modifierGroupId);
+    res.status(204).send();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "internal error" });
+  }
+});
+
+// GET /menu/modifier-groups - list modifier groups for the outlet (was create-only, invisible after creation)
+router.get("/modifier-groups", requireAuth, requirePermission("menu.read"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const catalogRepository = new PrismaMenuCatalogRepository(prisma);
+    const groups = await catalogRepository.listModifierGroups(outletId);
+    res.status(200).json(groups);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "internal error" });
+  }
+});
+
+router.patch("/modifier-groups/:id", requireAuth, requirePermission("menu.item.manage"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const catalogRepository = new PrismaMenuCatalogRepository(prisma);
+    const group = await catalogRepository.updateModifierGroup(outletId, req.params.id, req.body);
+    res.status(200).json(group);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "internal error" });
+  }
+});
+
+router.delete("/modifier-groups/:id", requireAuth, requirePermission("menu.item.manage"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const catalogRepository = new PrismaMenuCatalogRepository(prisma);
+    await catalogRepository.deleteModifierGroup(outletId, req.params.id);
+    res.status(204).send();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "internal error" });
+  }
+});
+
+router.get("/modifier-groups/:id/options", requireAuth, requirePermission("menu.read"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const catalogRepository = new PrismaMenuCatalogRepository(prisma);
+    const options = await catalogRepository.listModifierOptions(outletId, req.params.id);
+    res.status(200).json(options.map((o: any) => ({ ...o, price: String(o.price) })));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "internal error" });
+  }
+});
+
+// PATCH /menu/items/:id - edit name/price/description/category/veg/tax (was missing entirely)
+router.patch("/items/:id", requireAuth, requirePermission("menu.item.manage"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const catalogRepository = new PrismaMenuCatalogRepository(prisma);
+    const { name, description, categoryId, isVeg, priceMinor, taxRate } = req.body;
+    const item = await catalogRepository.updateMenuItem(outletId, req.params.id, {
+      name,
+      description,
+      categoryId,
+      isVeg,
+      priceMinor: priceMinor !== undefined ? BigInt(priceMinor) : undefined,
+      taxRate,
+    });
+    res.status(200).json({ ...item, price: String(item.price ?? "") });
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ error: err.message || "internal error" });
+  }
+});
+
+// DELETE /menu/items/:id - soft delete (isActive=false); items are referenced by
+// historical orders/KOTs so we never hard-delete.
+router.delete("/items/:id", requireAuth, requirePermission("menu.item.manage"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const catalogRepository = new PrismaMenuCatalogRepository(prisma);
+    await catalogRepository.deleteMenuItem(outletId, req.params.id);
+    res.status(204).send();
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ error: err.message || "internal error" });
+  }
+});
+
+// PATCH /menu/categories/:id - rename/reorder (was missing entirely)
+router.patch("/categories/:id", requireAuth, requirePermission("menu.category.manage"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const catalogRepository = new PrismaMenuCatalogRepository(prisma);
+    const category = await catalogRepository.updateCategory(outletId, req.params.id, req.body);
+    res.status(200).json(category);
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ error: err.message || "internal error" });
+  }
+});
+
+// DELETE /menu/categories/:id - soft delete (isActive=false)
+router.delete("/categories/:id", requireAuth, requirePermission("menu.category.manage"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const catalogRepository = new PrismaMenuCatalogRepository(prisma);
+    await catalogRepository.deleteCategory(outletId, req.params.id);
+    res.status(204).send();
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ error: err.message || "internal error" });
   }
 });
 
