@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-09-01T19:45:00Z",
+  "lastUpdated": "2026-09-01T20:10:00Z",
   "activeTasks": [
     {
       "taskId": "TSK-001",
@@ -302,6 +302,30 @@
       "status": "COMPLETED",
       "priority": "P0",
       "relatedGate": "CP-13"
+    },
+    {
+      "taskId": "TSK-014a",
+      "title": "Reports: staff/waiter performance + table/floor utilization (per-table+section, hourly occupancy heatmap)",
+      "assignedTo": "backend-agent",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "relatedGate": "CP-14"
+    },
+    {
+      "taskId": "TSK-014b",
+      "title": "Reports: menu margin/food-cost (honest no-recipe handling) + inventory consumption-vs-purchase variance",
+      "assignedTo": "backend-agent",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "relatedGate": "CP-14"
+    },
+    {
+      "taskId": "TSK-014c",
+      "title": "Reports: wired existing hourly-velocity/category-mix dashboard endpoint, new CRM customer-insights, new discount/void analysis (honest note on discount-reason limitation), fixed z-report debug beacon",
+      "assignedTo": "backend-agent",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "relatedGate": "CP-14"
     }
   ]
 }

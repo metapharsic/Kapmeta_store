@@ -8,6 +8,10 @@ import {
   getTableTurnaroundAverage,
   getLeakageReport,
   getTaxBreakdown,
+  getItemMarginReport,
+  getInventoryVarianceReport,
+  getStaffPerformance,
+  getTableUtilization,
   PrismaReportingRepository,
 } from "@kapmeta/reporting";
 import { getRevenueTrend, PrismaOrderRepository } from "@kapmeta/orders";
@@ -16,8 +20,8 @@ import { requireAuth, requirePermission, type AuthedRequest } from "../middlewar
 const router = Router();
 
 function parseRange(req: AuthedRequest): { fromDate: Date; toDate: Date } {
-  const fromDate = req.query.fromDate;
-  const toDate = req.query.toDate;
+  const fromDate = req.query.fromDate ?? req.query.startDate;
+  const toDate = req.query.toDate ?? req.query.endDate;
   if (typeof fromDate === "string" && typeof toDate === "string") {
     return { fromDate: new Date(fromDate), toDate: new Date(toDate) };
   }
@@ -183,6 +187,84 @@ router.get("/table-turnaround", requireAuth, requirePermission("report.read"), a
   }
 });
 
+router.get("/staff-performance", requireAuth, requirePermission("report.financial.read"), async (req: AuthedRequest, res) => {
+  try {
+    const range = parseRange(req);
+    if (!range) {
+      res.status(400).json({ error: "fromDate, toDate query params required" });
+      return;
+    }
+    const outletId = req.auth!.outletId;
+
+    const repo = new PrismaReportingRepository(prisma);
+
+    // Waiter names come from the User table (not the denormalized
+    // WaiterShiftHandover.waiterName) via a distinct-id lookup, matching the
+    // /item-performance pattern of enriching ids with names at the route layer.
+    const distinctWaiterIds = await prisma.order.findMany({
+      where: {
+        outletId,
+        status: "COMPLETED",
+        waiterId: { not: null },
+        createdAt: { gte: range.fromDate, lte: range.toDate },
+      },
+      distinct: ["waiterId"],
+      select: { waiterId: true },
+    });
+    const waiterIds = distinctWaiterIds.map((r) => r.waiterId).filter((id): id is string => !!id);
+    const users = waiterIds.length > 0
+      ? await prisma.user.findMany({
+          where: { id: { in: waiterIds } },
+          select: { id: true, firstName: true, lastName: true },
+        })
+      : [];
+    const waiterNames = new Map(
+      users.map((u) => [u.id, [u.firstName, u.lastName].filter(Boolean).join(" ").trim() || u.id])
+    );
+
+    const report = await getStaffPerformance(outletId, range, repo, waiterNames);
+
+    res.status(200).json({
+      ...report,
+      staff: report.staff.map((s) => ({
+        ...s,
+        netSalesMinor: String(s.netSalesMinor),
+        averageOrderValueMinor: String(s.averageOrderValueMinor),
+        cashTipMinor: String(s.cashTipMinor),
+        digitalTipMinor: String(s.digitalTipMinor),
+        serviceChargeMinor: String(s.serviceChargeMinor),
+        cashVarianceMinor: String(s.cashVarianceMinor),
+      })),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "internal error" });
+  }
+});
+
+router.get("/table-utilization", requireAuth, requirePermission("report.read"), async (req: AuthedRequest, res) => {
+  try {
+    const range = parseRange(req);
+    if (!range) {
+      res.status(400).json({ error: "fromDate, toDate query params required" });
+      return;
+    }
+    const outletId = req.auth!.outletId;
+
+    const repo = new PrismaReportingRepository(prisma);
+    const report = await getTableUtilization(outletId, range, repo);
+
+    res.status(200).json({
+      ...report,
+      tables: report.tables.map((t) => ({ ...t, totalRevenueMinor: String(t.totalRevenueMinor) })),
+      sections: report.sections.map((s) => ({ ...s, totalRevenueMinor: String(s.totalRevenueMinor) })),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "internal error" });
+  }
+});
+
 router.get("/leakage-report", requireAuth, requirePermission("report.financial.read"), async (req: AuthedRequest, res) => {
   try {
     const range = parseRange(req);
@@ -199,6 +281,178 @@ router.get("/leakage-report", requireAuth, requirePermission("report.financial.r
       ...report,
       totalWaivedOffMinor: String(report.totalWaivedOffMinor),
       estimatedRevenueAtRiskMinor: String(report.estimatedRevenueAtRiskMinor),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "internal error" });
+  }
+});
+
+router.get("/customer-insights", requireAuth, requirePermission("report.read"), async (req: AuthedRequest, res) => {
+  try {
+    const range = parseRange(req);
+    const outletId = req.auth!.outletId;
+
+    const orders = await prisma.order.findMany({
+      where: {
+        outletId,
+        status: "COMPLETED",
+        customerId: { not: null },
+        createdAt: { gte: range.fromDate, lte: range.toDate },
+      },
+      select: { customerId: true, grandTotal: true, createdAt: true },
+    });
+
+    type Agg = { totalSpendMinor: bigint; orderCount: number; lastVisitAt: Date };
+    const byCustomer = new Map<string, Agg>();
+    for (const o of orders) {
+      const customerId = o.customerId as string;
+      const existing = byCustomer.get(customerId);
+      if (existing) {
+        existing.totalSpendMinor += o.grandTotal;
+        existing.orderCount += 1;
+        if (o.createdAt > existing.lastVisitAt) existing.lastVisitAt = o.createdAt;
+      } else {
+        byCustomer.set(customerId, {
+          totalSpendMinor: o.grandTotal,
+          orderCount: 1,
+          lastVisitAt: o.createdAt,
+        });
+      }
+    }
+
+    const totalUniqueCustomers = byCustomer.size;
+    const repeatCustomers = Array.from(byCustomer.values()).filter((a) => a.orderCount > 1).length;
+    const repeatCustomerRatePercent = totalUniqueCustomers === 0 ? 0 : (repeatCustomers / totalUniqueCustomers) * 100;
+    const totalOrders = orders.length;
+    const averageVisitFrequency = totalUniqueCustomers === 0 ? 0 : totalOrders / totalUniqueCustomers;
+
+    const topSpenderEntries = Array.from(byCustomer.entries())
+      .sort((a, b) => Number(b[1].totalSpendMinor) - Number(a[1].totalSpendMinor))
+      .slice(0, 20);
+
+    const customerRecords = topSpenderEntries.length > 0
+      ? await prisma.customer.findMany({
+          where: { id: { in: topSpenderEntries.map(([id]) => id) } },
+          select: { id: true, name: true, firstName: true, lastName: true, phone: true },
+        })
+      : [];
+    const customerById = new Map(customerRecords.map((c) => [c.id, c]));
+
+    const topSpenders = topSpenderEntries.map(([customerId, agg]) => {
+      const c = customerById.get(customerId);
+      const name = c?.name || [c?.firstName, c?.lastName].filter(Boolean).join(" ") || null;
+      return {
+        customerId,
+        name,
+        phone: c?.phone || null,
+        totalSpendMinor: String(agg.totalSpendMinor),
+        orderCount: agg.orderCount,
+        lastVisitAt: agg.lastVisitAt.toISOString(),
+      };
+    });
+
+    res.status(200).json({
+      outletId,
+      fromDate: range.fromDate,
+      toDate: range.toDate,
+      totalUniqueCustomers,
+      repeatCustomers,
+      repeatCustomerRatePercent: Number(repeatCustomerRatePercent.toFixed(2)),
+      averageVisitFrequency: Number(averageVisitFrequency.toFixed(2)),
+      topSpenders,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "internal error" });
+  }
+});
+
+router.get("/discount-void-analysis", requireAuth, requirePermission("report.financial.read"), async (req: AuthedRequest, res) => {
+  try {
+    const range = parseRange(req);
+    const outletId = req.auth!.outletId;
+
+    const voidedItems = await prisma.orderItem.findMany({
+      where: {
+        outletId,
+        isVoided: true,
+        order: { createdAt: { gte: range.fromDate, lte: range.toDate } },
+      },
+      select: { subtotal: true, voidReason: true, voidedBy: true },
+    });
+
+    const voidCount = voidedItems.length;
+    const voidTotalValueMinor = voidedItems.reduce((sum, i) => sum + i.subtotal, 0n);
+
+    const byReasonMap = new Map<string, { count: number; valueMinor: bigint }>();
+    const byStaffMap = new Map<string, { count: number; valueMinor: bigint }>();
+    for (const item of voidedItems) {
+      const reasonKey = item.voidReason ?? "Unspecified";
+      const reasonAgg = byReasonMap.get(reasonKey) ?? { count: 0, valueMinor: 0n };
+      reasonAgg.count += 1;
+      reasonAgg.valueMinor += item.subtotal;
+      byReasonMap.set(reasonKey, reasonAgg);
+
+      const staffKey = item.voidedBy ?? "Unspecified";
+      const staffAgg = byStaffMap.get(staffKey) ?? { count: 0, valueMinor: 0n };
+      staffAgg.count += 1;
+      staffAgg.valueMinor += item.subtotal;
+      byStaffMap.set(staffKey, staffAgg);
+    }
+
+    const byReason = Array.from(byReasonMap.entries()).map(([reason, agg]) => ({
+      reason,
+      count: agg.count,
+      valueMinor: String(agg.valueMinor),
+    }));
+    const byStaff = Array.from(byStaffMap.entries()).map(([voidedBy, agg]) => ({
+      voidedBy,
+      count: agg.count,
+      valueMinor: String(agg.valueMinor),
+    }));
+
+    const discountOrders = await prisma.order.findMany({
+      where: {
+        outletId,
+        status: "COMPLETED",
+        createdAt: { gte: range.fromDate, lte: range.toDate },
+        discountTotal: { gt: 0 },
+      },
+      select: { discountTotal: true, createdAt: true },
+    });
+
+    const totalDiscountMinor = discountOrders.reduce((sum, o) => sum + (o.discountTotal ?? 0n), 0n);
+    const orderCountWithDiscount = discountOrders.length;
+
+    const byDayMap = new Map<string, { count: number; totalMinor: bigint }>();
+    for (const o of discountOrders) {
+      const dayKey = o.createdAt.toISOString().slice(0, 10);
+      const agg = byDayMap.get(dayKey) ?? { count: 0, totalMinor: 0n };
+      agg.count += 1;
+      agg.totalMinor += o.discountTotal ?? 0n;
+      byDayMap.set(dayKey, agg);
+    }
+    const byDay = Array.from(byDayMap.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([date, agg]) => ({ date, count: agg.count, totalMinor: String(agg.totalMinor) }));
+
+    res.status(200).json({
+      outletId,
+      fromDate: range.fromDate,
+      toDate: range.toDate,
+      voids: {
+        count: voidCount,
+        totalValueMinor: String(voidTotalValueMinor),
+        byReason,
+        byStaff,
+      },
+      discounts: {
+        totalDiscountMinor: String(totalDiscountMinor),
+        orderCountWithDiscount,
+        byDay,
+      },
+      note: "Discount reason-level breakdown is not available in this report: the schema has no Discount entity and no discountReason field — Order only stores a raw discountTotal per order. Totals and daily trend are accurate; a per-reason breakdown of discounts cannot be produced without a schema change.",
     });
   } catch (err) {
     console.error(err);
@@ -346,6 +600,72 @@ router.get("/invoices", requireAuth, requirePermission("report.read"), async (re
   } catch (err) {
     console.error("Error fetching settled invoices:", err);
     res.status(500).json({ error: "Failed to fetch settled invoices" });
+  }
+});
+
+
+router.get("/item-margin", requireAuth, requirePermission("report.financial.read"), async (req: AuthedRequest, res) => {
+  try {
+    const range = parseRange(req);
+    const outletId = req.auth!.outletId;
+
+    const repo = new PrismaReportingRepository(prisma);
+    const report = await getItemMarginReport(outletId, range, repo);
+
+    const itemIds = report.items.map((r) => r.menuItemId);
+    const menuItems = itemIds.length > 0
+      ? await prisma.menuItem.findMany({
+          where: { id: { in: itemIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const nameMap = new Map(menuItems.map((m) => [m.id, m.name]));
+
+    res.status(200).json({
+      ...report,
+      items: report.items.map((row) => ({
+        ...row,
+        menuItemName: nameMap.get(row.menuItemId) || `Dish (${row.menuItemId.slice(0, 6)})`,
+        netSalesMinor: String(row.netSalesMinor),
+        foodCostMinor: row.foodCostMinor === null ? null : String(row.foodCostMinor),
+        marginMinor: row.marginMinor === null ? null : String(row.marginMinor),
+      })),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "internal error" });
+  }
+});
+
+router.get("/inventory-variance", requireAuth, requirePermission("report.financial.read"), async (req: AuthedRequest, res) => {
+  try {
+    const range = parseRange(req);
+    const outletId = req.auth!.outletId;
+
+    const repo = new PrismaReportingRepository(prisma);
+    const report = await getInventoryVarianceReport(outletId, range, repo);
+
+    const ingredientIds = report.ingredients.map((r) => r.ingredientId);
+    const ingredients = ingredientIds.length > 0
+      ? await prisma.ingredients.findMany({
+          where: { id: { in: ingredientIds } },
+          select: { id: true, name: true, unit_of_measure: true },
+        })
+      : [];
+    const ingredientMap = new Map(ingredients.map((i) => [i.id, i]));
+
+    res.status(200).json({
+      ...report,
+      ingredients: report.ingredients.map((row) => ({
+        ...row,
+        ingredientName: ingredientMap.get(row.ingredientId)?.name || `Ingredient (${row.ingredientId.slice(0, 6)})`,
+        unitOfMeasure: ingredientMap.get(row.ingredientId)?.unit_of_measure || "",
+        purchasedCostMinor: String(row.purchasedCostMinor),
+      })),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "internal error" });
   }
 });
 

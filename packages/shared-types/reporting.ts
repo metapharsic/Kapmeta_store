@@ -120,3 +120,124 @@ export interface TaxBreakdown {
   components: TaxComponentBreakdown[];
 }
 
+// Staff/Waiter Performance -- per-waiter order activity (COMPLETED orders only,
+// same convention as SalesSummary) joined with WaiterShiftHandover figures
+// (tips, service charge, cash reconciliation) summed across the range.
+// cashVarianceMinor formula: actualCashCountedMinor - (openingFloatMinor +
+// cashSalesMinor - netTipPayoutMinor) i.e. actual counted cash vs. the
+// expected till balance after cash sales are added and cash tips paid out
+// to the waiter are removed. Positive = over, negative = short.
+export interface StaffPerformanceRow {
+  waiterId: string;
+  waiterName: string;
+  orderCount: number; // COMPLETED orders with this waiterId in range
+  netSalesMinor: bigint;
+  averageOrderValueMinor: bigint; // netSalesMinor / orderCount, 0 if orderCount is 0
+  coversServed: number; // sum of Order.covers, 0 for orders with covers null
+  cashTipMinor: bigint; // sum of WaiterShiftHandover.netTipPayoutMinor
+  digitalTipMinor: bigint; // sum of WaiterShiftHandover.digitalTipsMinor
+  serviceChargeMinor: bigint; // sum of WaiterShiftHandover.serviceChargeMinor
+  cashVarianceMinor: bigint; // see formula note above, summed across handovers in range
+}
+
+export interface StaffPerformanceReport {
+  outletId: string;
+  fromDate: Date;
+  toDate: Date;
+  formulaVersion: number;
+  staff: StaffPerformanceRow[]; // waiters with orderCount > 0 only, sorted by netSalesMinor desc
+}
+
+// Table / Floor Utilization -- per-table and per-section breakdown, distinct
+// from the single-average /table-turnaround report. Occupancy uses the same
+// createdAt -> updatedAt (proxy for settled) window as TableTurnaroundAverage,
+// for DINE_IN orders with a diningTableId in range.
+export interface TableUtilizationRow {
+  tableId: string;
+  tableNumber: string;
+  section: string;
+  orderCount: number; // qualifying DINE_IN orders seated at this table in range
+  totalCovers: number; // sum of Order.covers, 0 for orders with covers null
+  totalRevenueMinor: bigint; // grandTotal sum of qualifying orders in range
+  averageTurnMinutes: number; // average createdAt->updatedAt minutes across qualifying orders, 0 if none
+  occupancyRatePercent: number; // sum of turn minutes / total range minutes * 100
+}
+
+export interface TableUtilizationSectionRow {
+  section: string;
+  tableCount: number; // distinct active tables in this section
+  orderCount: number;
+  totalCovers: number;
+  totalRevenueMinor: bigint;
+  averageTurnMinutes: number;
+  occupancyRatePercent: number; // sum of turn minutes across all tables in section / (range minutes * tableCount) * 100
+  hourlyOccupancy: number[]; // 24 entries (index = hour-of-day 0-23): count of qualifying orders whose seated window overlaps that hour, across the range
+}
+
+export interface TableUtilizationReport {
+  outletId: string;
+  fromDate: Date;
+  toDate: Date;
+  formulaVersion: number;
+  tables: TableUtilizationRow[]; // sorted by totalRevenueMinor desc
+  sections: TableUtilizationSectionRow[]; // sorted by section name
+}
+
+
+// Menu Margin / Food Cost Report — per-MenuItem gross margin for a date
+// range, costed via the item's active recipe (recipes -> recipe_ingredients
+// -> ingredients.unit_cost_minor BOM join). Items with no active recipe on
+// file cannot have a real cost computed: foodCostMinor/marginMinor/
+// marginPercent are null and hasRecipe is false for those rows, rather than
+// silently reporting 0 cost / 100% margin.
+export interface ItemMarginRow {
+  menuItemId: string;
+  quantitySold: number;
+  netSalesMinor: bigint;
+  hasRecipe: boolean;
+  foodCostMinor: bigint | null; // null when hasRecipe is false
+  marginMinor: bigint | null; // netSalesMinor - foodCostMinor, null when hasRecipe is false
+  marginPercent: number | null; // marginMinor / netSalesMinor * 100, null when hasRecipe is false
+}
+
+export interface ItemMarginSummary {
+  itemsWithRecipe: number;
+  itemsWithoutRecipe: number;
+}
+
+export interface ItemMarginReport {
+  outletId: string;
+  fromDate: Date;
+  toDate: Date;
+  formulaVersion: number;
+  items: ItemMarginRow[]; // sorted by netSalesMinor descending
+  summary: ItemMarginSummary;
+}
+
+// Inventory Consumption vs Purchase (variance/shrinkage) Report — per
+// ingredient, total quantity consumed (InventoryConsumptionLog, including
+// any recorded shortage and a breakdown by reasonCode) against total
+// quantity received via purchase orders in the same range, surfacing
+// waste/shrinkage. varianceQty = purchasedQty - consumedQty; a large
+// negative variance means more was consumed than was purchased in range
+// (drawing down existing stock or unaccounted loss), and shortageQty > 0
+// flags recorded stock-outs during consumption.
+export interface InventoryVarianceRow {
+  ingredientId: string;
+  ingredientName?: string; // enriched by the route layer
+  unitOfMeasure?: string; // enriched by the route layer
+  consumedQty: number;
+  shortageQty: number;
+  consumedByReasonCode: Record<string, number>; // reasonCode -> quantity consumed ("" for missing reasonCode)
+  purchasedQty: number;
+  purchasedCostMinor: bigint;
+  varianceQty: number; // purchasedQty - consumedQty
+}
+
+export interface InventoryVarianceReport {
+  outletId: string;
+  fromDate: Date;
+  toDate: Date;
+  formulaVersion: number;
+  ingredients: InventoryVarianceRow[]; // sorted by shortageQty desc, then varianceQty asc — worst first
+}

@@ -13,6 +13,14 @@ export {
   getLeakageReport,
   computeTaxBreakdown,
   getTaxBreakdown,
+  computeItemMarginReport,
+  getItemMarginReport,
+  computeInventoryVariance,
+  getInventoryVarianceReport,
+  computeStaffPerformance,
+  getStaffPerformance,
+  computeTableUtilization,
+  getTableUtilization,
 } from "./reporting-service";
 export type {
   ReportingRepository,
@@ -25,11 +33,28 @@ export type {
   InvoiceLeakageRow,
   UnbilledKotRow,
   TaxOrderRow,
+  MenuItemRecipeCost,
+  ConsumptionLogRow,
+  PurchaseReceiptRow,
+  WaiterOrderRow,
+  WaiterHandoverRow,
+  TableInfoRow,
+  TableUtilizationOrderRow,
 } from "./reporting-service";
 export type {
   LeakageReport,
   TaxBreakdown,
   TaxComponentBreakdown,
+  ItemMarginRow,
+  ItemMarginReport,
+  ItemMarginSummary,
+  InventoryVarianceRow,
+  InventoryVarianceReport,
+  StaffPerformanceRow,
+  StaffPerformanceReport,
+  TableUtilizationRow,
+  TableUtilizationSectionRow,
+  TableUtilizationReport,
 } from "@kapmeta/shared-types/reporting";
 export { PrismaReportingRepository } from "./stores/prisma-reporting-repository";
 export * from './executive-dashboard';

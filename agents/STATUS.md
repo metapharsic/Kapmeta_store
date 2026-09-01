@@ -140,3 +140,20 @@ Root cause: this app has two disconnected nav systems. Nav.tsx's SIDEBAR_GROUPS 
 Fixed: added both as always-visible top-level rows in KapMetaHeader's drawer, sibling to the existing "Billing (POS)" item, no expand-to-find-it needed. tsc clean.
 
 Flagging for a later pass, not fixed now: this two-nav-system split is itself worth resolving properly (either migrate the 5 remaining KapMetaHeader-only pages to the shared Nav sidebar, or vice versa) so future additions to one system don't silently fail to appear on the other's pages.
+
+## 2026-09-01 — CP-14 Reports redesign: full granularity pass — complete
+
+Audit found the existing reports (sales summary, item performance, payment/channel/tax breakdowns, leakage report, kitchen SLA) were already real and solid — no rework needed there, just extended the same pattern. Added 6 new report domains, 3 agents in parallel, all landing in the same reporting.ts/admin.tsx/reporting-service.ts stack without corruption (verified via combined tsc + git status after):
+
+- Staff/waiter performance: orders, net sales, AOV, covers, tips (cash+digital), service charge, cash-variance per waiter.
+- Table/floor utilization: per-table AND per-section occupancy%, avg turn time, revenue, plus a 24-bucket hourly occupancy heatmap per section.
+- Menu margin/food-cost: per-item food cost % and margin via recipe/BOM join against ingredient unit cost — items with no recipe defined show hasRecipe:false and null cost/margin (never a fake 0-cost/100%-margin number), plus a summary of recipe coverage.
+- Inventory variance: consumed vs purchased per ingredient, shortage/reasonCode breakdown, sorted worst-first.
+- Wired the hourly-velocity/category-mix dashboard endpoint that already existed in executive-dashboard.ts but was never consumed by any UI — now a heatmap + category chart, zero new backend work.
+- Customer/CRM insights: repeat-customer rate, top spenders, visit frequency.
+- Discount & void analysis: void counts/value by reason/staff, discount totals/trend — response carries an explicit `note` field stating reason-level discount breakdown isn't possible without a schema change (no Discount entity exists yet), surfaced to the user in the UI rather than faked.
+- Bonus fix: killed a leftover debug beacon (127.0.0.1:7323) firing on every Z-Report generation.
+
+All new endpoints reuse the existing CSV/JSON export pattern in admin.tsx. tsc: 101/0, unchanged baseline.
+
+Known gap, not fixed: reason-level discount breakdown needs a schema addition (Discount entity or discountReason field) if that granularity is wanted later.

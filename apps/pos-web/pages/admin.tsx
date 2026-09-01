@@ -104,6 +104,51 @@ interface ItemPerformanceApi {
   netSalesMinor: string;
 }
 
+// Real response shape of GET /item-margin (ItemMarginReport, bigint fields as
+// strings; foodCostMinor/marginMinor/marginPercent are null when hasRecipe is
+// false — no active recipe on file to cost the item against).
+interface ItemMarginRowApi {
+  menuItemId: string;
+  menuItemName?: string;
+  quantitySold: number;
+  netSalesMinor: string;
+  hasRecipe: boolean;
+  foodCostMinor: string | null;
+  marginMinor: string | null;
+  marginPercent: number | null;
+}
+
+interface ItemMarginReportApi {
+  outletId: string;
+  fromDate: string;
+  toDate: string;
+  formulaVersion: number;
+  items: ItemMarginRowApi[];
+  summary: { itemsWithRecipe: number; itemsWithoutRecipe: number };
+}
+
+// Real response shape of GET /inventory-variance (InventoryVarianceReport,
+// bigint fields as strings).
+interface InventoryVarianceRowApi {
+  ingredientId: string;
+  ingredientName?: string;
+  unitOfMeasure?: string;
+  consumedQty: number;
+  shortageQty: number;
+  consumedByReasonCode: Record<string, number>;
+  purchasedQty: number;
+  purchasedCostMinor: string;
+  varianceQty: number;
+}
+
+interface InventoryVarianceReportApi {
+  outletId: string;
+  fromDate: string;
+  toDate: string;
+  formulaVersion: number;
+  ingredients: InventoryVarianceRowApi[];
+}
+
 // Real response shape of GET /payment-breakdown (PaymentBreakdown, bigint fields as strings).
 interface PaymentMethodBreakdownApi {
   method: string;
@@ -188,6 +233,60 @@ interface TaxBreakdownApi {
   components: TaxComponentBreakdownApi[];
 }
 
+// Real response shape of GET /reporting/staff-performance (StaffPerformanceReport, bigint fields as strings).
+interface StaffPerformanceRowApi {
+  waiterId: string;
+  waiterName: string;
+  orderCount: number;
+  netSalesMinor: string;
+  averageOrderValueMinor: string;
+  coversServed: number;
+  cashTipMinor: string;
+  digitalTipMinor: string;
+  serviceChargeMinor: string;
+  cashVarianceMinor: string;
+}
+
+interface StaffPerformanceApi {
+  outletId: string;
+  fromDate: string;
+  toDate: string;
+  formulaVersion: number;
+  staff: StaffPerformanceRowApi[];
+}
+
+// Real response shape of GET /reporting/table-utilization (TableUtilizationReport, bigint fields as strings).
+interface TableUtilizationRowApi {
+  tableId: string;
+  tableNumber: string;
+  section: string;
+  orderCount: number;
+  totalCovers: number;
+  totalRevenueMinor: string;
+  averageTurnMinutes: number;
+  occupancyRatePercent: number;
+}
+
+interface TableUtilizationSectionApi {
+  section: string;
+  tableCount: number;
+  orderCount: number;
+  totalCovers: number;
+  totalRevenueMinor: string;
+  averageTurnMinutes: number;
+  occupancyRatePercent: number;
+  hourlyOccupancy: number[];
+}
+
+interface TableUtilizationApi {
+  outletId: string;
+  fromDate: string;
+  toDate: string;
+  formulaVersion: number;
+  tables: TableUtilizationRowApi[];
+  sections: TableUtilizationSectionApi[];
+}
+
 interface TableSectionOccupancyApi {
   section: string;
   totalTables: number;
@@ -238,6 +337,51 @@ interface RecentInvoiceApi {
   createdAt: string;
 }
 
+interface DashboardApi {
+  period: { start: string; end: string };
+  kpi: { totalRevenue: string; orderCount: number; averageOrderValue: string; totalDiscount: string };
+  hourlyVelocity: string[];
+  categoryMix: Record<string, { quantity: number; revenue: string }>;
+}
+
+interface CustomerTopSpenderApi {
+  customerId: string;
+  name: string | null;
+  phone: string | null;
+  totalSpendMinor: string;
+  orderCount: number;
+  lastVisitAt: string;
+}
+
+interface CustomerInsightsApi {
+  outletId: string;
+  fromDate: string;
+  toDate: string;
+  totalUniqueCustomers: number;
+  repeatCustomers: number;
+  repeatCustomerRatePercent: number;
+  averageVisitFrequency: number;
+  topSpenders: CustomerTopSpenderApi[];
+}
+
+interface DiscountVoidAnalysisApi {
+  outletId: string;
+  fromDate: string;
+  toDate: string;
+  voids: {
+    count: number;
+    totalValueMinor: string;
+    byReason: { reason: string; count: number; valueMinor: string }[];
+    byStaff: { voidedBy: string; count: number; valueMinor: string }[];
+  };
+  discounts: {
+    totalDiscountMinor: string;
+    orderCountWithDiscount: number;
+    byDay: { date: string; count: number; totalMinor: string }[];
+  };
+  note: string;
+}
+
 type TimeRange = "Day" | "Month" | "Quarter" | "Year";
 
 function rangeFor(timeRange: TimeRange): { fromDate: string; toDate: string } {
@@ -278,7 +422,14 @@ export default function AdminDashboard() {
   const [leakageReport, setLeakageReport] = useState<LeakageReportApi | null>(null);
   const [taxBreakdown, setTaxBreakdown] = useState<TaxBreakdownApi | null>(null);
   const [tableOccupancy, setTableOccupancy] = useState<TableOccupancyApi | null>(null);
+  const [staffPerformance, setStaffPerformance] = useState<StaffPerformanceApi | null>(null);
+  const [tableUtilization, setTableUtilization] = useState<TableUtilizationApi | null>(null);
   const [recentInvoices, setRecentInvoices] = useState<RecentInvoiceApi[]>([]);
+  const [dashboard, setDashboard] = useState<DashboardApi | null>(null);
+  const [customerInsights, setCustomerInsights] = useState<CustomerInsightsApi | null>(null);
+  const [discountVoidAnalysis, setDiscountVoidAnalysis] = useState<DiscountVoidAnalysisApi | null>(null);
+  const [itemMargin, setItemMargin] = useState<ItemMarginReportApi | null>(null);
+  const [inventoryVariance, setInventoryVariance] = useState<InventoryVarianceReportApi | null>(null);
   const [selectedInvoice, setSelectedInvoice] = useState<RecentInvoiceApi | null>(null);
   const [timeRange, setTimeRange] = useState<TimeRange>("Month");
   const [loading, setLoading] = useState(true);
@@ -475,6 +626,105 @@ export default function AdminDashboard() {
         });
         return lines.join("\n");
       }
+      case "customer-insights": {
+        const spenders = Array.isArray(data.topSpenders) ? data.topSpenders : [];
+        const lines = [
+          "Metric,Value",
+          `Outlet ID,"${data.outletId || ""}"`,
+          `From Date,"${data.fromDate || ""}"`,
+          `To Date,"${data.toDate || ""}"`,
+          `Total Unique Customers,${data.totalUniqueCustomers || 0}`,
+          `Repeat Customers,${data.repeatCustomers || 0}`,
+          `Repeat Customer Rate (%),${(data.repeatCustomerRatePercent || 0).toFixed(2)}`,
+          `Average Visit Frequency,${(data.averageVisitFrequency || 0).toFixed(2)}`,
+          "",
+          "Top Spenders",
+          "Customer,Phone,Total Spend (Rs),Order Count,Last Visit",
+          ...spenders.map((c: any) =>
+            `"${c.name || 'Unknown'}","${c.phone || ''}",${(Number(c.totalSpendMinor || 0) / 100).toFixed(2)},${c.orderCount},"${c.lastVisitAt}"`
+          )
+        ];
+        return lines.join("\n");
+      }
+      case "discount-void-analysis": {
+        const byReason = Array.isArray(data.voids?.byReason) ? data.voids.byReason : [];
+        const byStaff = Array.isArray(data.voids?.byStaff) ? data.voids.byStaff : [];
+        const byDay = Array.isArray(data.discounts?.byDay) ? data.discounts.byDay : [];
+        const lines = [
+          "Metric,Value",
+          `Outlet ID,"${data.outletId || ""}"`,
+          `From Date,"${data.fromDate || ""}"`,
+          `To Date,"${data.toDate || ""}"`,
+          `Total Voided Items,${data.voids?.count || 0}`,
+          `Total Voided Value (Rs),${(Number(data.voids?.totalValueMinor || 0) / 100).toFixed(2)}`,
+          `Total Discount Given (Rs),${(Number(data.discounts?.totalDiscountMinor || 0) / 100).toFixed(2)}`,
+          `Orders With Discount,${data.discounts?.orderCountWithDiscount || 0}`,
+          `Note,"${data.note || ""}"`,
+          "",
+          "Voids By Reason",
+          "Reason,Count,Value (Rs)",
+          ...byReason.map((r: any) => `"${r.reason}",${r.count},${(Number(r.valueMinor || 0) / 100).toFixed(2)}`),
+          "",
+          "Voids By Staff",
+          "Voided By,Count,Value (Rs)",
+          ...byStaff.map((r: any) => `"${r.voidedBy}",${r.count},${(Number(r.valueMinor || 0) / 100).toFixed(2)}`),
+          "",
+          "Discounts By Day",
+          "Date,Order Count,Total (Rs)",
+          ...byDay.map((r: any) => `"${r.date}",${r.count},${(Number(r.totalMinor || 0) / 100).toFixed(2)}`),
+        ];
+        return lines.join("\n");
+      }
+      case "item-margin": {
+        const rows = Array.isArray(data.items) ? data.items : [];
+        const lines = [
+          "Menu Item,Quantity Sold,Net Sales (Rs),Has Recipe,Food Cost (Rs),Margin (Rs),Margin %",
+          ...rows.map((r: any) =>
+            `"${r.menuItemName || r.menuItemId}",${r.quantitySold},${(Number(r.netSalesMinor || 0) / 100).toFixed(2)},${r.hasRecipe ? "Yes" : "No (cost unknown)"},${r.hasRecipe ? (Number(r.foodCostMinor || 0) / 100).toFixed(2) : "-"},${r.hasRecipe ? (Number(r.marginMinor || 0) / 100).toFixed(2) : "-"},${r.hasRecipe ? (r.marginPercent || 0).toFixed(1) + "%" : "-"}`
+          ),
+          "",
+          `Items With Recipe Costed,${data.summary?.itemsWithRecipe || 0}`,
+          `Items Without Recipe (cost unknown),${data.summary?.itemsWithoutRecipe || 0}`,
+        ];
+        return lines.join("\n");
+      }
+      case "inventory-variance": {
+        const rows = Array.isArray(data.ingredients) ? data.ingredients : [];
+        const lines = [
+          "Ingredient,Unit,Consumed Qty,Shortage Qty,Purchased Qty,Purchased Cost (Rs),Variance Qty (Purchased - Consumed)",
+          ...rows.map((r: any) =>
+            `"${r.ingredientName || r.ingredientId}","${r.unitOfMeasure || ""}",${r.consumedQty},${r.shortageQty},${r.purchasedQty},${(Number(r.purchasedCostMinor || 0) / 100).toFixed(2)},${r.varianceQty}`
+          ),
+        ];
+        return lines.join("\n");
+      }
+      case "staff-performance": {
+        const rows = Array.isArray(data.staff) ? data.staff : [];
+        const lines = [
+          "Waiter,Order Count,Net Sales (Rs),Avg Order Value (Rs),Covers Served,Cash Tips (Rs),Digital Tips (Rs),Service Charge (Rs),Cash Variance (Rs)",
+          ...rows.map((r: any) =>
+            `"${r.waiterName}",${r.orderCount},${(Number(r.netSalesMinor || 0) / 100).toFixed(2)},${(Number(r.averageOrderValueMinor || 0) / 100).toFixed(2)},${r.coversServed || 0},${(Number(r.cashTipMinor || 0) / 100).toFixed(2)},${(Number(r.digitalTipMinor || 0) / 100).toFixed(2)},${(Number(r.serviceChargeMinor || 0) / 100).toFixed(2)},${(Number(r.cashVarianceMinor || 0) / 100).toFixed(2)}`
+          ),
+        ];
+        return lines.join("\n");
+      }
+      case "table-utilization": {
+        const rows = Array.isArray(data.tables) ? data.tables : [];
+        const sections = Array.isArray(data.sections) ? data.sections : [];
+        const lines = [
+          "Table,Section,Order Count,Total Covers,Total Revenue (Rs),Avg Turn (Minutes),Occupancy %",
+          ...rows.map((r: any) =>
+            `"${r.tableNumber}","${r.section}",${r.orderCount},${r.totalCovers || 0},${(Number(r.totalRevenueMinor || 0) / 100).toFixed(2)},${(r.averageTurnMinutes || 0).toFixed(1)},${(r.occupancyRatePercent || 0).toFixed(1)}%`
+          ),
+          "",
+          "Section Summary",
+          "Section,Table Count,Order Count,Total Covers,Total Revenue (Rs),Avg Turn (Minutes),Occupancy %",
+          ...sections.map((s: any) =>
+            `"${s.section}",${s.tableCount},${s.orderCount},${s.totalCovers || 0},${(Number(s.totalRevenueMinor || 0) / 100).toFixed(2)},${(s.averageTurnMinutes || 0).toFixed(1)},${(s.occupancyRatePercent || 0).toFixed(1)}%`
+          ),
+        ];
+        return lines.join("\n");
+      }
       case "z-report": {
         const paymentModes = data.paymentModes ? Object.entries(data.paymentModes) : [];
         const lines = [
@@ -588,12 +838,40 @@ export default function AdminDashboard() {
         if (!res.ok) throw new Error("HTTP error " + res.status);
         return res.json() as Promise<RecentInvoiceApi[]>;
       }),
+      authedFetch(`/reporting/dashboard?${qs}`, { signal: controller.signal }).then((res) => {
+        if (!res.ok) throw new Error("HTTP error " + res.status);
+        return res.json() as Promise<DashboardApi>;
+      }),
+      authedFetch(`/reporting/customer-insights?${qs}`, { signal: controller.signal }).then((res) => {
+        if (!res.ok) throw new Error("HTTP error " + res.status);
+        return res.json() as Promise<CustomerInsightsApi>;
+      }),
+      authedFetch(`/reporting/discount-void-analysis?${qs}`, { signal: controller.signal }).then((res) => {
+        if (!res.ok) throw new Error("HTTP error " + res.status);
+        return res.json() as Promise<DiscountVoidAnalysisApi>;
+      }),
+      authedFetch(`/reporting/item-margin?${qs}`, { signal: controller.signal }).then((res) => {
+        if (!res.ok) throw new Error("HTTP error " + res.status);
+        return res.json() as Promise<ItemMarginReportApi>;
+      }),
+      authedFetch(`/reporting/inventory-variance?${qs}`, { signal: controller.signal }).then((res) => {
+        if (!res.ok) throw new Error("HTTP error " + res.status);
+        return res.json() as Promise<InventoryVarianceReportApi>;
+      }),
+      authedFetch(`/reporting/staff-performance?${qs}`, { signal: controller.signal }).then((res) => {
+        if (!res.ok) throw new Error("HTTP error " + res.status);
+        return res.json() as Promise<StaffPerformanceApi>;
+      }),
+      authedFetch(`/reporting/table-utilization?${qs}`, { signal: controller.signal }).then((res) => {
+        if (!res.ok) throw new Error("HTTP error " + res.status);
+        return res.json() as Promise<TableUtilizationApi>;
+      }),
     ])
       .then((results) => {
         clearTimeout(timeout);
         const value = <T,>(r: PromiseSettledResult<T>, fallback: T): T =>
           r.status === "fulfilled" ? r.value : fallback;
-        const [summaryRes, itemsRes, paymentRes, channelRes, ttaRes, leakageRes, taxRes, occupancyRes, invoicesRes] = results;
+        const [summaryRes, itemsRes, paymentRes, channelRes, ttaRes, leakageRes, taxRes, occupancyRes, invoicesRes, dashboardRes, customerInsightsRes, discountVoidRes, itemMarginRes, inventoryVarianceRes, staffPerformanceRes, tableUtilizationRes] = results;
         setSummary(value(summaryRes, null as SalesSummaryApi | null));
         setItems(value(itemsRes, [] as ItemPerformanceApi[]));
         setPaymentBreakdown(value(paymentRes, null as PaymentBreakdownApi | null));
@@ -603,6 +881,13 @@ export default function AdminDashboard() {
         setTaxBreakdown(value(taxRes, null as TaxBreakdownApi | null));
         setTableOccupancy(value(occupancyRes, null as TableOccupancyApi | null));
         setRecentInvoices(value(invoicesRes, [] as RecentInvoiceApi[]));
+        setDashboard(value(dashboardRes, null as DashboardApi | null));
+        setCustomerInsights(value(customerInsightsRes, null as CustomerInsightsApi | null));
+        setDiscountVoidAnalysis(value(discountVoidRes, null as DiscountVoidAnalysisApi | null));
+        setItemMargin(value(itemMarginRes, null as ItemMarginReportApi | null));
+        setInventoryVariance(value(inventoryVarianceRes, null as InventoryVarianceReportApi | null));
+        setStaffPerformance(value(staffPerformanceRes, null as StaffPerformanceApi | null));
+        setTableUtilization(value(tableUtilizationRes, null as TableUtilizationApi | null));
         const failed = results.filter((r) => r.status === "rejected");
         setLoadError(failed.length === results.length ? "Failed to load reports" : null);
         setLoading(false);
@@ -619,6 +904,13 @@ export default function AdminDashboard() {
         setTaxBreakdown(null);
         setTableOccupancy(null);
         setRecentInvoices([]);
+        setDashboard(null);
+        setCustomerInsights(null);
+        setDiscountVoidAnalysis(null);
+        setItemMargin(null);
+        setInventoryVariance(null);
+        setStaffPerformance(null);
+        setTableUtilization(null);
         setLoading(false);
       });
   };
@@ -2043,6 +2335,12 @@ export default function AdminDashboard() {
                     <option value="table-turnaround">Table Turnaround Average</option>
                     <option value="leakage-report">Leakage & Loss Detection</option>
                     <option value="tax-breakdown">GST Statutory Tax Breakdown</option>
+                    <option value="customer-insights">Customer Insights (CRM)</option>
+                    <option value="discount-void-analysis">Discounts & Voids Analysis</option>
+                    <option value="item-margin">Menu Margin / Food Cost</option>
+                    <option value="inventory-variance">Inventory Consumption vs Purchase</option>
+                    <option value="staff-performance">Staff / Waiter Performance</option>
+                    <option value="table-utilization">Table / Floor Utilization</option>
                     <option value="invoices">Settled Invoices Ledger (CSV)</option>
                     <option value="tally-export">Tally ERP Voucher Export</option>
                     <option value="z-report">Daily Z-Report</option>
@@ -2385,6 +2683,262 @@ export default function AdminDashboard() {
                   )}
                 </section>
 
+                {/* Menu Margin / Food Cost — real data from /item-margin */}
+                <section className="panel-card invoices-table-card">
+                  <div className="panel-header">
+                    <div>
+                      <h3>Menu Margin / Food Cost</h3>
+                      <p className="panel-sub">From GET /item-margin for the selected period — costed via each item's active recipe</p>
+                    </div>
+                    <span className="total-badge">
+                      {itemMargin?.summary.itemsWithRecipe ?? 0} costed / {itemMargin?.summary.itemsWithoutRecipe ?? 0} no recipe
+                    </span>
+                  </div>
+
+                  {(!itemMargin || itemMargin.items.length === 0) && (
+                    <div className="not-available-box">
+                      <p>No item sales recorded for the selected period.</p>
+                    </div>
+                  )}
+
+                  {itemMargin && itemMargin.items.length > 0 && (
+                    <div className="table-responsive">
+                      <table className="clean-table">
+                        <thead>
+                          <tr>
+                            <th>Dish / Menu Item</th>
+                            <th>Quantity Sold</th>
+                            <th>Net Sales</th>
+                            <th>Food Cost</th>
+                            <th>Margin</th>
+                            <th>Margin %</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {itemMargin.items.map((it) => (
+                            <tr key={it.menuItemId} style={it.hasRecipe ? undefined : { opacity: 0.55 }}>
+                              <td>
+                                <strong>{it.menuItemName || it.menuItemId}</strong>
+                                {!it.hasRecipe && (
+                                  <span
+                                    style={{
+                                      marginLeft: 8,
+                                      fontSize: "0.65rem",
+                                      padding: "1px 6px",
+                                      borderRadius: 4,
+                                      background: "var(--bg-base)",
+                                      border: "1px solid var(--border)",
+                                      color: "var(--text-secondary)",
+                                    }}
+                                  >
+                                    no recipe
+                                  </span>
+                                )}
+                              </td>
+                              <td>{it.quantitySold}</td>
+                              <td className="amount-cell">{formatMoney(it.netSalesMinor)}</td>
+                              <td className="amount-cell">{it.hasRecipe ? formatMoney(it.foodCostMinor) : "—"}</td>
+                              <td className="amount-cell">{it.hasRecipe ? formatMoney(it.marginMinor) : "—"}</td>
+                              <td>{it.hasRecipe && it.marginPercent !== null ? `${it.marginPercent.toFixed(1)}%` : "—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </section>
+
+                {/* Inventory Consumption vs Purchase — real data from /inventory-variance */}
+                <section className="panel-card invoices-table-card">
+                  <div className="panel-header">
+                    <div>
+                      <h3>Inventory Consumption vs Purchase</h3>
+                      <p className="panel-sub">From GET /inventory-variance for the selected period — worst shortage/variance first</p>
+                    </div>
+                    <span className="total-badge">{inventoryVariance?.ingredients.length ?? 0} ingredients</span>
+                  </div>
+
+                  {(!inventoryVariance || inventoryVariance.ingredients.length === 0) && (
+                    <div className="not-available-box">
+                      <p>No inventory consumption or purchase activity recorded for the selected period.</p>
+                    </div>
+                  )}
+
+                  {inventoryVariance && inventoryVariance.ingredients.length > 0 && (
+                    <div className="table-responsive">
+                      <table className="clean-table">
+                        <thead>
+                          <tr>
+                            <th>Ingredient</th>
+                            <th>Consumed</th>
+                            <th>Shortage</th>
+                            <th>Purchased</th>
+                            <th>Purchase Cost</th>
+                            <th>Variance</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {inventoryVariance.ingredients.map((row) => (
+                            <tr key={row.ingredientId} style={row.shortageQty > 0 ? { background: "rgba(220, 38, 38, 0.06)" } : undefined}>
+                              <td>
+                                <strong>{row.ingredientName || row.ingredientId}</strong>
+                                {row.unitOfMeasure ? ` (${row.unitOfMeasure})` : ""}
+                              </td>
+                              <td>{row.consumedQty.toFixed(2)}</td>
+                              <td>{row.shortageQty > 0 ? <strong style={{ color: "#dc2626" }}>{row.shortageQty.toFixed(2)}</strong> : "0"}</td>
+                              <td>{row.purchasedQty.toFixed(2)}</td>
+                              <td className="amount-cell">{formatMoney(row.purchasedCostMinor)}</td>
+                              <td style={row.varianceQty < 0 ? { color: "#dc2626" } : undefined}>{row.varianceQty.toFixed(2)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </section>
+
+                {/* Staff / Waiter Performance — real data from /staff-performance */}
+                <section className="panel-card invoices-table-card">
+                  <div className="panel-header">
+                    <div>
+                      <h3>Staff / Waiter Performance</h3>
+                      <p className="panel-sub">From GET /staff-performance for the selected period — completed orders joined with shift handover tips &amp; cash reconciliation</p>
+                    </div>
+                    <span className="total-badge">{staffPerformance?.staff.length ?? 0} waiter(s)</span>
+                  </div>
+
+                  {(!staffPerformance || staffPerformance.staff.length === 0) && (
+                    <div className="not-available-box">
+                      <p>No waiter-attributed orders recorded for the selected period.</p>
+                    </div>
+                  )}
+
+                  {staffPerformance && staffPerformance.staff.length > 0 && (
+                    <div className="table-responsive">
+                      <table className="clean-table">
+                        <thead>
+                          <tr>
+                            <th>Waiter</th>
+                            <th>Orders</th>
+                            <th>Net Sales</th>
+                            <th>Avg Order Value</th>
+                            <th>Covers</th>
+                            <th>Cash Tips</th>
+                            <th>Digital Tips</th>
+                            <th>Service Charge</th>
+                            <th>Cash Variance</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {staffPerformance.staff.map((s) => (
+                            <tr key={s.waiterId}>
+                              <td>
+                                <strong>{s.waiterName}</strong>
+                              </td>
+                              <td>{s.orderCount}</td>
+                              <td className="amount-cell">{formatMoney(s.netSalesMinor)}</td>
+                              <td className="amount-cell">{formatMoney(s.averageOrderValueMinor)}</td>
+                              <td>{s.coversServed}</td>
+                              <td className="amount-cell">{formatMoney(s.cashTipMinor)}</td>
+                              <td className="amount-cell">{formatMoney(s.digitalTipMinor)}</td>
+                              <td className="amount-cell">{formatMoney(s.serviceChargeMinor)}</td>
+                              <td
+                                className="amount-cell"
+                                style={Number(s.cashVarianceMinor) < 0 ? { color: "#dc2626" } : undefined}
+                              >
+                                {formatMoney(s.cashVarianceMinor)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </section>
+
+                {/* Table / Floor Utilization — real data from /table-utilization */}
+                <section className="panel-card invoices-table-card">
+                  <div className="panel-header">
+                    <div>
+                      <h3>Table / Floor Utilization</h3>
+                      <p className="panel-sub">From GET /table-utilization for the selected period — per-table and per-section occupancy breakdown</p>
+                    </div>
+                    <span className="total-badge">{tableUtilization?.tables.length ?? 0} table(s)</span>
+                  </div>
+
+                  {tableUtilization && tableUtilization.sections.length > 0 && (
+                    <div className="table-responsive" style={{ marginBottom: 16 }}>
+                      <table className="clean-table">
+                        <thead>
+                          <tr>
+                            <th>Section</th>
+                            <th>Tables</th>
+                            <th>Orders</th>
+                            <th>Covers</th>
+                            <th>Revenue</th>
+                            <th>Avg Turn</th>
+                            <th>Occupancy %</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {tableUtilization.sections.map((s) => (
+                            <tr key={s.section}>
+                              <td>
+                                <strong>{s.section}</strong>
+                              </td>
+                              <td>{s.tableCount}</td>
+                              <td>{s.orderCount}</td>
+                              <td>{s.totalCovers}</td>
+                              <td className="amount-cell">{formatMoney(s.totalRevenueMinor)}</td>
+                              <td>{s.averageTurnMinutes.toFixed(1)} min</td>
+                              <td>{s.occupancyRatePercent.toFixed(1)}%</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {(!tableUtilization || tableUtilization.tables.length === 0) && (
+                    <div className="not-available-box">
+                      <p>No active tables or dine-in orders recorded for the selected period.</p>
+                    </div>
+                  )}
+
+                  {tableUtilization && tableUtilization.tables.length > 0 && (
+                    <div className="table-responsive">
+                      <table className="clean-table">
+                        <thead>
+                          <tr>
+                            <th>Table</th>
+                            <th>Section</th>
+                            <th>Orders</th>
+                            <th>Covers</th>
+                            <th>Revenue</th>
+                            <th>Avg Turn</th>
+                            <th>Occupancy %</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {tableUtilization.tables.map((t) => (
+                            <tr key={t.tableId}>
+                              <td>
+                                <strong>{t.tableNumber}</strong>
+                              </td>
+                              <td>{t.section}</td>
+                              <td>{t.orderCount}</td>
+                              <td>{t.totalCovers}</td>
+                              <td className="amount-cell">{formatMoney(t.totalRevenueMinor)}</td>
+                              <td>{t.averageTurnMinutes.toFixed(1)} min</td>
+                              <td>{t.occupancyRatePercent.toFixed(1)}%</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </section>
+
                 {/* Channel Breakdown — real data from /channel-breakdown */}
                 <section className="panel-card invoices-table-card">
                   <div className="panel-header">
@@ -2562,7 +3116,305 @@ export default function AdminDashboard() {
                   )}
                 </section>
 
-                {/* Recent Settled Invoices — real data from /reporting/invoices */}
+                {/* Hourly Sales Heatmap & Category Mix — real data from /reporting/dashboard */}
+                <section className="two-col-grid">
+                  <div className="panel-card">
+                    <div className="panel-header">
+                      <div>
+                        <h3>Hourly Sales Heatmap</h3>
+                        <p className="panel-sub">From GET /reporting/dashboard for the selected period</p>
+                      </div>
+                      <span className="total-badge">{dashboard?.kpi.orderCount ?? 0} orders</span>
+                    </div>
+                    {!dashboard && (
+                      <div className="not-available-box">
+                        <p>No hourly velocity data available for the selected period.</p>
+                      </div>
+                    )}
+                    {dashboard && (
+                      <div style={{ display: "flex", alignItems: "flex-end", gap: "3px", height: "160px", padding: "16px" }}>
+                        {dashboard.hourlyVelocity.map((v, hour) => {
+                          const values = dashboard.hourlyVelocity.map((x) => Number(x));
+                          const max = Math.max(...values, 1);
+                          const heightPct = (Number(v) / max) * 100;
+                          return (
+                            <div
+                              key={hour}
+                              title={`${hour}:00 — ${formatMoney(v)}`}
+                              style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: "100%" }}
+                            >
+                              <div
+                                style={{
+                                  width: "100%",
+                                  height: `${Math.max(heightPct, 2)}%`,
+                                  background: Number(v) > 0 ? "var(--accent)" : "var(--border)",
+                                  borderRadius: "2px 2px 0 0",
+                                }}
+                              />
+                              <span style={{ fontSize: "0.55rem", color: "var(--text-secondary)", marginTop: "4px" }}>{hour}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="panel-card">
+                    <div className="panel-header">
+                      <div>
+                        <h3>Category Mix</h3>
+                        <p className="panel-sub">From GET /reporting/dashboard for the selected period</p>
+                      </div>
+                    </div>
+                    {(!dashboard || Object.keys(dashboard.categoryMix).length === 0) && (
+                      <div className="not-available-box">
+                        <p>No category sales recorded for the selected period.</p>
+                      </div>
+                    )}
+                    {dashboard && Object.keys(dashboard.categoryMix).length > 0 && (
+                      <div className="table-responsive">
+                        <table className="clean-table">
+                          <thead>
+                            <tr>
+                              <th>Category</th>
+                              <th>Quantity Sold</th>
+                              <th>Revenue</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {Object.entries(dashboard.categoryMix)
+                              .sort((a, b) => Number(b[1].revenue) - Number(a[1].revenue))
+                              .map(([cat, data]) => (
+                                <tr key={cat}>
+                                  <td><strong>{cat}</strong></td>
+                                  <td>{data.quantity}</td>
+                                  <td className="amount-cell">{formatMoney(data.revenue)}</td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                {/* Customer Insights — real data from /reporting/customer-insights */}
+                <section className="panel-card invoices-table-card">
+                  <div className="panel-header">
+                    <div>
+                      <h3>Customer Insights (CRM)</h3>
+                      <p className="panel-sub">From GET /reporting/customer-insights for the selected period</p>
+                    </div>
+                    <span className="total-badge">
+                      {customerInsights?.repeatCustomerRatePercent.toFixed(1) ?? "0.0"}% repeat rate
+                    </span>
+                  </div>
+
+                  {!customerInsights && (
+                    <div className="not-available-box">
+                      <p>No customer data available for the selected period.</p>
+                    </div>
+                  )}
+
+                  {customerInsights && (
+                    <>
+                      <div className="kpi-cards-grid">
+                        <div className="kpi-card">
+                          <div className="kpi-top">
+                            <div className="icon-badge blue">
+                              <span>👥</span>
+                            </div>
+                            <span className="kpi-heading">UNIQUE CUSTOMERS</span>
+                          </div>
+                          <div className="kpi-main">
+                            <h2 className="kpi-number">{customerInsights.totalUniqueCustomers}</h2>
+                          </div>
+                        </div>
+
+                        <div className="kpi-card">
+                          <div className="kpi-top">
+                            <div className="icon-badge green">
+                              <span>🔁</span>
+                            </div>
+                            <span className="kpi-heading">REPEAT CUSTOMERS</span>
+                          </div>
+                          <div className="kpi-main">
+                            <h2 className="kpi-number">{customerInsights.repeatCustomers}</h2>
+                          </div>
+                        </div>
+
+                        <div className="kpi-card">
+                          <div className="kpi-top">
+                            <div className="icon-badge amber">
+                              <span>📈</span>
+                            </div>
+                            <span className="kpi-heading">AVG VISIT FREQUENCY</span>
+                          </div>
+                          <div className="kpi-main">
+                            <h2 className="kpi-number">{customerInsights.averageVisitFrequency.toFixed(2)}</h2>
+                          </div>
+                        </div>
+                      </div>
+
+                      {customerInsights.topSpenders.length === 0 && (
+                        <div className="not-available-box">
+                          <p>No customer spend recorded for the selected period.</p>
+                        </div>
+                      )}
+
+                      {customerInsights.topSpenders.length > 0 && (
+                        <div className="table-responsive">
+                          <table className="clean-table">
+                            <thead>
+                              <tr>
+                                <th>Customer</th>
+                                <th>Phone</th>
+                                <th>Orders</th>
+                                <th>Total Spend</th>
+                                <th>Last Visit</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {customerInsights.topSpenders.map((c) => (
+                                <tr key={c.customerId}>
+                                  <td><strong>{c.name || "Unknown"}</strong></td>
+                                  <td>{c.phone || "—"}</td>
+                                  <td>{c.orderCount}</td>
+                                  <td className="amount-cell">{formatMoney(c.totalSpendMinor)}</td>
+                                  <td style={{ fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
+                                    {new Date(c.lastVisitAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </section>
+
+                {/* Discounts & Voids — real data from /reporting/discount-void-analysis */}
+                <section className="panel-card invoices-table-card">
+                  <div className="panel-header">
+                    <div>
+                      <h3>Discounts & Voids</h3>
+                      <p className="panel-sub">From GET /reporting/discount-void-analysis for the selected period</p>
+                    </div>
+                    <span className="total-badge">{discountVoidAnalysis?.voids.count ?? 0} voided item(s)</span>
+                  </div>
+
+                  {!discountVoidAnalysis && (
+                    <div className="not-available-box">
+                      <p>No discount/void data available for the selected period.</p>
+                    </div>
+                  )}
+
+                  {discountVoidAnalysis && (
+                    <>
+                      <div className="kpi-cards-grid">
+                        <div className="kpi-card">
+                          <div className="kpi-top">
+                            <div className="icon-badge amber">
+                              <span>🚫</span>
+                            </div>
+                            <span className="kpi-heading">VOIDED ITEMS</span>
+                          </div>
+                          <div className="kpi-main">
+                            <h2 className="kpi-number">{discountVoidAnalysis.voids.count}</h2>
+                          </div>
+                        </div>
+
+                        <div className="kpi-card">
+                          <div className="kpi-top">
+                            <div className="icon-badge purple">
+                              <span>₹</span>
+                            </div>
+                            <span className="kpi-heading">VOIDED VALUE</span>
+                          </div>
+                          <div className="kpi-main">
+                            <h2 className="kpi-number">{formatMoney(discountVoidAnalysis.voids.totalValueMinor)}</h2>
+                          </div>
+                        </div>
+
+                        <div className="kpi-card">
+                          <div className="kpi-top">
+                            <div className="icon-badge blue">
+                              <span>🏷️</span>
+                            </div>
+                            <span className="kpi-heading">TOTAL DISCOUNT GIVEN</span>
+                          </div>
+                          <div className="kpi-main">
+                            <h2 className="kpi-number">{formatMoney(discountVoidAnalysis.discounts.totalDiscountMinor)}</h2>
+                          </div>
+                        </div>
+
+                        <div className="kpi-card muted">
+                          <div className="kpi-top">
+                            <div className="icon-badge green">
+                              <span>🧾</span>
+                            </div>
+                            <span className="kpi-heading">ORDERS WITH DISCOUNT</span>
+                          </div>
+                          <div className="kpi-main">
+                            <h2 className="kpi-number">{discountVoidAnalysis.discounts.orderCountWithDiscount}</h2>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="not-available-box" style={{ marginBottom: "16px" }}>
+                        <p>ℹ️ {discountVoidAnalysis.note}</p>
+                      </div>
+
+                      <div className="two-col-grid">
+                        <div>
+                          <h4 style={{ fontSize: "0.875rem", fontWeight: 700, marginBottom: "8px" }}>Voids by Reason</h4>
+                          {discountVoidAnalysis.voids.byReason.length === 0 ? (
+                            <div className="not-available-box"><p>No voided items recorded.</p></div>
+                          ) : (
+                            <div className="table-responsive">
+                              <table className="clean-table">
+                                <thead><tr><th>Reason</th><th>Count</th><th>Value</th></tr></thead>
+                                <tbody>
+                                  {discountVoidAnalysis.voids.byReason.map((r) => (
+                                    <tr key={r.reason}>
+                                      <td><strong>{r.reason}</strong></td>
+                                      <td>{r.count}</td>
+                                      <td className="amount-cell">{formatMoney(r.valueMinor)}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <h4 style={{ fontSize: "0.875rem", fontWeight: 700, marginBottom: "8px" }}>Voids by Staff</h4>
+                          {discountVoidAnalysis.voids.byStaff.length === 0 ? (
+                            <div className="not-available-box"><p>No voided items recorded.</p></div>
+                          ) : (
+                            <div className="table-responsive">
+                              <table className="clean-table">
+                                <thead><tr><th>Voided By</th><th>Count</th><th>Value</th></tr></thead>
+                                <tbody>
+                                  {discountVoidAnalysis.voids.byStaff.map((r) => (
+                                    <tr key={r.voidedBy}>
+                                      <td><strong>{r.voidedBy}</strong></td>
+                                      <td>{r.count}</td>
+                                      <td className="amount-cell">{formatMoney(r.valueMinor)}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </section>
+
+                                {/* Recent Settled Invoices — real data from /reporting/invoices */}
                 <section className="panel-card invoices-table-card">
                   <div className="panel-header">
                     <div>
