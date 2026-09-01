@@ -1,4 +1,4 @@
-# PetPooja POS Platform — End-to-End Component Wiring Guide
+# KapMeta POS Platform — End-to-End Component Wiring Guide
 
 **For:** Gemini, Claude & AI Coding Agents  
 **Purpose:** Precise blueprint for wiring Frontend Pages <-> API Routes <-> Domain Services <-> PostgreSQL Schema.

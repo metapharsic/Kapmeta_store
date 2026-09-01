@@ -324,7 +324,7 @@ router.get("/me", requireAuth, async (req: AuthedRequest, res) => {
 
     // Real outlet identity fields for receipt/terminal display (name, address,
     // FSSAI, UPI VPA) plus the org-level GSTIN
-    let outletData = null;
+    let outletData: any = null;
     const outlet = await prisma.outlet.findUnique({
       where: { id: outletId },
     });
@@ -336,6 +336,7 @@ router.get("/me", requireAuth, async (req: AuthedRequest, res) => {
       outletData = {
         id: outlet.id,
         name: outlet.name,
+        code: (outlet as any).code || null,
         address: (outlet as any).address || null,
         fssaiNumber: (outlet as any).fssaiNumber || null,
         upiVpa: (outlet as any).upiVpa || null,
@@ -346,7 +347,7 @@ router.get("/me", requireAuth, async (req: AuthedRequest, res) => {
     res.status(200).json({
       userId: user.id,
       email: user.email,
-      name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.full_name || 'Admin',
+      name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || (user as any).full_name || 'Admin',
       outletId,
       roles,
       permissions,

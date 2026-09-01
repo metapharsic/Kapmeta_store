@@ -19,8 +19,7 @@ function isLiveFloorSession(order: any): boolean {
   const kots = order.kotTickets || [];
   const items = order.orderItems || [];
   if (kots.some((k: any) => k.status !== "CANCELLED")) return true;
-  if (order.status === "DRAFT" && items.length > 0) return true;
-  if (order.status === "SERVED" || order.status === "HANDED_OVER") return true;
+  if (items.length > 0 && ["DRAFT", "PLACED", "CONFIRMED", "KOT_CREATED", "IN_PREPARATION", "READY", "SERVED", "HANDED_OVER"].includes(order.status)) return true;
   return false;
 }
 
@@ -103,7 +102,7 @@ export async function resolveAnchorTable(
   mergePrimaryTableId: string | null;
 } | null> {
   if (!tableId) return null;
-  const table = await prisma.diningTable.findFirst({
+  let table = (await prisma.diningTable.findFirst({
     where: { id: tableId, outletId },
     select: {
       id: true,
@@ -111,7 +110,55 @@ export async function resolveAnchorTable(
       mergeGroupId: true,
       mergePrimaryTableId: true,
     },
-  });
+  }).catch(() => null)) || (await prisma.diningTable.findFirst({
+    where: { tableNumber: tableId, outletId },
+    select: {
+      id: true,
+      tableNumber: true,
+      mergeGroupId: true,
+      mergePrimaryTableId: true,
+    },
+  }).catch(() => null));
+
+  if (!table) {
+    const aliasNumber = tableId === "tbl-07" ? "B1" : (tableId === "B1" ? "tbl-07" : tableId);
+    table = await prisma.diningTable.findFirst({
+      where: { tableNumber: aliasNumber, outletId },
+      select: {
+        id: true,
+        tableNumber: true,
+        mergeGroupId: true,
+        mergePrimaryTableId: true,
+      },
+    }).catch(() => null);
+  }
+
+  if (!table) {
+    try {
+      const num = tableId === "tbl-07" ? "B1" : tableId;
+      const created = await prisma.diningTable.create({
+        data: {
+          id: randomUUID(),
+          outletId,
+          tableNumber: num,
+          capacity: 4,
+          section: "Main Floor",
+          status: "VACANT",
+        },
+      });
+      table = {
+        id: created.id,
+        tableNumber: created.tableNumber,
+        mergeGroupId: null,
+        mergePrimaryTableId: null,
+      };
+    } catch (e: any) {
+      table = await prisma.diningTable.findFirst({
+        where: { outletId, tableNumber: tableId },
+      }).catch(() => null);
+    }
+  }
+
   if (!table) return null;
   const primaryId = table.mergePrimaryTableId;
   if (primaryId && primaryId !== table.id) {
@@ -123,7 +170,7 @@ export async function resolveAnchorTable(
         mergeGroupId: true,
         mergePrimaryTableId: true,
       },
-    });
+    }).catch(() => null);
     if (primary) return primary;
   }
   return table;
@@ -145,7 +192,7 @@ export async function findLiveOrdersOnTables(
       orderItems: { where: { isVoided: false } },
       kotTickets: true,
     },
-    orderBy: { createdAt: "asc" },
+    orderBy: { createdAt: "desc" },
   });
   return orders.filter((o: any) => isLiveFloorSession(o));
 }

@@ -104,7 +104,7 @@ function getSuggestedRemediation(message: string): string {
     return 'Redis connection failed. Start Redis on port 6379 or verify REDIS_URL in .env.';
   }
   if (lower.includes('port 4001') || lower.includes('port 4444') || lower.includes('eaddrinuse')) {
-    return 'Port conflict detected. Run "npm run stop:all" (or Stop_PetPooja.bat) to release occupied ports.';
+    return 'Port conflict detected. Run "npm run stop:all" (or Stop_KapMeta.bat) to release occupied ports.';
   }
   if (lower.includes('prismaclientknownrequesterror') || lower.includes('migration')) {
     return 'Database schema discrepancy. Run "npm run db:migrate" to update PostgreSQL tables.';

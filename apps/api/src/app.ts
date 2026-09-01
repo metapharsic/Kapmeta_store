@@ -22,6 +22,7 @@ import { waitersRouter } from './routes/waiters';
 import { tablesRouter } from './routes/tables';
 import { ordersRouter } from './routes/orders';
 import { settingsRouter } from './routes/settings';
+import { adminRouter } from './routes/admin';
 import { mapDomainError } from './errors';
 
 // Global BigInt JSON serialization support for Express
@@ -33,13 +34,16 @@ import { mapDomainError } from './errors';
 export function createApp(): Express {
   const app = express();
   app.use(cors({
-    origin: [process.env.POS_WEB_URL || 'http://localhost:4444', 'http://localhost:4445', 'http://localhost:3000'],
+    origin: (origin, callback) => {
+      callback(null, true);
+    },
     credentials: true,
   }));
   app.use(express.json());
 
   // --- Real service routers (top-level prefixes per API_AND_EVENTS_CATALOG.md) ---
   app.use('/auth', authRouter);
+  app.use('/admin', adminRouter);
   app.use('/menu', menuRouter);
   app.use('/kitchen', kitchenRouter);
   app.use('/finance', financeRouter);
@@ -73,7 +77,7 @@ export function createApp(): Express {
     if (mapDomainError) {
       const mapped = mapDomainError(err);
       if (mapped) {
-        res.status(mapped.statusCode).json({ error: mapped.code, message: mapped.message });
+        res.status(mapped.status).json(mapped.body);
         return;
       }
     }

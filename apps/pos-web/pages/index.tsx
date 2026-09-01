@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
 import { useAuthGuard } from "../lib/auth";
-import PetPoojaHeader from "../components/PetPoojaHeader";
+import KapMetaHeader from "../components/KapMetaHeader";
 import TableViewFloor from "../components/TableViewFloor";
 import PosBillingView from "../components/PosBillingView";
 
@@ -58,14 +58,14 @@ export default function POSIndexPage() {
   }
 
   return (
-    <div className="petpooja-app-root">
+    <div className="kapmeta-app-root">
       <Head>
         <title>{outletName} - KapMeta POS Management Platform</title>
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
       </Head>
 
       {/* Universal Top Header */}
-      <PetPoojaHeader
+      <KapMetaHeader
         outletName={outletName}
         outletCode={outletCode}
         onNewOrder={handleNewOrder}

@@ -20,7 +20,7 @@ Write-Host ''
 Write-Host '[PORTS AND ENDPOINTS CONFIGURATION]' -ForegroundColor Cyan
 Write-Host '  - POS Web UI       : http://localhost:4444 (Port 4444)' -ForegroundColor White
 Write-Host '  - API Gateway      : http://localhost:4001 (Port 4001)' -ForegroundColor White
-Write-Host '  - PostgreSQL DB    : localhost:5432 (Database: petpooja)' -ForegroundColor White
+Write-Host '  - PostgreSQL DB    : localhost:5432 (Database: kapmeta)' -ForegroundColor White
 Write-Host '  - Redis Cache      : localhost:6379' -ForegroundColor White
 Write-Host "  - Logs Directory   : $rootDir\logs\" -ForegroundColor White
 Write-Host "  - Checkpoints Dir  : $rootDir\checkpoints\" -ForegroundColor White
@@ -249,7 +249,7 @@ function Show-Dashboard {
     Write-Host '  [SERVICES STATUS]' -ForegroundColor Cyan
     Write-Host '  - POS Web UI       : http://localhost:4444          [READY]' -ForegroundColor White
     Write-Host '  - API Gateway      : http://localhost:4001/health   [READY]' -ForegroundColor White
-    Write-Host '  - PostgreSQL DB    : localhost:5432 (petpooja)      [CONNECTED]' -ForegroundColor White
+    Write-Host '  - PostgreSQL DB    : localhost:5432 (kapmeta)      [CONNECTED]' -ForegroundColor White
     Write-Host ''
     Write-Host '  [LOG FILES]' -ForegroundColor Cyan
     Write-Host "  - App Events       : logs\app\app-$currentDate.log" -ForegroundColor Gray

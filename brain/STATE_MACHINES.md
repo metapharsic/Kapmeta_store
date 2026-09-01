@@ -1,4 +1,4 @@
-# PetPooja POS Platform — State Machines & Transition Rules
+# KapMeta POS Platform — State Machines & Transition Rules
 
 **For:** Gemini, Claude & AI Coding Agents  
 

@@ -2,11 +2,10 @@ import React, { useEffect, useState, useCallback } from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
 import { authedFetch, useAuthGuard } from "../lib/auth";
-import PetPoojaHeader from "../components/PetPoojaHeader";
-import PetPoojaOrdersView, {
-  REFERENCE_CURRENT_ORDERS,
-  PetPoojaOrderRowData,
-} from "../components/PetPoojaOrdersView";
+import KapMetaHeader from "../components/KapMetaHeader";
+import KapMetaOrdersView, {
+  KapMetaOrderRowData,
+} from "../components/KapMetaOrdersView";
 
 interface OrderSummaryDto {
   id: string;
@@ -30,23 +29,26 @@ export default function OrdersPage() {
   const { me, loading: authLoading } = useAuthGuard("order.read");
   const router = useRouter();
 
-  const outlet = me?.outlet ?? null;
-  const outletName = outlet?.name || "Hotel kapila";
-  const outletCode = outlet?.taxNumber ? `R${outlet.taxNumber.slice(0, 6)}` : "R327038";
+  const outletName = me?.outlet?.name || "Hotel kapila";
+  const outletCode = me?.outlet?.taxNumber ? `R${me.outlet.taxNumber.slice(0, 6)}` : "R327038";
 
   const [orders, setOrders] = useState<OrderSummaryDto[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchOrders = useCallback(() => {
-    authedFetch("/orders?limit=50")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (!data) return;
+  const fetchOrders = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await authedFetch("/orders?limit=50");
+      if (res.ok) {
+        const data = await res.json();
         const list = data.orders || (Array.isArray(data) ? data : []);
         setOrders(list);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+      }
+    } catch (err) {
+      console.error("Failed to fetch orders:", err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -56,13 +58,13 @@ export default function OrdersPage() {
     return () => clearInterval(interval);
   }, [authLoading, fetchOrders]);
 
-  const liveDbOrders: PetPoojaOrderRowData[] = orders.map((o) => {
+  const liveDbOrders: KapMetaOrderRowData[] = orders.map((o) => {
     const grandTotal = Number(o.grandTotalMinor || 0) / 100;
     const tax = Number(o.taxTotalMinor || 0) / 100;
     const discount = Number(o.discountTotalMinor || 0) / 100;
     const myAmount = grandTotal - tax + discount;
 
-    let status: PetPoojaOrderRowData["status"] = "PRINTED_BILL";
+    let status: KapMetaOrderRowData["status"] = "PRINTED_BILL";
     if (o.status === "PAID" || o.status === "SETTLED" || o.status === "COMPLETED") {
       status = "PAID";
     } else if (o.status === "CANCELLED" || o.status === "VOIDED") {
@@ -101,18 +103,15 @@ export default function OrdersPage() {
       grandTotal,
       created: o.createdAt
         ? new Date(o.createdAt).toISOString().replace("T", " ").slice(0, 19)
-        : "2026-08-21 11:40:35",
+        : new Date().toISOString().replace("T", " ").slice(0, 19),
       status,
     };
   });
 
-  const mappedOrders: PetPoojaOrderRowData[] =
-    liveDbOrders.length > 0
-      ? [...liveDbOrders, ...REFERENCE_CURRENT_ORDERS.filter((r) => !liveDbOrders.some((l) => l.orderNo === r.orderNo))]
-      : REFERENCE_CURRENT_ORDERS;
+  const mappedOrders: KapMetaOrderRowData[] = liveDbOrders;
 
   return (
-    <div className="petpooja-orders-page-root">
+    <div className="kapmeta-orders-page-root">
       <Head>
         <title>{outletName} ({outletCode}) - The Finest Restaurant Management Platform</title>
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
@@ -122,15 +121,15 @@ export default function OrdersPage() {
         />
       </Head>
 
-      {/* Top Universal PetPooja Header */}
-      <PetPoojaHeader
+      {/* Top Universal KapMeta Header */}
+      <KapMetaHeader
         outletName={outletName}
         outletCode={outletCode}
         onNewOrder={() => router.push("/")}
       />
 
-      {/* Main PetPooja POS Current Orders Matrix View */}
-      <PetPoojaOrdersView
+      {/* Main KapMeta POS Current Orders Matrix View */}
+      <KapMetaOrdersView
         initialOrders={mappedOrders}
         onBackToPos={() => router.push("/")}
         onViewOrderDetails={(id) => router.push(`/pending-order-detail?orderId=${id}`)}

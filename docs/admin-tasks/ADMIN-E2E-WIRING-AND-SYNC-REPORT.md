@@ -15,7 +15,7 @@ Admin is not a separate app. It is:
 | Shell | Pages |
 |---|---|
 | `Nav variant="sidebar"` | `/admin`, `/menu`, `/inventory`, `/finance`, `/crm`, `/marketing`, `/user-management`, `/channel-availability`, `/integrations`, `/kitchen-analytics`, `/waiter-monitor`, `/kitchen` |
-| `PetPoojaHeader` | POS `/`, `/orders`, `/table-management` |
+| `KapMetaHeader` | POS `/`, `/orders`, `/table-management` |
 
 `apps/admin-web` is a README stub. `services/admin` (bill reset, backups, machines) is **not mounted** in `apps/api/src/app.ts`. `contracts/admin.yaml` describes a third, unused surface.
 
@@ -91,7 +91,7 @@ These pass smoke tests and still desync the product.
 | Channel item ON/OFF | `ChannelItemMapping` | Synthetic IDs + `CHANNEL_ITEM_AVAILABILITY` logs; fake `acc-swiggy` |
 | Petty cash / shift close | cash-drawer / ledger | `FINANCE_PETTY_CASH`, `FINANCE_CASH_DRAWER_RECONCILED` |
 | Ledger list | ledger entries | Last 50 **any** audit logs, mapped as expenses |
-| Store online | `ChannelAccount.is_active` or a store-status row | `useState(true)` in `PetPoojaHeader` |
+| Store online | `ChannelAccount.is_active` or a store-status row | `useState(true)` in `KapMetaHeader` |
 | Alerts | `Notification` | Hardcoded Saffron / Table 4 / SW-1082 until DB has rows; dismiss is local |
 
 **Hardcoded outlet UUID** in `PrismaChannelItemStatusRepository.updateIfVersionMatches` when the menu item is missing: `a0deb015-8ef8-4ef5-aac7-6e91c9da6b5b` (same as login defaults). Violates no-hardcode-data.
@@ -112,7 +112,7 @@ These pass smoke tests and still desync the product.
 - Topbar `NAV_LINKS` omit `/table-management`, `/waiter-monitor`, `/kitchen-analytics`, `/integrations` that the sidebar shows.
 - Quick Links suggestions omit several admin pages.
 - Double mounts in `app.ts` (`inventory`, `user-management`, `integration`) hide path mismatches (TASK-7 tested `/user-management/users` while the page calls `/users`).
-- Two admin visual systems (sidebar Nav vs PetPoojaHeader).
+- Two admin visual systems (sidebar Nav vs KapMetaHeader).
 
 ---
 
@@ -172,6 +172,6 @@ Keep these; they already talk to real Prisma rows or reporting services:
 | Nav/RBAC | `apps/pos-web/components/Nav.tsx`, `apps/pos-web/pages/*.tsx` guards, `apps/api/src/routes/user-management.ts`, `db/seeds/seed_permissions.sql` |
 | Inventory fake persist | `apps/api/src/routes/inventory.ts`, `apps/pos-web/pages/inventory.tsx` |
 | Channel fake persist | `services/integration-hub/src/stores/prisma-channel-item-status-repository.ts`, `apps/pos-web/pages/channel-availability.tsx` |
-| Store/alerts | `apps/pos-web/components/PetPoojaHeader.tsx`, `apps/api/src/routes/notifications.ts` |
+| Store/alerts | `apps/pos-web/components/KapMetaHeader.tsx`, `apps/api/src/routes/notifications.ts` |
 | Cash | `apps/api/src/routes/finance.ts`, `apps/pos-web/pages/finance.tsx` |
 | Dead admin stack | `services/admin/*`, `apps/admin-web/*`, `contracts/admin.yaml` |

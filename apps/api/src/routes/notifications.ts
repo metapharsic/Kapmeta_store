@@ -1,4 +1,5 @@
 import { Router } from "express";
+import crypto from "crypto";
 import { PrismaNotificationRepository } from "@kapmeta/notifications";
 import { requireAuth, type AuthedRequest } from "../middleware/require-auth";
 import { prisma } from "../prisma";
@@ -43,3 +44,45 @@ notificationsRouter.post("/notifications/read-all", requireAuth, async (req: Aut
     res.status(500).json({ error: "internal error" });
   }
 });
+
+// Dynamic User Ingestion: Allows users, staff, and multi-agent systems to post real-time alerts
+notificationsRouter.post("/notifications", requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    const { title, message, type, entityType, entityId, broadcast: isBroadcast } = req.body;
+    if (!title || !message) {
+      res.status(400).json({ error: "title and message are required" });
+      return;
+    }
+    const outletId = req.auth!.outletId;
+    const userId = req.auth!.userId;
+
+    const notification = await prisma.notification.create({
+      data: {
+        id: crypto.randomUUID(),
+        outletId,
+        userId: isBroadcast ? null : userId,
+        type: type || "INFO",
+        title: String(title).trim(),
+        message: String(message).trim(),
+        entityType: entityType || null,
+        entityId: entityId || null,
+        isRead: false,
+      },
+    });
+
+    import("../websockets")
+      .then(({ broadcast }) => {
+        broadcast("outlet.notification_created", {
+          outletId,
+          notification,
+        });
+      })
+      .catch(() => {});
+
+    res.status(201).json(notification);
+  } catch (err) {
+    console.error("Error creating notification:", err);
+    res.status(500).json({ error: "internal error" });
+  }
+});
+

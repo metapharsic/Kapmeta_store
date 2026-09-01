@@ -100,7 +100,7 @@ router.get("/item-performance", requireAuth, requirePermission("report.read"), a
     const menuItems = itemIds.length > 0
       ? await prisma.menuItem.findMany({
           where: { id: { in: itemIds } },
-          select: { id: true, name: true, code: true },
+          select: { id: true, name: true },
         })
       : [];
     const nameMap = new Map(menuItems.map((m) => [m.id, m.name]));
@@ -251,10 +251,10 @@ router.get("/invoices", requireAuth, requirePermission("report.read"), async (re
     };
 
     if (fromDate || toDate) {
-      where.OR = [
-        { settledAt: { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } },
-        { AND: [{ settledAt: null }, { createdAt: { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } }] },
-      ];
+      where.createdAt = {
+        ...(fromDate ? { gte: fromDate } : {}),
+        ...(toDate ? { lte: toDate } : {}),
+      };
     }
 
     const orders = await prisma.order.findMany({
@@ -273,7 +273,6 @@ router.get("/invoices", requireAuth, requirePermission("report.read"), async (re
             menuItem: {
               select: {
                 name: true,
-                code: true,
                 isVeg: true,
               },
             },
@@ -339,7 +338,7 @@ router.get("/invoices", requireAuth, requirePermission("report.read"), async (re
         paymentStatus,
         itemCount: o.orderItems.reduce((sum, it) => sum + Number(it.quantity), 0),
         items,
-        createdAt: (o.settledAt || o.createdAt).toISOString(),
+        createdAt: o.createdAt.toISOString(),
       };
     });
 

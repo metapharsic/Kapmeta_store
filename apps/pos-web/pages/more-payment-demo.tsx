@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import Head from "next/head";
-import PetPoojaHeader from "../components/PetPoojaHeader";
+import KapMetaHeader from "../components/KapMetaHeader";
 import PosBillingView from "../components/PosBillingView";
 import MorePaymentModal from "../components/MorePaymentModal";
 
@@ -12,14 +12,14 @@ export default function MorePaymentDemoPage() {
   const [isPaid, setIsPaid] = useState(true);
 
   return (
-    <div className="petpooja-app-root">
+    <div className="kapmeta-app-root">
       <Head>
         <title>{outletName} ({outletCode}) - The Finest Restaurant Management Platform</title>
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
       </Head>
 
-      {/* Top PetPooja Header with window titlebar */}
-      <PetPoojaHeader
+      {/* Top KapMeta Header with window titlebar */}
+      <KapMetaHeader
         outletName={outletName}
         outletCode={outletCode}
         onNewOrder={() => setIsMoreModalOpen(true)}

@@ -4,6 +4,8 @@ import { authedFetch } from "../lib/auth";
 import { useKapmetaSocket } from "../lib/useKapmetaSocket";
 import MoveKotModal from "./MoveKotModal";
 import AddTableModal from "./AddTableModal";
+import A2aAgentStatusDrawer from "./A2aAgentStatusDrawer";
+import HeldOrdersDrawer, { HeldOrderData } from "./HeldOrdersDrawer";
 
 interface TableItem {
   id: string;
@@ -43,6 +45,8 @@ export default function TableViewFloor({
   const [inspectTable, setInspectTable] = useState<TableItem | null>(null);
   const [inspectOrderDetails, setInspectOrderDetails] = useState<any | null>(null);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+  const [isA2aDrawerOpen, setIsA2aDrawerOpen] = useState(false);
+  const [isHeldDrawerOpen, setIsHeldDrawerOpen] = useState(false);
 
   const fetchTablesData = async () => {
     try {
@@ -86,39 +90,6 @@ export default function TableViewFloor({
             isMergePrimary: !!tbl.isMergePrimary,
           };
         });
-
-        // #region agent log
-        fetch("http://127.0.0.1:7323/ingest/28c85a32-5ef1-4fe5-9437-78139f7a5bfb", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c675b" },
-          body: JSON.stringify({
-            sessionId: "9c675b",
-            runId: "wave1-kot",
-            hypothesisId: "C",
-            location: "TableViewFloor.tsx:fetchTablesData",
-            message: "floor paint from GET /tables only",
-            data: {
-              queued: mapped
-                .filter((t) => t.kitchenStage === "QUEUED")
-                .map((t) => t.tableNumber),
-              occupied: mapped
-                .filter((t) => t.status !== "VACANT")
-                .map((t) => ({
-                  n: t.tableNumber,
-                  status: t.status,
-                  kitchenStage: t.kitchenStage,
-                  kots: (t.currentOrder?.kots || []).map((k: any) => k.status),
-                })),
-              serveCount: mapped.filter((t) => t.kitchenStage === "READY").length,
-              vacantCount: mapped.filter((t) => t.status === "VACANT").length,
-              mergeGroups: mapped
-                .filter((t) => t.mergeGroupId)
-                .map((t) => ({ n: t.tableNumber, mergedWith: t.mergedWith, orderId: t.activeOrderId })),
-            },
-            timestamp: Date.now(),
-          }),
-        }).catch(() => {});
-        // #endregion
 
         setTables(mapped);
       }
@@ -202,27 +173,7 @@ export default function TableViewFloor({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sourceTableIds: mergeSourceIds, targetTableId: targetTable.id }),
       });
-      // #region agent log
-      fetch("http://127.0.0.1:7323/ingest/28c85a32-5ef1-4fe5-9437-78139f7a5bfb", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c675b" },
-        body: JSON.stringify({
-          sessionId: "9c675b",
-          runId: "merge-fix",
-          hypothesisId: "Q",
-          location: "TableViewFloor.tsx:completeMerge",
-          message: "POS merge POST /tables/merge",
-          data: {
-            ok: res.ok,
-            status: res.status,
-            sourceTableIds: mergeSourceIds,
-            targetTableId: targetTable.id,
-            targetNumber: targetTable.tableNumber,
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
+
       if (res.ok) {
         setMergeSourceIds([]);
         setMergeMode(false);
@@ -309,8 +260,50 @@ export default function TableViewFloor({
     return Array.from(map.entries());
   }, [tables, statusFilter]);
 
+  // Floor Operational KPI Metrics
+  const totalTablesCount = tables.length;
+  const occupiedCount = useMemo(
+    () => tables.filter((t) => t.status === "RUNNING" || t.status === "RUNNING_KOT" || t.status === "PRINTED").length,
+    [tables]
+  );
+  const vacantCount = useMemo(() => tables.filter((t) => t.status === "VACANT").length, [tables]);
+  const printedCount = useMemo(() => tables.filter((t) => t.status === "PRINTED").length, [tables]);
+  const runningKotCount = useMemo(() => tables.filter((t) => t.status === "RUNNING_KOT").length, [tables]);
+  const activeRevenuePaise = useMemo(
+    () => tables.reduce((sum, t) => sum + (t.totalMinor || 0), 0),
+    [tables]
+  );
+
   return (
     <div className="table-view-container">
+      {/* Floor Operations KPI Ribbon */}
+      <div className="floor-kpi-ribbon">
+        <div className="kpi-stat-item">
+          <span className="kpi-label">TOTAL TABLES</span>
+          <strong className="kpi-val">{totalTablesCount}</strong>
+        </div>
+        <div className="kpi-stat-item">
+          <span className="kpi-label">OCCUPIED</span>
+          <strong className="kpi-val text-amber">{occupiedCount}</strong>
+        </div>
+        <div className="kpi-stat-item">
+          <span className="kpi-label">VACANT</span>
+          <strong className="kpi-val text-emerald">{vacantCount}</strong>
+        </div>
+        <div className="kpi-stat-item">
+          <span className="kpi-label">PRINTED BILL</span>
+          <strong className="kpi-val text-indigo">{printedCount}</strong>
+        </div>
+        <div className="kpi-stat-item">
+          <span className="kpi-label">RUNNING KOT</span>
+          <strong className="kpi-val text-purple">{runningKotCount}</strong>
+        </div>
+        <div className="kpi-stat-item revenue-item">
+          <span className="kpi-label">FLOOR RUNNING REVENUE</span>
+          <strong className="kpi-val text-revenue">₹{(activeRevenuePaise / 100).toFixed(2)}</strong>
+        </div>
+      </div>
+
       {/* Subheader Toolbar */}
       <div className="table-view-toolbar">
         <div className="toolbar-left">
@@ -376,6 +369,25 @@ export default function TableViewFloor({
         </div>
 
         <div className="toolbar-right">
+          <button
+            type="button"
+            className="btn-a2a-hud"
+            onClick={() => setIsA2aDrawerOpen(true)}
+            title="A2A Multi-Agent Telemetry & Mesh Status"
+          >
+            <span className="a2a-pulse-indicator" />
+            <span>A2A Agents (8/8)</span>
+          </button>
+
+          <button
+            type="button"
+            className="btn-held-drawer"
+            onClick={() => setIsHeldDrawerOpen(true)}
+            title="Parked / Held Orders"
+          >
+            <span>⏸ Held Bills</span>
+          </button>
+
           <button
             type="button"
             className="btn-toolbar-icon"
@@ -587,6 +599,29 @@ export default function TableViewFloor({
         )}
       </div>
 
+      {/* A2A Multi-Agent Status Drawer */}
+      <A2aAgentStatusDrawer
+        isOpen={isA2aDrawerOpen}
+        onClose={() => setIsA2aDrawerOpen(false)}
+      />
+
+      {/* Held Orders Drawer */}
+      <HeldOrdersDrawer
+        isOpen={isHeldDrawerOpen}
+        onClose={() => setIsHeldDrawerOpen(false)}
+        onRecallOrder={(held) => {
+          if (onSelectTable) {
+            onSelectTable({
+              id: "",
+              tableNumber: held.tableNumber,
+              capacity: 4,
+              section: "Main Dining",
+              status: "RUNNING",
+            });
+          }
+        }}
+      />
+
       {/* Move KOT Modal */}
       {isMoveKotOpen && (
         <MoveKotModal
@@ -722,6 +757,85 @@ export default function TableViewFloor({
           height: calc(100vh - 48px);
           background: #f1f5f9;
           font-family: inherit;
+        }
+
+        .floor-kpi-ribbon {
+          display: flex;
+          align-items: center;
+          gap: 16px;
+          padding: 8px 16px;
+          background: #0f172a;
+          color: #ffffff;
+          overflow-x: auto;
+          border-bottom: 1px solid #1e293b;
+        }
+        .kpi-stat-item {
+          display: flex;
+          flex-direction: column;
+          gap: 1px;
+          white-space: nowrap;
+        }
+        .kpi-label {
+          font-size: 0.65rem;
+          color: #94a3b8;
+          font-weight: 700;
+          letter-spacing: 0.03em;
+        }
+        .kpi-val {
+          font-size: 0.88rem;
+          font-weight: 800;
+          color: #ffffff;
+        }
+        .text-amber { color: #f59e0b; }
+        .text-emerald { color: #10b981; }
+        .text-indigo { color: #818cf8; }
+        .text-purple { color: #c084fc; }
+        .text-revenue { color: #34d399; font-size: 0.95rem; }
+        .revenue-item {
+          margin-left: auto;
+          background: rgba(16, 185, 129, 0.12);
+          padding: 3px 10px;
+          border-radius: 6px;
+          border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .btn-a2a-hud {
+          background: #1e293b;
+          color: #ffffff;
+          border: 1px solid #334155;
+          padding: 6px 12px;
+          border-radius: 6px;
+          font-size: 0.75rem;
+          font-weight: 700;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          cursor: pointer;
+          transition: all 0.15s;
+        }
+        .btn-a2a-hud:hover {
+          background: #334155;
+          border-color: #3b82f6;
+        }
+        .a2a-pulse-indicator {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: #10b981;
+          box-shadow: 0 0 6px rgba(16, 185, 129, 0.8);
+        }
+        .btn-held-drawer {
+          background: #eff6ff;
+          color: #1d4ed8;
+          border: 1px solid #bfdbfe;
+          padding: 6px 12px;
+          border-radius: 6px;
+          font-size: 0.75rem;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        .btn-held-drawer:hover {
+          background: #dbeafe;
         }
 
         .table-view-toolbar {

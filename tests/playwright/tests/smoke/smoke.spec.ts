@@ -8,7 +8,7 @@ test.describe("Smoke Tests: Core Platform Health & Navigation", () => {
     logger.step("[Test] Verifying Login Page Health");
     const loginPage = new LoginPage(page);
     await loginPage.goto();
-    await expect(page).toHaveTitle(/Kapmeta|PetPooja|POS|Login/i);
+    await expect(page).toHaveTitle(/KapMeta|Kapmeta|POS|Login/i);
   });
 
   test("SMOKE-02: Staff PIN authentication functions smoothly", async ({ page, loginAs }) => {

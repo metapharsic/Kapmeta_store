@@ -32,7 +32,7 @@ if (fs.existsSync(envPath)) {
 const MIGRATIONS_DIR = path.join(__dirname, '..', 'db', 'migrations');
 
 async function main() {
-  const databaseUrl = process.env.DATABASE_URL || 'postgresql://pos:pos@localhost:5432/petpooja';
+  const databaseUrl = process.env.DATABASE_URL || 'postgresql://pos:pos@localhost:5432/kapmeta';
   if (!databaseUrl) {
     console.error('[db:migrate] DATABASE_URL not set. Copy .env.example to .env first.');
     process.exit(1);

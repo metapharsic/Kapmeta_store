@@ -1,7 +1,7 @@
 # Task 6: Inventory & Recipe BOM Interactive Workflows Resolution Report
 
 ## Executive Summary
-This document provides a comprehensive post-implementation report for the diagnostic and fix of all interactive buttons, modals, and workflows on the **Inventory & Recipe BOM** module (`apps/pos-web/pages/inventory.tsx`) in the **PetPooja POS Platform**.
+This document provides a comprehensive post-implementation report for the diagnostic and fix of all interactive buttons, modals, and workflows on the **Inventory & Recipe BOM** module (`apps/pos-web/pages/inventory.tsx`) in the **KapMeta POS Platform**.
 
 All reported issues:
 1. Portion `+` / `−` button runtime crash (`TypeError: Cannot convert undefined to a BigInt`)

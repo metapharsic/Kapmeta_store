@@ -1,4 +1,4 @@
-# PetPooja POS Platform — AI Architecture Brain
+# KapMeta POS Platform — AI Architecture Brain
 
 **Target Audience:** Gemini, Claude, and Multi-Agent AI Coding Systems  
 **Purpose:** Rapid architectural reasoning, end-to-end component wiring, state model navigation, and autonomous diagnostic resolution.  
@@ -9,7 +9,7 @@
 
 ## 1. Cognitive Map & Navigation Index
 
-When constructing, wiring, or debugging features in PetPooja POS, consult the specialized guides in this directory:
+When constructing, wiring, or debugging features in KapMeta POS, consult the specialized guides in this directory:
 
 ```
 brain/

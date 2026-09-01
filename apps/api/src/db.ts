@@ -4,7 +4,7 @@ import fs from "fs";
 import path from "path";
 
 // ============================================================================
-// IN-MEMORY FALLBACK DB & SMART PRISMA CLIENT FOR PETPOOJA POS
+// IN-MEMORY FALLBACK DB & SMART PRISMA CLIENT FOR KAPMETA POS
 // ============================================================================
 
 const DEFAULT_ORG_ID = "00000000-0000-0000-0000-000000000000";

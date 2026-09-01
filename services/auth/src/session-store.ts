@@ -30,10 +30,10 @@ export class PrismaSessionStore {
   ): Promise<SessionRecord> {
     const session = await this.prisma.session.create({
       data: {
+        id: crypto.randomUUID(),
         userId,
         outletId,
         tokenHash: hashToken(refreshToken),
-        refresh_token_hash: hashToken(refreshToken),
         expiresAt,
         userAgent,
         ipAddress,

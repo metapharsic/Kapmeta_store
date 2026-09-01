@@ -1,6 +1,6 @@
 # Feature Build Plan — Tax Listing / Tax Master Screen
 
-**Project:** Kapmeta (PetPooja POS clone)
+**Project:** Kapmeta (KapMeta POS clone)
 **Screen:** Tax Master (outlet-level tax configuration list + edit)
 **Document status:** Draft build plan, implementation-ready pending stakeholder answers flagged in Section 11
 **Related docs:** DB schema draft (`taxes` table), API contracts doc, business-logic-rules doc (billing calc order of operations), decision-register addendum (DEC-013..024, esp. DEC-017)
@@ -48,7 +48,7 @@ Additional columns to add beyond what was captured, for completeness and to supp
 | Status (Active/Inactive) | Needed once soft-deactivation exists (Section 4); currently all 4 rows appear active with no visible toggle. |
 | Effective From | Needed once versioning exists (Section 5); shows the date the currently-displayed rate became active. |
 
-**Flag:** the screenshot shows no Add button, no Delete/deactivate action, and no filter/search control. Two possibilities: (a) these controls exist off-screen (above the table, in a header row not captured) or (b) PetPooja intentionally fixes the tax structure to a small government-tax set per outlet and only allows editing the rate/type of existing rows. This needs a second screen capture including the full header before build. Treated as **open question** — see Section 11.
+**Flag:** the screenshot shows no Add button, no Delete/deactivate action, and no filter/search control. Two possibilities: (a) these controls exist off-screen (above the table, in a header row not captured) or (b) KapMeta intentionally fixes the tax structure to a small government-tax set per outlet and only allows editing the rate/type of existing rows. This needs a second screen capture including the full header before build. Treated as **open question** — see Section 11.
 
 ### 2.2 Edit modal (triggered by pencil icon)
 
@@ -70,7 +70,7 @@ Save behavior: per Section 5, saving an edit to rate/type does not mutate the ex
 
 Not observed in the screenshot. Proposed for completeness, flagged as inferred:
 
-1. "+ Add Tax" button, presumably top-right of the table header (standard PetPooja/Kapmeta pattern seen on other master-data screens in this project).
+1. "+ Add Tax" button, presumably top-right of the table header (standard KapMeta/Kapmeta pattern seen on other master-data screens in this project).
 2. Opens the same modal as Section 2.2 in "create" mode, all fields empty/defaulted.
 3. On save, creates a new `taxes` row (version 1) scoped to the current outlet.
 4. No hard cap enforced in UI, though the business default is expected to remain 2 (CGST+SGST) × 2 (dine-in-backward, online-forward) = 4 rows for a typical Indian GST restaurant, plus optional VAT/cess rows for liquor-serving outlets.
@@ -283,7 +283,7 @@ Per project rule (CLAUDE.md): tax rates and tax rules are tenant/business data a
 
 ## 11. Open Questions / Flags for Stakeholder
 
-1. **DEC-017 (full ambiguity, unresolved):** Is Backward vs Forward tax mode meant by the vendor/product to be a single outlet-wide either/or setting (per the `outlet_billing_settings` helper text) or a per-tax-row/per-channel setting (per the Tax Master screen's simultaneous Backward+Forward rows)? Section 7.1 proposes a resolution (per-row/per-channel) and a theory for why the two surfaces appear to conflict, but this needs explicit confirmation from whoever owns the PetPooja behavioral parity requirement, and/or compliance sign-off if Kapmeta is diverging from PetPooja's actual (possibly buggy or legacy) behavior rather than replicating it.
+1. **DEC-017 (full ambiguity, unresolved):** Is Backward vs Forward tax mode meant by the vendor/product to be a single outlet-wide either/or setting (per the `outlet_billing_settings` helper text) or a per-tax-row/per-channel setting (per the Tax Master screen's simultaneous Backward+Forward rows)? Section 7.1 proposes a resolution (per-row/per-channel) and a theory for why the two surfaces appear to conflict, but this needs explicit confirmation from whoever owns the KapMeta behavioral parity requirement, and/or compliance sign-off if Kapmeta is diverging from KapMeta's actual (possibly buggy or legacy) behavior rather than replicating it.
 2. **Add/Delete tax rows:** the captured screenshot shows no Add button and no delete/deactivate action — need a second screen capture (full header, and an attempt to trigger add/delete in the reference product) to confirm whether Kapmeta should build unrestricted add/delete or a fixed 4-row (or N-row) government-tax structure with only rate/type editable.
 3. **Non-GST tax types in v1:** does the initial release need to support VAT/cess (liquor-serving outlets), or is v1 scoped to GST-only (CGST/SGST) with VAT/cess deferred to a later milestone? Section 7.3 shows the schema already supports it at no extra cost, but UI/QA scope should be confirmed.
 4. **Order-time tax-lock instant:** confirm whether the canonical moment for resolving "which tax version applies" to an order is order-creation time (KOT punch) or bill-settlement time (Section 7.2) — affects orders that straddle a rate-change boundary.

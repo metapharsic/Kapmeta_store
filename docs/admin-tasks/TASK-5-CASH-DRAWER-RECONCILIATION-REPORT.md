@@ -1,6 +1,6 @@
 # Task 5: Cash Drawer & Petty Cash Reconciliation UI — Completion Report
 
-**Project:** PetPooja POS (Kapmeta) &bull; **Domain:** Admin, Finance & Audit &bull; **Date:** 2026-08-25 &bull; **Status:** Completed & Verified
+**Project:** KapMeta POS (Kapmeta) &bull; **Domain:** Admin, Finance & Audit &bull; **Date:** 2026-08-25 &bull; **Status:** Completed & Verified
 
 ---
 
@@ -13,7 +13,7 @@ Task 5 delivered:
    - `GET /finance/cash-drawer`: Aggregates opening float, cash order collections, cash refunds, and petty cash expenses to compute the exact expected cash drawer balance and shift status.
    - `POST /finance/petty-cash`: Records itemized petty cash expenses and writes immutable audit log entries.
    - `POST /finance/cash-drawer/reconcile`: Records the end-of-shift physical cash count and calculates the exact discrepancy/variance (`Balanced`, `Surplus`, or `Shortage`).
-2. An interactive **Cash Drawer & Petty Cash Reconciliation Panel** on [`apps/pos-web/pages/finance.tsx`](file:///c:/Users/Hamza/Downloads/PetPooja/PetPooja/apps/pos-web/pages/finance.tsx) with:
+2. An interactive **Cash Drawer & Petty Cash Reconciliation Panel** on [`apps/pos-web/pages/finance.tsx`](file:///c:/Users/Hamza/Downloads/KapMeta/KapMeta/apps/pos-web/pages/finance.tsx) with:
    - Real-time 5-KPI balance overview (`Opening Float`, `Cash Sales Inflow`, `Petty Cash Outflow`, `Expected In Drawer`, `Actual Counted & Variance Status`).
    - **`💸 Log Petty Cash Outflow` Modal** with category selection, vendor name, amount in Rupees, and purpose description.
    - **Today's Petty Cash Outflow Ledger Table** showing timestamp, category, recipient, and amount.
@@ -54,9 +54,9 @@ Task 5 delivered:
 
 | File | Changes Made |
 | :--- | :--- |
-| [`apps/api/src/routes/finance.ts`](file:///c:/Users/Hamza/Downloads/PetPooja/PetPooja/apps/api/src/routes/finance.ts) | Implemented `GET /cash-drawer`, `POST /petty-cash`, and `POST /cash-drawer/reconcile` routes with audit log tracking and permission alignment. |
-| [`apps/pos-web/pages/finance.tsx`](file:///c:/Users/Hamza/Downloads/PetPooja/PetPooja/apps/pos-web/pages/finance.tsx) | Added `CashDrawerReconciliationApi` and `PettyCashExpenseApi` types, state hooks, Cash Drawer KPI cards, Petty Cash Ledger, Log Expense Modal, and Reconcile Modal. |
-| [`CHECKPOINT.md`](file:///c:/Users/Hamza/Downloads/PetPooja/PetPooja/CHECKPOINT.md) | Recorded completion of Task 5. |
+| [`apps/api/src/routes/finance.ts`](file:///c:/Users/Hamza/Downloads/KapMeta/KapMeta/apps/api/src/routes/finance.ts) | Implemented `GET /cash-drawer`, `POST /petty-cash`, and `POST /cash-drawer/reconcile` routes with audit log tracking and permission alignment. |
+| [`apps/pos-web/pages/finance.tsx`](file:///c:/Users/Hamza/Downloads/KapMeta/KapMeta/apps/pos-web/pages/finance.tsx) | Added `CashDrawerReconciliationApi` and `PettyCashExpenseApi` types, state hooks, Cash Drawer KPI cards, Petty Cash Ledger, Log Expense Modal, and Reconcile Modal. |
+| [`CHECKPOINT.md`](file:///c:/Users/Hamza/Downloads/KapMeta/KapMeta/CHECKPOINT.md) | Recorded completion of Task 5. |
 
 ---
 

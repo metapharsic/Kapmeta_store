@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireAuth, requirePermission, checkPermissionDirect, type AuthedRequest } from "../middleware/require-auth";
+import { requireAuth, checkPermissionDirect, type AuthedRequest } from "../middleware/require-auth";
 import { prisma } from "../prisma";
 import {
   createOrder,
@@ -27,7 +27,7 @@ export const ordersRouter = Router();
 ordersRouter.get("/orders", requireAuth, async (req: AuthedRequest, res) => {
   try {
     const outletId = req.auth!.outletId;
-    const { status, channel, orderType, page, limit, fromDate, toDate, search, orderNumber } = req.query;
+    const { status, channel, orderType, page, limit, fromDate, toDate } = req.query;
 
     const filter: any = {};
     if (status) filter.status = status as OrderStatus;
@@ -37,38 +37,9 @@ ordersRouter.get("/orders", requireAuth, async (req: AuthedRequest, res) => {
     if (limit) filter.limit = Number(limit);
     if (fromDate) filter.fromDate = new Date(String(fromDate));
     if (toDate) filter.toDate = new Date(String(toDate));
-    if (search || orderNumber) {
-      filter.orderNumberSearch = String(search || orderNumber).trim();
-    }
 
     const orders = await listOrders(outletId, filter, orderRepo);
-    const serialized = await Promise.all(
-      orders.map(async (o: any) => {
-        let customerPhone = null;
-        let customerAddress = null;
-        if (o.id) {
-          try {
-            const ord = await prisma.order.findUnique({
-              where: { id: o.id },
-              include: { customer: true },
-            });
-            if (ord?.customer) {
-              customerPhone = ord.customer.phone || null;
-              customerAddress = ord.customer.address || null;
-            }
-          } catch {}
-        }
-        return {
-          ...o,
-          customerPhone,
-          customerAddress,
-          grandTotalMinor: o.grandTotalMinor ? o.grandTotalMinor.toString() : "0",
-          taxTotalMinor: o.taxTotalMinor ? o.taxTotalMinor.toString() : "0",
-          discountTotalMinor: o.discountTotalMinor ? o.discountTotalMinor.toString() : "0",
-        };
-      })
-    );
-    res.status(200).json(serialized);
+    res.status(200).json(orders);
   } catch (err) {
     console.error("Error listing orders:", err);
     res.status(500).json({ error: "Failed to list orders" });
@@ -79,46 +50,6 @@ ordersRouter.get("/orders", requireAuth, async (req: AuthedRequest, res) => {
 ordersRouter.post("/orders", requireAuth, async (req: AuthedRequest, res) => {
   try {
     const outletId = req.auth!.outletId;
-<<<<<<< HEAD
-    const userId = req.auth!.userId;
-    const { isPaid, paymentMethod, diningTableId, tableNumber, ...rest } = req.body;
-
-    // Resolve diningTableId from tableNumber if not directly provided
-    let resolvedTableId = diningTableId;
-    if (!resolvedTableId && tableNumber) {
-      const foundTable = await prisma.diningTable.findFirst({
-        where: {
-          outletId,
-          tableNumber: { equals: String(tableNumber).trim(), mode: "insensitive" },
-        },
-      });
-      if (foundTable) {
-        resolvedTableId = foundTable.id;
-      }
-    }
-
-    const rawLines = req.body.lines || req.body.items || [];
-    const lines = Array.isArray(rawLines)
-      ? rawLines.map((it: any) => ({
-          menuItemId: String(it.menuItemId || it.id || ""),
-          quantity: Number(it.quantity || 1),
-          notes: it.notes || null,
-          course: it.course || undefined,
-          seatNumber: it.seatNumber || undefined,
-          modifierOptionIds: Array.isArray(it.modifierOptionIds) ? it.modifierOptionIds : [],
-        }))
-      : [];
-
-    const input: CreateOrderInput = {
-      outletId,
-      terminalNumber: req.body.terminalNumber || "TERM-01",
-      orderType: req.body.orderType || "DINE_IN",
-      idempotencyKey: req.body.idempotencyKey || `pos-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-      lines,
-      diningTableId: resolvedTableId || undefined,
-      waiterId: req.body.waiterId || undefined,
-      customerId: req.body.customerId || undefined,
-=======
     const body = req.body;
 
     // Normalize lines
@@ -141,26 +72,16 @@ ordersRouter.post("/orders", requireAuth, async (req: AuthedRequest, res) => {
       return res.status(400).json({ error: "Order must have at least one line item" });
     }
 
-    // Auto-resolve diningTableId if tableNumber is provided but diningTableId is missing
+    // Auto-resolve diningTableId if tableNumber or diningTableId is provided
     let diningTableId = body.diningTableId || undefined;
-    if (!diningTableId && body.tableNumber) {
-      const table = await prisma.diningTable.findFirst({
-        where: {
-          outletId,
-          tableNumber: String(body.tableNumber),
-        },
-      });
-      if (table) {
-        diningTableId = table.id;
-      }
-    }
-    if (diningTableId) {
-      const anchor = await resolveAnchorTable(prisma, outletId, diningTableId);
+    const tableIdentifier = diningTableId || body.tableNumber;
+    if (tableIdentifier) {
+      const anchor = await resolveAnchorTable(prisma, outletId, tableIdentifier);
       if (anchor) {
         diningTableId = anchor.id;
-        if (!body.tableNumber) {
-          body.tableNumber = anchor.tableNumber;
-        }
+        body.tableNumber = body.tableNumber || anchor.tableNumber;
+      } else {
+        diningTableId = undefined;
       }
     }
 
@@ -235,101 +156,15 @@ ordersRouter.post("/orders", requireAuth, async (req: AuthedRequest, res) => {
       diningTableId,
       customerId: body.customerId || undefined,
       waiterId: body.waiterId || undefined,
->>>>>>> hamza/main
     };
 
     const result = await createOrder(input, menuPriceLookup, orderRepo, modifierPriceLookup);
 
-<<<<<<< HEAD
-    // Link or create customer record if customer info provided
-    if (result.id && (req.body.customerPhone || req.body.customerName)) {
-      try {
-        let customer = await prisma.customer.findFirst({
-          where: {
-            outletId,
-            phone: req.body.customerPhone || "0000000000",
-          },
-        });
-        if (!customer) {
-          customer = await prisma.customer.create({
-            data: {
-              outletId,
-              firstName: req.body.customerName || "Customer",
-              phone: req.body.customerPhone || null,
-              address: [req.body.customerAddress, req.body.customerLocality].filter(Boolean).join(", ") || null,
-            },
-          });
-        }
-        await prisma.order.update({
-          where: { id: result.id },
-          data: { customerId: customer.id },
-        });
-      } catch (custErr) {
-        console.warn("Customer linking failed:", custErr);
-      }
-    }
-
-    // Automatically generate KOT tickets for the kitchen KDS
-    if (result.id) {
-      await onOrderConfirmed(result.id, prisma).catch(() => {});
-      try {
-        const { broadcast } = await import("../websockets");
-        broadcast("kot.created", { orderId: result.id });
-      } catch {}
-    }
-
-    // If order was created as immediately paid at POS counter (Print & EBill with It's Paid)
-    if (isPaid && result.id) {
-      try {
-        const orderRecord = await prisma.order.findUnique({ where: { id: result.id } });
-        const grandTotalPaise = orderRecord?.grandTotal || 0n;
-
-        // Record payment
-        await prisma.payment.create({
-          data: {
-            outletId,
-            orderId: result.id,
-            amount: grandTotalPaise,
-            method: paymentMethod || "CASH",
-            status: "CAPTURED",
-          },
-        }).catch(() => {});
-
-        // Mark order as COMPLETED and vacate table
-        await prisma.order.update({
-          where: { id: result.id },
-          data: { status: "COMPLETED" },
-        });
-
-        if (resolvedTableId) {
-          await prisma.diningTable.update({
-            where: { id: resolvedTableId },
-            data: { status: "VACANT" },
-          }).catch(() => {});
-        }
-
-        await onOrderCompleted(result.id, prisma).catch(() => {});
-      } catch (payErr) {
-        console.warn("Auto-settle on create encountered non-fatal error:", payErr);
-      }
-    }
-
-    const finalOrder = await prisma.order.findUnique({
-      where: { id: result.id },
-      include: { kotTickets: true },
-    }).catch(() => null);
-
-    res.status(201).json({
-      ...result,
-      orderNumber: finalOrder?.orderNumber || "",
-      kotTicketNumber: finalOrder?.kotTickets?.[0]?.ticketNumber || "",
-=======
-    if (diningTableId || body.tableNumber) {
+    if (diningTableId) {
       await prisma.order.update({
         where: { id: result.id },
         data: {
-          diningTableId: diningTableId || undefined,
-          table_number: body.tableNumber ? String(body.tableNumber) : undefined,
+          diningTableId,
         },
       }).catch(() => {});
     }
@@ -430,7 +265,6 @@ ordersRouter.post("/orders", requireAuth, async (req: AuthedRequest, res) => {
       subtotalMinor: orderDetail ? String(orderDetail.subtotalMinor) : "0",
       diningTableId,
       items: orderDetail?.items || [],
->>>>>>> hamza/main
     });
   } catch (err: any) {
     console.error("Error creating order:", err);
@@ -441,47 +275,6 @@ ordersRouter.post("/orders", requireAuth, async (req: AuthedRequest, res) => {
   }
 });
 
-<<<<<<< HEAD
-// GET /orders/by-table/:tableId/active - Get live active order for table
-ordersRouter.get("/orders/by-table/:tableId/active", requireAuth, async (req: AuthedRequest, res) => {
-  try {
-    const outletId = req.auth!.outletId;
-    const tableParam = req.params.tableId;
-
-    // First resolve the exact dining table record if exists
-    const table = await prisma.diningTable.findFirst({
-      where: {
-        outletId,
-        OR: [
-          { id: tableParam },
-          { id: tableParam.toLowerCase() },
-          { tableNumber: tableParam },
-          { tableNumber: tableParam.toUpperCase() },
-          { tableNumber: tableParam.toLowerCase() },
-        ],
-      },
-    });
-
-    const targetTableId = table?.id || tableParam;
-    const targetTableNumber = table?.tableNumber || tableParam;
-
-    // Search by table ID or tableNumber
-    const liveOrder = await prisma.order.findFirst({
-      where: {
-        outletId,
-        OR: [
-          { diningTableId: targetTableId },
-          { diningTableId: targetTableId.toLowerCase() },
-          { diningTableId: targetTableNumber },
-          { diningTableId: targetTableNumber.toUpperCase() },
-          { diningTableId: targetTableNumber.toLowerCase() },
-          { diningTableId: `tbl_${targetTableNumber.toLowerCase()}` },
-          { diningTable: { tableNumber: targetTableNumber } },
-          { diningTable: { tableNumber: targetTableNumber.toUpperCase() } },
-          { diningTable: { id: targetTableId } },
-        ],
-        status: { notIn: ["COMPLETED", "CANCELLED", "FAILED", "VOIDED", "SETTLED"] },
-=======
 // GET /orders/advance - List scheduled advance / future orders
 ordersRouter.get("/orders/advance", requireAuth, async (req: AuthedRequest, res) => {
   try {
@@ -497,22 +290,10 @@ ordersRouter.get("/orders/advance", requireAuth, async (req: AuthedRequest, res)
       include: {
         orderItems: true,
         diningTable: true,
->>>>>>> hamza/main
       },
       orderBy: { createdAt: "desc" },
     });
 
-<<<<<<< HEAD
-    if (!liveOrder) {
-      return res.status(404).json({ error: "No active order for table" });
-    }
-
-    const detail = await getOrderDetail(outletId, liveOrder.id, orderRepo);
-    res.status(200).json(detail);
-  } catch (err) {
-    console.error("Error fetching live order for table:", err);
-    res.status(500).json({ error: "Failed to fetch live order" });
-=======
     res.status(200).json(advanceOrders);
   } catch (err) {
     console.error("Error fetching advance orders:", err);
@@ -540,7 +321,6 @@ ordersRouter.get("/orders/live", requireAuth, async (req: AuthedRequest, res) =>
   } catch (err) {
     console.error("Error fetching live orders:", err);
     res.status(500).json({ error: "Failed to fetch live orders" });
->>>>>>> hamza/main
   }
 });
 
@@ -640,11 +420,6 @@ ordersRouter.patch("/orders/:id/status", requireAuth, async (req: AuthedRequest,
       return res.status(400).json({ error: "status or toStatus is required" });
     }
 
-<<<<<<< HEAD
-    let result = await transitionOrder(
-      req.params.id,
-      toStatus as OrderStatus,
-=======
     const orderId = req.params.id;
     const order = await prisma.order.findUnique({ where: { id: orderId } });
     if (!order) {
@@ -662,46 +437,12 @@ ordersRouter.patch("/orders/:id/status", requireAuth, async (req: AuthedRequest,
     const result = await transitionOrder(
       orderId,
       mappedTarget as OrderStatus,
->>>>>>> hamza/main
       orderRepo,
       userId,
       reasonCode,
       approverUserId
     );
 
-<<<<<<< HEAD
-    // Direct Cashier POS bill settlement override:
-    // If cashier settles/completes a bill directly from POS register, allow transition to COMPLETED
-    if (!result.ok && (toStatus === "COMPLETED" || toStatus === "SETTLED")) {
-      await prisma.order.update({
-        where: { id: req.params.id },
-        data: { status: "COMPLETED" },
-      });
-      await prisma.orderStatusHistory.create({
-        data: {
-          outletId: req.auth!.outletId,
-          orderId: req.params.id,
-          status: "COMPLETED",
-        },
-      }).catch(() => {});
-      result = { ok: true, newStatus: "COMPLETED" };
-    } else if (!result.ok) {
-      return res.status(400).json({ error: `Illegal transition: ${result.reason}` });
-    }
-
-    // Lifecycle triggers
-    if (toStatus === "CONFIRMED") {
-      await onOrderConfirmed(req.params.id, prisma);
-    } else if (toStatus === "COMPLETED" || toStatus === "SETTLED") {
-      await onOrderCompleted(req.params.id, prisma);
-      // Reset table to VACANT if Dine-In
-      const order = await prisma.order.findUnique({ where: { id: req.params.id } });
-      if (order?.diningTableId) {
-        await prisma.diningTable.update({
-          where: { id: order.diningTableId },
-          data: { status: "VACANT" },
-        }).catch(() => {});
-=======
     if (mappedTarget === "CONFIRMED" || mappedTarget === "KOT_CREATED") {
       await onOrderConfirmed(orderId, prisma).catch(() => {});
     }
@@ -709,7 +450,6 @@ ordersRouter.patch("/orders/:id/status", requireAuth, async (req: AuthedRequest,
     if (mappedTarget === "COMPLETED") {
       if (order.diningTableId) {
         await dissolveMergeGroupForTable(prisma, order.outletId, order.diningTableId).catch(() => {});
->>>>>>> hamza/main
       }
     }
 
@@ -1066,10 +806,16 @@ ordersRouter.get("/orders/by-table/:tableId/active", requireAuth, async (req: Au
     const tableId = req.params.tableId;
     const anchor = await resolveAnchorTable(prisma, outletId, tableId);
     const memberIds = await expandMergeMemberIds(prisma, outletId, [anchor?.id || tableId]);
+    const candidateIds = Array.from(new Set([
+      anchor?.id,
+      tableId,
+      tableId === "B1" ? "tbl-07" : (tableId === "tbl-07" ? "B1" : undefined),
+      ...memberIds,
+    ].filter(Boolean) as string[]));
     const liveOrders = await findLiveOrdersOnTables(
       prisma,
       outletId,
-      memberIds.length > 0 ? memberIds : [anchor?.id || tableId]
+      candidateIds
     );
     const order = liveOrders[0];
 

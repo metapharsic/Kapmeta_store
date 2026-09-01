@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
 import { authedFetch, useAuthGuard } from "../lib/auth";
-import PetPoojaHeader from "../components/PetPoojaHeader";
+import KapMetaHeader from "../components/KapMetaHeader";
 import TableViewFloor from "../components/TableViewFloor";
 import AddTableModal from "../components/AddTableModal";
 
@@ -201,7 +201,7 @@ export default function TableManagement() {
         <title>Floor Plan & Table Management - KapMeta POS</title>
       </Head>
 
-      <PetPoojaHeader
+      <KapMetaHeader
         outletName={outletName}
         outletCode={outletCode}
         onNewOrder={() => router.push("/")}

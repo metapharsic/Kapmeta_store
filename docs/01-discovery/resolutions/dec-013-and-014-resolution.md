@@ -1,6 +1,6 @@
 # DEC-013 and DEC-014 Resolution — Kapmeta
 
-**Project:** Kapmeta (restaurant POS clone of PetPooja)
+**Project:** Kapmeta (restaurant POS clone of KapMeta)
 **Source material:** 86 validated reference-app screenshots, single outlet "Hotel Kapila", LAN client-server topology, app v126.0.1
 **Date:** 2026-08-21
 **Prepared against:** Decision-register addendum (DEC-013–DEC-024), artifact-03 (Live Feed), artifact-08 (Day Summary / Item Report), phase-07-online-integration.md, phase-10-11-crm-reporting.md
@@ -48,13 +48,13 @@ Artifact-08 already proposes an inferred full schema — `id, order_id, order_it
 
 ### Why this is not being force-closed
 
-The only way to obtain ground truth here is a literal re-capture: returning to the reference PetPooja app and scrolling the Day Summary screen further to record the remaining columns and at least one data row. That requires physical/live access to the reference app, which is outside what this planning exercise can do from within existing screenshots and drafted documents. Declaring DEC-014 "closed" on the strength of a plausible inferred schema would misrepresent the actual evidence — the honest state is that this specific field set is unverified, and no amount of domain reasoning substitutes for looking at the real screen.
+The only way to obtain ground truth here is a literal re-capture: returning to the reference KapMeta app and scrolling the Day Summary screen further to record the remaining columns and at least one data row. That requires physical/live access to the reference app, which is outside what this planning exercise can do from within existing screenshots and drafted documents. Declaring DEC-014 "closed" on the strength of a plausible inferred schema would misrepresent the actual evidence — the honest state is that this specific field set is unverified, and no amount of domain reasoning substitutes for looking at the real screen.
 
 ### Converted action item (concrete and schedulable)
 
 DEC-014 remains **OPEN**, with the following action item attached:
 
-> Re-run the screenshot capture session against the reference PetPooja app. Navigate to the Day Summary screen and scroll the "Sales Return Orders" section fully to the bottom, capturing:
+> Re-run the screenshot capture session against the reference KapMeta app. Navigate to the Day Summary screen and scroll the "Sales Return Orders" section fully to the bottom, capturing:
 > 1. The complete column header row (not just "Order" / "Total (₹)").
 > 2. At least one populated data row, if any test/demo sales-return records exist in the reference app's sample data for outlet "Hotel Kapila".
 

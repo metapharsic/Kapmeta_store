@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 
 export interface PendingOrderItem {
@@ -52,72 +52,28 @@ export interface PendingOrderDetailData {
 }
 
 export interface PendingOrderDetailViewProps {
-  initialData?: PendingOrderDetailData;
+  initialData?: PendingOrderDetailData | null;
   onBack?: () => void;
   onAcceptOrder?: () => void;
   onFoodReady?: () => void;
 }
 
-// Exact Reference Dataset matching both top and bottom screenshots
-export const REFERENCE_PENDING_ORDER: PendingOrderDetailData = {
-  pendingOrderNo: "40469",
-  orderFrom: "Swiggy - 246261867102711",
-  customerName: "Ranveer",
-  customerPhone: "+91 98765 43210",
-  customerAddress: null,
-  noOfPersons: null,
-  orderType: "Delivery",
-  paymentType: "Online",
-  advancedOrder: "No",
-  preorderDateTime: "2026-08-21 11:34:28",
-  grandTotal: "236.25",
-  orderStatus: "Bill Created",
-  customerNote: "Don't send cutlery",
-  discountInfo: "Reward Type : 70% off",
-  items: [
-    {
-      id: "it_1",
-      name: "Poori",
-      specialNote: "--",
-      availability: "Yes",
-      quantity: 2,
-      unitPrice: 158.7,
-      totalPrice: 317.4,
-    },
-  ],
-  discountAmount: "92.4",
-  deliveryCharge: null,
-  containerCharge: "0",
-  serviceCharge: "0",
-  gstPaymentDetails: [
-    {
-      id: "gst_1",
-      itemName: "Poori",
-      gstPaidBy: "Swiggy",
-      gstValuePercent: "CGST : 2.5,SGST : 2.5",
-      gstAmount: "11.25",
-    },
-  ],
-  taxDetails: [
-    {
-      id: "tax_1",
-      itemName: "",
-      paidBy: "Swiggy",
-      valuePercent: "CGST : 2.5,SGST : 2.5",
-      amount: "11.25",
-    },
-  ],
-};
+// Clean reference definition - live orders are fetched from PostgreSQL
+export const REFERENCE_PENDING_ORDER: PendingOrderDetailData | null = null;
 
 export default function PendingOrderDetailView({
-  initialData = REFERENCE_PENDING_ORDER,
+  initialData = null,
   onBack,
   onAcceptOrder,
   onFoodReady,
 }: PendingOrderDetailViewProps) {
   const router = useRouter();
-  const [data, setData] = useState<PendingOrderDetailData>(initialData);
+  const [data, setData] = useState<PendingOrderDetailData | null>(initialData);
   const [showCallModal, setShowCallModal] = useState(false);
+
+  useEffect(() => {
+    setData(initialData);
+  }, [initialData]);
 
   const handleBack = () => {
     if (onBack) {
@@ -131,8 +87,29 @@ export default function PendingOrderDetailView({
     setShowCallModal(true);
   };
 
-  const gstLines = data.gstPaymentDetails || REFERENCE_PENDING_ORDER.gstPaymentDetails || [];
-  const taxLines = data.taxDetails || REFERENCE_PENDING_ORDER.taxDetails || [];
+  if (!data) {
+    return (
+      <div className="kapmeta-pending-order-detail-root" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "60vh" }}>
+        <div style={{ textAlign: "center", padding: "40px", background: "#ffffff", borderRadius: "12px", border: "1px solid #e2e8f0", maxWidth: "450px" }}>
+          <span style={{ fontSize: "2.8rem" }}>📦</span>
+          <h2 style={{ fontSize: "1.2rem", fontWeight: 800, color: "#1e293b", margin: "16px 0 8px" }}>Order Not Found</h2>
+          <p style={{ color: "#64748b", fontSize: "0.85rem", marginBottom: "20px" }}>
+            The requested order could not be retrieved from the database.
+          </p>
+          <button
+            type="button"
+            onClick={handleBack}
+            style={{ background: "#4f46e5", color: "#ffffff", padding: "10px 20px", borderRadius: "6px", border: "none", cursor: "pointer", fontWeight: 700 }}
+          >
+            ← Back to Orders Register
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const gstLines = data.gstPaymentDetails || [];
+  const taxLines = data.taxDetails || [];
 
   const totalGstAmount = gstLines.reduce(
     (sum, g) => sum + Number(g.gstAmount || 0),
@@ -144,7 +121,7 @@ export default function PendingOrderDetailView({
   );
 
   return (
-    <div className="petpooja-pending-order-detail-root">
+    <div className="kapmeta-pending-order-detail-root">
       {/* Sub-Header Navigation Bar */}
       <div className="pending-order-subbar">
         <h1 className="pending-order-heading">Pending Order Detail</h1>
@@ -435,7 +412,7 @@ export default function PendingOrderDetailView({
       )}
 
       <style jsx>{`
-        .petpooja-pending-order-detail-root {
+        .kapmeta-pending-order-detail-root {
           display: flex;
           flex-direction: column;
           height: calc(100vh - 42px);

@@ -15,7 +15,7 @@ export const config = {
     redis: Number(process.env.REDIS_PORT || 6379),
   },
   database: {
-    url: process.env.DATABASE_URL || 'postgresql://pos:pos@localhost:5432/petpooja',
+    url: process.env.DATABASE_URL || 'postgresql://pos:pos@localhost:5432/kapmeta',
     poolMax: Number(process.env.DATABASE_POOL_MAX || 20),
   },
   redis: {

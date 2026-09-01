@@ -1,6 +1,6 @@
 # Task 2: Live Table Occupancy Rate Metric — Completion Report
 
-**Project:** PetPooja POS (Kapmeta) &bull; **Domain:** Admin & Floor Operations &bull; **Date:** 2026-08-25 &bull; **Status:** Completed & Verified
+**Project:** KapMeta POS (Kapmeta) &bull; **Domain:** Admin & Floor Operations &bull; **Date:** 2026-08-25 &bull; **Status:** Completed & Verified
 
 ---
 
@@ -29,9 +29,9 @@ $$\text{Seating Capacity Utilization (\%)} = \left(\frac{\text{Seated Guests on 
 
 | File | Changes Made |
 | :--- | :--- |
-| [`apps/api/src/routes/tables.ts`](file:///c:/Users/Hamza/Downloads/PetPooja/PetPooja/apps/api/src/routes/tables.ts) | Implemented `GET /tables/occupancy` endpoint computing live occupancy, vacant tables, capacity utilization, and section aggregations. |
-| [`apps/pos-web/pages/admin.tsx`](file:///c:/Users/Hamza/Downloads/PetPooja/PetPooja/apps/pos-web/pages/admin.tsx) | Added `TableOccupancyApi` types, `tableOccupancy` state, integrated `/tables/occupancy` in dashboard load effect, and rendered the active KPI card. |
-| [`CHECKPOINT.md`](file:///c:/Users/Hamza/Downloads/PetPooja/PetPooja/CHECKPOINT.md) | Recorded completion of Task 2. |
+| [`apps/api/src/routes/tables.ts`](file:///c:/Users/Hamza/Downloads/KapMeta/KapMeta/apps/api/src/routes/tables.ts) | Implemented `GET /tables/occupancy` endpoint computing live occupancy, vacant tables, capacity utilization, and section aggregations. |
+| [`apps/pos-web/pages/admin.tsx`](file:///c:/Users/Hamza/Downloads/KapMeta/KapMeta/apps/pos-web/pages/admin.tsx) | Added `TableOccupancyApi` types, `tableOccupancy` state, integrated `/tables/occupancy` in dashboard load effect, and rendered the active KPI card. |
+| [`CHECKPOINT.md`](file:///c:/Users/Hamza/Downloads/KapMeta/KapMeta/CHECKPOINT.md) | Recorded completion of Task 2. |
 
 ---
 

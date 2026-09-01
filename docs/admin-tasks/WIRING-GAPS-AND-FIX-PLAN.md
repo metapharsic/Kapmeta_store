@@ -105,7 +105,7 @@ Kitchen GET uses `order.diningTable.tableNumber`, so a successful transfer is co
 - Live ADMIN role still missing `finance.report` (nav uses `report.read` workaround).
 - Channel accounts = 0 until connected.
 - Login quick roles hardcode emails/passwords/outlet id.
-- `PetPoojaHeader` default outlet name `Hotel Kapila`.
+- `KapMetaHeader` default outlet name `Hotel Kapila`.
 - Finance opening float fallback `200000`.
 - GET `/tables/sections` injects fake section names if empty.
 - Summary reporting tables unused.

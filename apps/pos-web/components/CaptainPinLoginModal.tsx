@@ -28,7 +28,7 @@ export default function CaptainPinLoginModal({
   isOpen,
   onClose,
   onSuccess,
-  outletId = "a0deb015-8ef8-4ef5-aac7-6e91c9da6b5b",
+  outletId = "11111111-1111-1111-1111-111111111111",
 }: CaptainPinLoginModalProps) {
   const router = useRouter();
   const [selectedStaff, setSelectedStaff] = useState<StaffProfile>(STAFF_LIST[0]);

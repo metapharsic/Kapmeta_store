@@ -1,6 +1,6 @@
 # Kapmeta Design System (Phase 1)
 
-Source of truth for visual tokens and components consumed by `packages/ui-kit`. Companion file `tokens.json` holds machine-readable values; this document explains intent and usage rules. Visual language is derived from 86 captured screenshots of the reference PetPooja app plus the locked Phase 0 data model decisions (canonical `order_status` enum: open/running/printed/paid/cancelled, separate `kot_sent` boolean; money fields `subtotal_amount` / `tax_amount` / `discount_amount` / `grand_total_amount`).
+Source of truth for visual tokens and components consumed by `packages/ui-kit`. Companion file `tokens.json` holds machine-readable values; this document explains intent and usage rules. Visual language is derived from 86 captured screenshots of the reference KapMeta app plus the locked Phase 0 data model decisions (canonical `order_status` enum: open/running/printed/paid/cancelled, separate `kot_sent` boolean; money fields `subtotal_amount` / `tax_amount` / `discount_amount` / `grand_total_amount`).
 
 ## 1. Color Palette
 

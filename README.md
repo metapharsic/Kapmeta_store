@@ -1,4 +1,4 @@
-# Kapmeta PetPooja POS & Operations Platform
+# Kapmeta KapMeta POS & Operations Platform
 
 > **Enterprise-Grade, Multi-Outlet Restaurant POS, Kitchen Engine (KDS), Inventory BOM, GST Finance, and Omni-Channel Aggregator Platform.**
 
@@ -27,7 +27,7 @@
 
 ## 🌟 System Overview
 
-The **Kapmeta PetPooja POS Platform** is an enterprise restaurant management system designed for speed, resilience, and operational scalability. It bridges front-of-house (Captain table ordering, Cashier 3-column billing), back-of-house (Kitchen Display System with station routing), supply chain (Bill of Materials depletion & Purchase Orders), and financial reconciliation (Indian GST tax engine, Shift Z-Reports, Tips distribution).
+The **Kapmeta KapMeta POS Platform** is an enterprise restaurant management system designed for speed, resilience, and operational scalability. It bridges front-of-house (Captain table ordering, Cashier 3-column billing), back-of-house (Kitchen Display System with station routing), supply chain (Bill of Materials depletion & Purchase Orders), and financial reconciliation (Indian GST tax engine, Shift Z-Reports, Tips distribution).
 
 ```mermaid
 graph TD
@@ -171,7 +171,7 @@ In accordance with our zero-hardcoding rules:
 ├── scripts/                 # Platform launcher, dynamic seeds & backup scripts
 ├── CHECKPOINT.md            # Verified build checkpoints & runtime baselines
 ├── CHANGELOG.md             # Chronological history of platform releases
-└── Start_PetPooja.bat       # Production/development platform launcher
+└── Start_KapMeta.bat       # Production/development platform launcher
 ```
 
 ---
@@ -205,7 +205,7 @@ npm run db:seed
 ### 5. Launch All Services
 ```bash
 # Windows one-click launcher
-./Start_PetPooja.bat
+./Start_KapMeta.bat
 
 # Or start individually:
 npm run dev

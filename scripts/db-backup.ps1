@@ -1,4 +1,4 @@
-# PetPooja POS Database Backup & Recovery Utility
+# KapMeta POS Database Backup & Recovery Utility
 # Operations automation script mapping RPO/RTO timing logs.
 
 $currentDate = Get-Date -Format "yyyy-MM-dd-HHmmss"
@@ -39,7 +39,7 @@ if (-not (Test-Path -Path $archiveFolder)) {
 }
 
 # Define backup file target path
-$backupFile = "$archiveFolder/petpooja-$currentDate.sql"
+$backupFile = "$archiveFolder/kapmeta-$currentDate.sql"
 Write-Host "=========================================================" -ForegroundColor Green
 Write-Host "DATABASE BACKUP DRILL - INITIALIZING" -ForegroundColor Green
 Write-Host "Target Database : $dbName on ${dbHost}:${dbPort}" -ForegroundColor Cyan
@@ -57,7 +57,7 @@ try {
     if (-not (Get-Command pg_dump -ErrorAction SilentlyContinue)) {
         Write-Host "[WARNING] pg_dump utility not found on PATH. Simulating backup..." -ForegroundColor Yellow
         # Simulate file generation for testing
-        "/* Mock SQL pg_dump backup script for petpooja */" | Out-File -FilePath $backupFile -Encoding utf8
+        "/* Mock SQL pg_dump backup script for kapmeta */" | Out-File -FilePath $backupFile -Encoding utf8
     } else {
         pg_dump -h $dbHost -p $dbPort -U $dbUser -F c -b -v -f $backupFile $dbName 2>&1 | Out-Null
     }

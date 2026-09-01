@@ -11,7 +11,6 @@ model User {
   id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   email        String?    @unique @db.Citext
   phone        String?
-  full_name    String?    @default("")
   firstName    String?    @map("first_name")
   lastName     String?    @map("last_name")
   passwordHash String     @map("password_hash")
@@ -31,12 +30,13 @@ model User {
 }
 
 model Role {
-  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code            String           @unique
+  id              String           @id @default(dbgenerated("gen_random_uuid()"))
   name            String
   description     String?
-  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @default(now()) @updatedAt @map("updated_at")
+  createdBy       String?          @map("created_by")
+  updatedBy       String?          @map("updated_by")
   userRoles       UserRole[]
   rolePermissions RolePermission[]
 
@@ -44,33 +44,33 @@ model Role {
 }
 
 model Permission {
-  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code            String           @unique
-  module          String
+  id              String           @id @default(dbgenerated("gen_random_uuid()"))
+  action          String
   description     String?
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @default(now()) @updatedAt @map("updated_at")
   rolePermissions RolePermission[]
 
   @@map("permissions")
 }
 
 model UserRole {
-  id         String   @id @default(uuid()) @db.Uuid
-  userId     String   @map("user_id") @db.Uuid
-  roleId     String   @map("role_id") @db.Uuid
-  outletId   String?  @map("outlet_id") @db.Uuid
-  granted_at DateTime @default(now()) @db.Timestamptz(6)
-  granted_by String?  @db.Uuid
+  userId     String   @map("user_id")
+  roleId     String   @map("role_id")
+  outletId   String?  @map("outlet_id")
   user       User     @relation(fields: [userId], references: [id])
   role       Role     @relation(fields: [roleId], references: [id])
   outlet     Outlet?  @relation(fields: [outletId], references: [id])
 
+  @@id([userId, roleId])
   @@index([outletId], map: "idx_user_roles_outlet")
   @@map("user_roles")
 }
 
 model RolePermission {
-  roleId       String     @map("role_id") @db.Uuid
-  permissionId String     @map("permission_id") @db.Uuid
+  roleId       String     @map("role_id")
+  permissionId String     @map("permission_id")
+  createdAt    DateTime   @default(now()) @map("created_at")
   role         Role       @relation(fields: [roleId], references: [id])
   permission   Permission @relation(fields: [permissionId], references: [id])
 
@@ -82,67 +82,67 @@ model Session {
   id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId             String    @map("user_id") @db.Uuid
   outletId           String?   @map("outlet_id") @db.Uuid
-  refresh_token_hash String
   tokenHash          String?   @unique @map("token_hash")
   ipAddress          String?   @map("ip_address") @db.Inet
   userAgent          String?   @map("user_agent")
   expiresAt          DateTime  @map("expires_at") @db.Timestamptz(6)
   revokedAt          DateTime? @map("revoked_at") @db.Timestamptz(6)
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   user               User      @relation(fields: [userId], references: [id])
 
   @@map("sessions")
 }
 
 model AuditLog {
-  id          String       @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  outletId    String       @map("outlet_id") @db.Uuid
-  entityType  String       @map("entity_type")
-  entityId    String       @map("entity_id") @db.Uuid
-  action      audit_action
-  actor_id    String?      @db.Uuid
-  beforeState Json?        @map("before_state")
-  afterState  Json?        @map("after_state")
-  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
-  updated_at  DateTime     @default(now()) @db.Timestamptz(6)
-  created_by  String?      @db.Uuid
-  updated_by  String?      @db.Uuid
+  id             String    @id @default(dbgenerated("gen_random_uuid()"))
+  outletId       String    @map("outlet_id")
+  userId         String    @map("user_id")
+  action         String    @map("action")
+  entityType     String    @map("entity_type")
+  entityId       String    @map("entity_id")
+  beforeState    Json?     @map("before_state")
+  afterState     Json?     @map("after_state")
+  reasonCode     String?   @map("reason_code")
+  approverUserId String?   @map("approver_user_id")
+  ipAddress      String?   @map("ip_address")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  @@id([id, createdAt])
+  @@index([outletId], map: "idx_audit_logs_outlet")
+  @@index([entityId], map: "idx_audit_logs_entity")
   @@map("audit_logs")
 }
 
 model Organization {
-  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id         String   @id @default(dbgenerated("gen_random_uuid()"))
   name       String
-  legal_name String?
-  tax_id     String?
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  createdBy  String?  @map("created_by") @db.Uuid
-  updatedBy  String?  @map("updated_by") @db.Uuid
+  taxNumber  String?  @map("tax_number")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at")
+  createdBy  String?  @map("created_by")
+  updatedBy  String?  @map("updated_by")
 
   @@map("organizations")
 }
 
 model Outlet {
-  id             String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId String     @map("organization_id") @db.Uuid
+  id             String     @id @default(dbgenerated("gen_random_uuid()"))
+  organizationId String     @map("organization_id")
   code           String
   name           String
+  address        String?
+  fssaiNumber    String?    @map("fssai_number")
+  upiVpa         String?    @map("upi_vpa")
   timezone       String     @default("Asia/Kolkata")
-  currency       String     @default("INR") @db.Char(3)
-  dayStartTime   DateTime   @default(dbgenerated("'05:00:00'::time without time zone")) @map("day_start_time") @db.Time(6)
+  currency       String     @default("INR")
+  dayStartTime   String?    @map("day_start_time")
   isActive       Boolean    @default(true) @map("is_active")
-  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  createdBy             String?    @map("created_by") @db.Uuid
-  updatedBy             String?    @map("updated_by") @db.Uuid
-  loyaltyPaisePerPoint  BigInt?    @map("loyalty_paise_per_point")
-  userRoles             UserRole[]
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @default(now()) @updatedAt @map("updated_at")
+  createdBy      String?    @map("created_by")
+  updatedBy      String?    @map("updated_by")
+  userRoles      UserRole[]
 
-  @@unique([organizationId, code])
-  @@index([organizationId], map: "idx_outlets_org")
   @@map("outlets")
 }
 
@@ -164,11 +164,10 @@ model Station {
 }
 
 model MenuCategory {
-  id                 String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  outletId           String     @map("outlet_id") @db.Uuid
+  id                 String     @id @default(dbgenerated("gen_random_uuid()"))
+  outletId           String     @map("outlet_id")
   name               String
   description        String?
-  online_display_name String?
   sortOrder          Int        @default(0) @map("sort_order")
   isActive           Boolean    @default(true) @map("is_active")
   createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -181,8 +180,8 @@ model MenuCategory {
 }
 
 model DiningTable {
-  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  outletId             String   @map("outlet_id") @db.Uuid
+  id                   String   @id @default(dbgenerated("gen_random_uuid()"))
+  outletId             String   @map("outlet_id")
   tableNumber          String   @map("table_number")
   capacity             Int      @default(4)
   section              String   @default("General")
@@ -190,9 +189,6 @@ model DiningTable {
   isActive             Boolean  @default(true) @map("is_active")
   mergeGroupId         String?  @map("merge_group_id") @db.Uuid
   mergePrimaryTableId  String?  @map("merge_primary_table_id") @db.Uuid
-  posX                 Int?     @map("pos_x")
-  posY                 Int?     @map("pos_y")
-  currentOrderId       String?  @map("current_order_id") @db.Uuid
   createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   orders               Order[]
@@ -218,25 +214,22 @@ model UserQuickLink {
 }
 
 model MenuItem {
-  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  outletId       String        @map("outlet_id") @db.Uuid
-  categoryId     String        @map("category_id") @db.Uuid
-  name           String
-  description    String?
-  price          Decimal?      @default(0) @db.Decimal(12, 2)
-  taxRate        Decimal?      @default(5.00) @map("tax_rate") @db.Decimal(5, 2)
-  sortOrder      Int?          @default(0) @map("sort_order")
-  code           String?
-  isVeg          Boolean       @default(true) @map("is_veg")
-  hsn_code       String?
-  isActive       Boolean       @default(true) @map("is_active")
-  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  createdBy      String?       @map("created_by") @db.Uuid
-  updatedBy      String?       @map("updated_by") @db.Uuid
-  category       MenuCategory? @relation(fields: [categoryId], references: [id])
-  kotItems       KOTItem[]
-  orderItems     OrderItem[]
+  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  outletId          String        @map("outlet_id") @db.Uuid
+  categoryId        String        @map("category_id") @db.Uuid
+  name              String
+  description       String?
+  price             BigInt?       @default(0) @map("price")
+  taxRate           Decimal?      @default(5.00) @map("tax_rate") @db.Decimal(5, 2)
+  isVeg             Boolean       @default(true) @map("is_veg")
+  isActive          Boolean       @default(true) @map("is_active")
+  station_id        String?       @map("station_id") @db.Uuid
+  onlineDisplayName String?       @map("online_display_name")
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  category          MenuCategory? @relation(fields: [categoryId], references: [id])
+  kotItems          KOTItem[]
+  orderItems        OrderItem[]
 
   @@index([categoryId], map: "idx_menu_items_category")
   @@index([outletId], map: "idx_menu_items_outlet")
@@ -262,39 +255,29 @@ model ModifierGroup {
 model Order {
   id                  String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   outletId            String       @map("outlet_id") @db.Uuid
+  terminalNumber      String?      @map("terminal_number")
   orderNumber         String       @map("order_number")
-  orderType           order_type   @map("type")
-  status              order_status @default(DRAFT)
-  business_date       DateTime     @db.Date
-  subtotal            BigInt       @default(0) @map("subtotal_minor")
-  grandTotal          BigInt       @default(0) @map("total_minor")
-  taxTotal            BigInt?      @default(0) @map("tax_total_minor")
-  discountTotal       BigInt?      @default(0) @map("discount_total_minor")
-  tipTotal            BigInt       @default(0) @map("tip_total_minor")
-  serviceChargeTotal  BigInt       @default(0) @map("service_charge_total_minor")
-  currency            String       @default("INR") @db.Char(3)
-  customerId          String?      @map("customer_id") @db.Uuid
-  table_number        String?
+  orderType           String       @default("DINE_IN") @map("order_type")
   diningTableId       String?      @map("dining_table_id") @db.Uuid
-  diningTable         DiningTable? @relation(fields: [diningTableId], references: [id])
-  delivery_address_id String?      @db.Uuid
+  status              String       @default("DRAFT")
+  subtotal            BigInt       @default(0) @map("subtotal")
+  discountTotal       BigInt?      @default(0) @map("discount_total")
+  taxTotal            BigInt?      @default(0) @map("tax_total")
+  grandTotal          BigInt       @default(0) @map("grand_total")
+  idempotencyKey      String?      @map("idempotency_key")
+  customerId          String?      @map("customer_id") @db.Uuid
+  waiterId            String?      @map("waiter_id") @db.Uuid
+  serviceChargeTotal  BigInt       @default(0) @map("service_charge_total")
+  tipTotal            BigInt       @default(0) @map("tip_total")
   createdAt           DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  created_by          String?      @db.Uuid
-  updated_by          String?      @db.Uuid
-  settledAt           DateTime?    @map("settled_at") @db.Timestamptz(6)
-  scheduledFireAt     DateTime?    @map("scheduled_fire_at") @db.Timestamptz(6)
-  promisedAt          DateTime?    @map("promised_at") @db.Timestamptz(6)
-  depositMinor        BigInt?      @default(0) @map("deposit_minor")
-  advanceStatus       String?      @map("advance_status")
+  diningTable         DiningTable? @relation(fields: [diningTableId], references: [id])
   orderItems          OrderItem[]
   kotTickets          KOTTicket[]
-  invoices            Invoice[]
 
   @@unique([outletId, orderNumber], map: "uq_orders_outlet_number")
   @@index([customerId], map: "idx_orders_customer")
   @@index([outletId], map: "idx_orders_outlet")
-  @@index([outletId, status, business_date], map: "idx_orders_outlet_status_date")
   @@map("orders")
 }
 
@@ -302,27 +285,21 @@ model OrderItem {
   id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   outletId    String    @map("outlet_id") @db.Uuid
   orderId     String    @map("order_id") @db.Uuid
-  menuItemId  String    @map("item_id") @db.Uuid
-  variant_id  String?   @db.Uuid
-  item_name   String
-  quantity    Decimal   @default(1) @map("qty") @db.Decimal
-  unitPrice   BigInt    @map("unit_price_minor")
-  subtotal    BigInt    @map("total_price_minor")
+  menuItemId  String    @map("menu_item_id") @db.Uuid
+  quantity    Int       @default(1) @map("quantity")
+  unitPrice   BigInt    @map("unit_price")
+  subtotal    BigInt    @map("subtotal")
+  notes       String?   @map("notes")
   isVoided    Boolean   @default(false) @map("is_voided")
+  voidReason  String?   @map("void_reason")
+  voidedBy    String?   @map("voided_by")
+  course      String?   @map("course")
   seatNumber  Int?      @map("seat_number")
-  course      String?
-  notes       String?
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  created_by  String?   @db.Uuid
-  updated_by  String?   @db.Uuid
   order       Order     @relation(fields: [orderId], references: [id])
   menuItem    MenuItem? @relation(fields: [menuItemId], references: [id])
 
   @@index([menuItemId], map: "idx_order_items_item")
   @@index([orderId], map: "idx_order_items_order")
-  @@index([outletId], map: "idx_order_items_outlet")
-  @@index([variant_id], map: "idx_order_items_variant")
   @@map("order_items")
 }
 
@@ -345,14 +322,13 @@ model OrderItemModifier {
 }
 
 model OrderStatusHistory {
-  id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  outletId    String        @map("outlet_id") @db.Uuid
-  orderId     String        @map("order_id") @db.Uuid
-  from_status order_status?
-  to_status   order_status
-  reason_code String?
-  actor_id    String?       @db.Uuid
-  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  id          String   @id @default(dbgenerated("gen_random_uuid()"))
+  outletId    String   @map("outlet_id")
+  orderId     String   @map("order_id")
+  status      String   @map("status")
+  notes       String?  @map("notes")
+  createdBy   String?  @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@index([orderId], map: "idx_order_status_history_order")
   @@index([outletId], map: "idx_order_status_history_outlet")
@@ -467,21 +443,20 @@ model CampaignRecipient {
 }
 
 model Payment {
-  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  outletId      String   @map("outlet_id") @db.Uuid
-  orderId       String   @map("order_id") @db.Uuid
-  paymentId     String   @default(dbgenerated("gen_random_uuid()")) @map("payment_id") @db.Uuid
-  amount        BigInt   @default(0) @map("amount_minor")
-  method        String   @default("CASH")
-  status        String   @default("CAPTURED")
-  transactionId String?  @map("transaction_id")
-  seatNumber    Int?     @map("seat_number")
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id             String    @id @default(dbgenerated("gen_random_uuid()"))
+  outletId       String    @map("outlet_id")
+  orderId        String    @map("order_id")
+  amount         BigInt    @map("amount")
+  method         String    @default("CASH") @map("method")
+  status         String    @default("CAPTURED") @map("status")
+  transactionId  String?   @map("transaction_id")
+  idempotencyKey String?   @map("idempotency_key")
+  seatNumber     Int?      @map("seat_number")
+  createdAt      DateTime  @default(now()) @map("created_at")
 
-  @@index([orderId], map: "idx_payments_order")
   @@index([outletId], map: "idx_payments_outlet")
-  @@map("order_payments")
+  @@index([orderId], map: "idx_payments_order")
+  @@map("payments")
 }
 
 model Notification {
@@ -1117,20 +1092,19 @@ model vendors {
 }
 
 model Invoice {
-  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  outletId         String   @map("outlet_id") @db.Uuid
-  orderId          String   @unique @map("order_id") @db.Uuid
-  invoiceNumber    String   @map("invoice_number") @db.VarChar(64)
-  amountMinor      BigInt   @map("amount_minor")
-  taxAmountMinor   BigInt   @default(0) @map("tax_amount_minor")
-  waivedOffMinor   BigInt   @default(0) @map("waived_off_minor")
-  waivedOffReason  String?  @map("waived_off_reason")
-  reprintCount     Int      @default(0) @map("reprint_count")
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  order            Order    @relation(fields: [orderId], references: [id])
+  id              String    @id @default(dbgenerated("gen_random_uuid()"))
+  outletId        String    @map("outlet_id")
+  orderId         String    @map("order_id")
+  invoiceNumber   String?   @map("invoice_no")
+  amount          BigInt    @default(0) @map("amount")
+  taxAmount       BigInt?   @default(0) @map("tax_amount")
+  reprintCount    Int       @default(0) @map("reprint_count")
+  waivedOffMinor  BigInt    @default(0) @map("waived_off_minor")
+  waivedOffReason String?   @map("waived_off_reason")
+  createdAt       DateTime  @default(now()) @map("created_at")
 
-  @@unique([outletId, invoiceNumber])
   @@index([outletId], map: "idx_invoices_outlet")
+  @@index([orderId], map: "idx_invoices_order")
   @@map("invoices")
 }
 

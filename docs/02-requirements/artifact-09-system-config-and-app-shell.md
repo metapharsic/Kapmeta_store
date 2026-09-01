@@ -3,7 +3,7 @@
 Status: Draft for engineering review
 Owner: Kapmeta platform team
 Related docs: DB schema draft (outlets, sync_state, backup_jobs), API-contracts draft, sync-architecture doc (LAN outlet-server model), business-logic-rules draft, decision-register addendum (DEC-013..024)
-Source reference: single-frame screenshots of PetPooja POS "Restaurant/System Configuration" tile screen and the persistent top navigation bar, captured for Hotel Kapila (outlet ID 327038), app version 126.0.1. No interaction sequences (e.g. confirm dialogs) were captured; all confirmation/audit behavior in this document is a Kapmeta requirement, not an observation of the reference app.
+Source reference: single-frame screenshots of KapMeta POS "Restaurant/System Configuration" tile screen and the persistent top navigation bar, captured for Hotel Kapila (outlet ID 327038), app version 126.0.1. No interaction sequences (e.g. confirm dialogs) were captured; all confirmation/audit behavior in this document is a Kapmeta requirement, not an observation of the reference app.
 
 ---
 

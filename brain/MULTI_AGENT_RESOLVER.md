@@ -1,4 +1,4 @@
-# PetPooja POS Platform — Multi-Agent Diagnostic & Resolution Protocol
+# KapMeta POS Platform — Multi-Agent Diagnostic & Resolution Protocol
 
 **For:** Gemini, Claude & Autonomous Pair Programming Agents  
 **Purpose:** Standardized algorithmic procedure to detect bugs, read logs, trace root causes, apply fixes, run unit tests, and advance checkpoints.
@@ -35,11 +35,11 @@
 
 ### Scenario A: `ECONNREFUSED 127.0.0.1:5432`
 - **Root Cause:** PostgreSQL daemon is not running on port 5432 or `DATABASE_URL` in `.env` is incorrect.
-- **Resolution:** Verify `.env` points to `postgresql://pos:pos@localhost:5432/petpooja` and check local PostgreSQL service.
+- **Resolution:** Verify `.env` points to `postgresql://pos:pos@localhost:5432/kapmeta` and check local PostgreSQL service.
 
 ### Scenario B: `EADDRINUSE 0.0.0.0:4001` or `4444`
 - **Root Cause:** Stale Node or Next.js background process still bound to fixed ports.
-- **Resolution:** Run `npm run stop:all` (or `.\Stop_PetPooja.bat`) to cleanly terminate orphan processes.
+- **Resolution:** Run `npm run stop:all` (or `.\Stop_KapMeta.bat`) to cleanly terminate orphan processes.
 
 ### Scenario C: `PrismaClientKnownRequestError` / Schema Mismatch
 - **Root Cause:** Database tables out of sync with `kapmeta/schema.prisma`.

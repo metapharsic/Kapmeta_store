@@ -23,7 +23,7 @@
 - Continuously in the background: the grid must reflect near-real-time state so two staff members don't both seat guests at the same table, and so a manager can see turn times at a glance.
 
 ### Why it exists
-PetPooja-style table service restaurants run multiple concurrent orders across a physical floor plan. Without a floor view, staff must remember table-to-order mapping manually, which causes billing errors, double-seating, and missed KOTs. The floor view is the single source of truth for "what is happening on the floor right now."
+KapMeta-style table service restaurants run multiple concurrent orders across a physical floor plan. Without a floor view, staff must remember table-to-order mapping manually, which causes billing errors, double-seating, and missed KOTs. The floor view is the single source of truth for "what is happening on the floor right now."
 
 ---
 
@@ -71,7 +71,7 @@ Each card is a fixed-aspect-ratio tile (recommend square-ish, ~96–120px, actua
 | `printed` | Green `#4CAF50` | Bill Printed |
 | `paid` | Orange `#FF9800` | Paid |
 
-These pairs live in a `table_state_display_config` table (outlet_id-scoped, with sane global defaults) — see §7. Never inline these hex codes as "business logic" in components beyond a theme-token layer; the state **enum** itself is fixed application logic (code), but its **color/label presentation** is configurable per the no-hardcode rule since PetPooja's own admin allows recoloring the legend in some deployments. If stakeholder confirms colors are always fixed system-wide, this can collapse to a static theme constant — flagged in §10.
+These pairs live in a `table_state_display_config` table (outlet_id-scoped, with sane global defaults) — see §7. Never inline these hex codes as "business logic" in components beyond a theme-token layer; the state **enum** itself is fixed application logic (code), but its **color/label presentation** is configurable per the no-hardcode rule since KapMeta's own admin allows recoloring the legend in some deployments. If stakeholder confirms colors are always fixed system-wide, this can collapse to a static theme constant — flagged in §10.
 
 ### 2.5 Layout Behavior
 - **Grid**: CSS grid / flex-wrap per zone section, fixed card min-width (e.g. 100px) with `auto-fill`, so cards reflow to fill available width and wrap to new rows.
@@ -330,7 +330,7 @@ Fields:
 - `shape` (dropdown: square/round/rect, optional)
 - `display_order` (numeric or drag-reorder within zone)
 - `is_active` (toggle)
-- Bulk-add helper (recommended, not MVP-blocking): "Add range" — e.g. prefix "B", start 1, end 26 → generates B1..B26 in one action, since PetPooja reference screenshots show large sequential ranges (A1–A15, B1–B26) that would be tedious to add one-by-one.
+- Bulk-add helper (recommended, not MVP-blocking): "Add range" — e.g. prefix "B", start 1, end 26 → generates B1..B26 in one action, since KapMeta reference screenshots show large sequential ranges (A1–A15, B1–B26) that would be tedious to add one-by-one.
 
 ### 7.3 `table_state_display_config` admin screen (optional MVP scope)
 Fields: state enum (read-only, fixed list), `color_hex`, `label_text`. Scoped per outlet with a system default fallback so a fresh outlet isn't required to configure this before using the screen.
@@ -400,8 +400,8 @@ Recommended role/permission matrix (align naming with whatever role table alread
 1. **Zone-based staff assignment**: Should waiters see only their assigned zone(s) by default, with a toggle to view all? Not evidenced in the screenshots; assumed out of MVP scope pending confirmation (§8).
 2. **"Running" vs "blank" boundary**: Does a table become `running` (blue) the instant it's seated with zero items ordered, or only once the first item is added to the order? The screenshots don't show a seated-but-empty state distinctly. Current plan treats "seated with an open session but no items yet" as still effectively blank/neutral in spirit but technically needs its own micro-state or a UI-only treatment — recommend a decision to either (a) add a 6th sub-state "seated, no order yet" or (b) require an order to exist for a session to even be created (merge the "seat" and "start order" actions into one). Recommend (b) for schema simplicity, but needs confirmation since it changes the seat-a-table UX flow.
 3. **`running_kot` (yellow) granularity**: order-level vs per-KOT-batch — flagged in §3.2/6.2. Needs a definitive answer from the business-logic-rules doc owner since it affects the `orders` schema additions (`last_kot_fired_at`/`last_kot_ack_at`).
-4. **Elapsed time continuity across a Move**: when a table is moved (§6.3), should the destination table's displayed elapsed time reset to zero (new physical seating instant) or continue from the original `seated_at`? Current plan (§9.3) assumes continuity since the guest hasn't actually re-arrived, but this is a judgment call PetPooja's actual behavior should confirm.
+4. **Elapsed time continuity across a Move**: when a table is moved (§6.3), should the destination table's displayed elapsed time reset to zero (new physical seating instant) or continue from the original `seated_at`? Current plan (§9.3) assumes continuity since the guest hasn't actually re-arrived, but this is a judgment call KapMeta's actual behavior should confirm.
 5. **Merge conflict on partial payments**: exact reconciliation behavior when merging two tables where one already has a partial payment recorded is left as a 409-block-with-manager-override in this plan (§6.1) — needs business-logic-rules doc owner sign-off on whether partial payments should instead auto-carry-over as a credit against the merged total.
-6. **Table color legend configurability**: is the color scheme truly fixed system-wide (in which case §7.3's admin screen is unnecessary complexity), or does PetPooja allow outlet-level recoloring? Screenshots only show one fixed scheme; recommend confirming before building the config screen — cheap to skip for MVP and hardcode as a **UI theme constant** (not "business data" under the no-hardcode rule, since color-of-a-status is presentation, not tenant content) if stakeholder says it's always fixed.
+6. **Table color legend configurability**: is the color scheme truly fixed system-wide (in which case §7.3's admin screen is unnecessary complexity), or does KapMeta allow outlet-level recoloring? Screenshots only show one fixed scheme; recommend confirming before building the config screen — cheap to skip for MVP and hardcode as a **UI theme constant** (not "business data" under the no-hardcode rule, since color-of-a-status is presentation, not tenant content) if stakeholder says it's always fixed.
 7. **"Add Table" during active service**: should adding a table via the toolbar require the same admin permission as the dedicated admin screen, or should there be a lighter-weight "quick add" for managers on the floor who don't have full back-office access? Currently unified (§7.4) for consistency; flagging in case ops wants a lighter in-shift path.
 8. **Covers/pax capture**: is `pax_count` mandatory at seating (common in table service) or optional? Affects whether the "Seat Table" flow needs a required input step. Not shown definitively in the screenshots' quick-action set.

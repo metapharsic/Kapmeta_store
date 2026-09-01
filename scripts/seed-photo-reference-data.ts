@@ -3,7 +3,7 @@ import * as path from "path";
 import { execSync } from "child_process";
 
 async function main() {
-  const dataPath = path.resolve(__dirname, "../data/petpooja-photo-reference-template.json");
+  const dataPath = path.resolve(__dirname, "../data/kapmeta-photo-reference-template.json");
   console.log(`[SEED] Executing dynamic ingestion with reference dataset: ${dataPath}`);
   
   try {

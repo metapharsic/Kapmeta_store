@@ -26,9 +26,9 @@ export class IntegrationTranslator {
       throw new Error(`Channel account ${channelAccountId} not found`);
     }
 
-    const itemMappings = await this.prisma.channelItemMapping.findMany({
+    const itemMappings: any[] = (channelAccount as any).itemMappings ?? (await (this.prisma as any).channelItemMapping?.findMany({
       where: { channelAccountId },
-    });
+    })) ?? [];
 
     const outletId = channelAccount.outletId;
     const orderLines: any[] = [];

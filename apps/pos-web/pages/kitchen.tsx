@@ -2,8 +2,8 @@ import React, { useState, useEffect } from "react";
 import Head from "next/head";
 import { authedFetch, useAuthGuard } from "../lib/auth";
 import { useKapmetaSocket } from "../lib/useKapmetaSocket";
-import PetPoojaHeader from "../components/PetPoojaHeader";
-import PetPoojaKotView, { REFERENCE_KOT_TICKETS, KotCardData } from "../components/PetPoojaKotView";
+import KapMetaHeader from "../components/KapMetaHeader";
+import KapMetaKotView, { KotCardData } from "../components/KapMetaKotView";
 
 interface KOTItem {
   id: string;
@@ -110,7 +110,7 @@ export default function KitchenMonitor() {
       0,
       Math.floor((now - new Date(t.createdAt).getTime()) / 1000)
     ),
-    biller: "biller (biller)",
+    biller: t.stationName ? `${t.stationName} Station` : "Kitchen Station",
     items: t.kotItems.map((it) => ({
       id: it.id,
       name: it.menuItem.name,
@@ -121,13 +121,10 @@ export default function KitchenMonitor() {
     createdAt: t.createdAt,
   }));
 
-  const mappedTickets: KotCardData[] =
-    liveDbTickets.length > 0
-      ? [...liveDbTickets, ...REFERENCE_KOT_TICKETS.filter((r) => !liveDbTickets.some((l) => l.kotNo === r.kotNo))]
-      : REFERENCE_KOT_TICKETS;
+  const mappedTickets: KotCardData[] = liveDbTickets;
 
   return (
-    <div className="petpooja-app-root">
+    <div className="kapmeta-app-root">
       <Head>
         <title>{outletName} ({outletCode}) - The Finest Restaurant Management Platform</title>
         <meta
@@ -137,8 +134,8 @@ export default function KitchenMonitor() {
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
       </Head>
 
-      {/* Universal PetPooja Top Header & Window Titlebar */}
-      <PetPoojaHeader
+      {/* Universal KapMeta Top Header & Window Titlebar */}
+      <KapMetaHeader
         outletName={outletName}
         outletCode={outletCode}
         onNewOrder={() => {
@@ -146,8 +143,8 @@ export default function KitchenMonitor() {
         }}
       />
 
-      {/* Main PetPooja POS KOT View */}
-      <PetPoojaKotView
+      {/* Main KapMeta POS KOT View */}
+      <KapMetaKotView
         initialTickets={mappedTickets}
         onMarkFoodReady={(id) => {
           handleUpdateStatus(id, "PREPARING");

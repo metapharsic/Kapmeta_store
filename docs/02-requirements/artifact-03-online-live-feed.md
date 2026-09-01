@@ -57,7 +57,7 @@ The reference app ships two card layouts ("New View" — condensed, and "Old Vie
 
 Rationale:
 - Maintaining two full card renderings doubles the surface area for every future field addition (SLA timer, rider status, OTP, etc.) and doubles QA cost for a screen that is already state-heavy.
-- New View is the more information-dense, action-oriented layout in the reference screenshots (larger action buttons, clearer badge placement) and is very likely PetPooja's intended forward direction — legacy apps commonly carry an "Old View" purely for user habituation during a transition period, not because it is functionally superior.
+- New View is the more information-dense, action-oriented layout in the reference screenshots (larger action buttons, clearer badge placement) and is very likely KapMeta's intended forward direction — legacy apps commonly carry an "Old View" purely for user habituation during a transition period, not because it is functionally superior.
 - Kapmeta is a clean-room rebuild, not a pixel clone; carrying forward a deprecated legacy layout adds cost with no product benefit unless customer research says otherwise.
 - Recommendation is to keep the **View Details** expand/collapse switch (it is cheap — a per-card disclosure state, not a second rendering pipeline) since it lets staff choose card density without doubling engineering cost.
 
@@ -120,7 +120,7 @@ Reasoning for this reading over alternatives (e.g., "Manually Force Refresh", "M
 - Each order's "Food Is Ready" outbound call is queued individually through the existing `channel_sync_log` retry/idempotency mechanism (sync-architecture doc) — MFR is a UI batching convenience, not a new backend bulk endpoint; it issues the same per-order call the single "Food Is Ready" button issues, N times.
 - Result toast: "X marked ready, Y failed — retrying" if any individual calls fail, linking to `channel_sync_log` detail for failed ones.
 
-**This is a guess and must be confirmed with the actual PetPooja product owner or via captured production usage/analytics before final copy and behavior lock** — see §10.
+**This is a guess and must be confirmed with the actual KapMeta product owner or via captured production usage/analytics before final copy and behavior lock** — see §10.
 
 ### 2.7 Ordering & real-time behavior
 
@@ -422,7 +422,7 @@ Proposed role-permission matrix (to be reconciled against the project's actual r
 | View Info/audit drawer | Yes | Yes | Yes | Yes |
 | Toggle New/Old View, View Details | Yes (personal pref) | Yes | Yes | Yes |
 
-Rationale for restricting MFR to managers: it is the single highest-blast-radius action on the screen (N outbound aggregator calls fired at once, all irreversible), so gating it behind a manager role reduces the risk of accidental mass-mis-marking during a busy shift by junior staff — **this restriction is a proposal, not sourced from the reference screenshots, and should be confirmed against actual PetPooja role behavior once DEC-013's MFR meaning is confirmed** (§10).
+Rationale for restricting MFR to managers: it is the single highest-blast-radius action on the screen (N outbound aggregator calls fired at once, all irreversible), so gating it behind a manager role reduces the risk of accidental mass-mis-marking during a busy shift by junior staff — **this restriction is a proposal, not sourced from the reference screenshots, and should be confirmed against actual KapMeta role behavior once DEC-013's MFR meaning is confirmed** (§10).
 
 ---
 
@@ -462,11 +462,11 @@ Rationale for restricting MFR to managers: it is the single highest-blast-radius
 
 ## 10. Open Questions / Flags for Stakeholder
 
-1. **MFR button meaning (DEC-013).** This doc assumes "Mark Food Ready" bulk action, scoped to the current filter tab, manager-gated. This must be confirmed against actual PetPooja product intent/captured usage before v1 UI copy and permission gating are locked. If the real meaning differs (e.g., it relates to unconfirmed-order rejection rather than food-ready), §2.6, §8, and §9.4 need rework.
+1. **MFR button meaning (DEC-013).** This doc assumes "Mark Food Ready" bulk action, scoped to the current filter tab, manager-gated. This must be confirmed against actual KapMeta product intent/captured usage before v1 UI copy and permission gating are locked. If the real meaning differs (e.g., it relates to unconfirmed-order rejection rather than food-ready), §2.6, §8, and §9.4 need rework.
 2. **New View vs Old View sunset.** This doc proposes building only New View and deprecating Old View for v1. Needs explicit stakeholder sign-off — if any current customer segment is contractually or operationally dependent on Old View, this becomes a scoped v1.1 addition rather than a full deprecation.
 3. **Unify order status (DEC-021).** This screen currently derives card state from multiple discrete fields (`accepted_at`, `food_ready_at`, `sla_breach`, `cancelled_at`, `rider_status`) rather than one canonical status enum. Once DEC-021 resolves the unified-status design, this screen's state-derivation logic (§2.5, §6.6) should be revisited to consume the unified field, to avoid two parallel state representations drifting apart.
 4. **`order_type` vs `fulfillment_type` naming.** §3.1 flags a possible naming mismatch between the base schema doc's `order_type` column and this doc's use of `fulfillment_type` for the Delivery/Pick Up tab filters. Needs a quick reconciliation pass against the actual DB schema doc before implementation.
 5. **Contact Support mechanism per platform.** §5.6 assumes a web deep link for both Swiggy and Zomato partner support; actual mechanism (deep link vs. phone number vs. in-partner-app handoff) needs confirmation against each platform's current partner documentation, since this affects whether the button opens a browser tab or places a call.
 6. **Cutlery-preference acknowledgement requirement.** §5.7 flags that it's unconfirmed whether either platform's API actually requires an explicit ack call for cutlery preference, or whether displaying the note to staff is sufficient compliance. Needs confirmation from API-contracts doc / platform partner docs.
-7. **Amber-threshold and breach-escalation timing values.** §4.2/§4.3 propose default values (25% remaining → amber; 2 minutes overdue → "too late" copy escalation) that are not sourced from the reference screenshots and should be validated against actual PetPooja behavior or product/ops preference before lock, even though they are implemented as configurable rather than hardcoded.
+7. **Amber-threshold and breach-escalation timing values.** §4.2/§4.3 propose default values (25% remaining → amber; 2 minutes overdue → "too late" copy escalation) that are not sourced from the reference screenshots and should be validated against actual KapMeta behavior or product/ops preference before lock, even though they are implemented as configurable rather than hardcoded.
 8. **Role/permission model reconciliation.** §8's proposed permission matrix, especially the manager-only gate on MFR, is a proposal not grounded in an existing roles doc from the provided project context. Needs to be checked against Kapmeta's actual role/permission system once that doc is available.

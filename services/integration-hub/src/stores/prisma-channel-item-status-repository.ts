@@ -71,6 +71,7 @@ export class PrismaChannelItemStatusRepository implements ChannelItemStatusRepos
       await this.prisma.auditLog.create({
         data: {
           outletId: mapping.outlet_id,
+          userId: "SYSTEM",
           action: "UPDATE",
           entityType: "CHANNEL_ITEM_AVAILABILITY",
           entityId: mappingId,

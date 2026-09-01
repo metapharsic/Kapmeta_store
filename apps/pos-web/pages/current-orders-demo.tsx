@@ -1,29 +1,29 @@
 import React from "react";
 import Head from "next/head";
-import PetPoojaHeader from "../components/PetPoojaHeader";
-import PetPoojaOrdersView from "../components/PetPoojaOrdersView";
+import KapMetaHeader from "../components/KapMetaHeader";
+import KapMetaOrdersView from "../components/KapMetaOrdersView";
 
 export default function CurrentOrdersDemoPage() {
   const outletName = "Hotel kapila";
   const outletCode = "R327038";
 
   return (
-    <div className="petpooja-app-root">
+    <div className="kapmeta-app-root">
       <Head>
         <title>{outletName} ({outletCode}) - The Finest Restaurant Management Platform</title>
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
         <meta name="description" content="KapMeta POS Current Orders register and billing status monitor" />
       </Head>
 
-      {/* Universal PetPooja Top Header */}
-      <PetPoojaHeader
+      {/* Universal KapMeta Top Header */}
+      <KapMetaHeader
         outletName={outletName}
         outletCode={outletCode}
         onNewOrder={() => {}}
       />
 
-      {/* Main PetPooja Current Orders View */}
-      <PetPoojaOrdersView
+      {/* Main KapMeta Current Orders View */}
+      <KapMetaOrdersView
         onBackToPos={() => {}}
       />
 

@@ -1,6 +1,6 @@
-# PetPooja POS Platform: Deep Architectural Subtasks & Multi-Agent Wiring Specification
+# KapMeta POS Platform: Deep Architectural Subtasks & Multi-Agent Wiring Specification
 
-This document provides the definitive, code-level sub-task breakdown and end-to-end wiring specification for all 8 core modules in the PetPooja POS platform. It governs multi-agent workflows (Claude, Gemini, Antigravity) with strict domain isolation and zero hardcoding rules.
+This document provides the definitive, code-level sub-task breakdown and end-to-end wiring specification for all 8 core modules in the KapMeta POS platform. It governs multi-agent workflows (Claude, Gemini, Antigravity) with strict domain isolation and zero hardcoding rules.
 
 ---
 
@@ -56,7 +56,7 @@ graph TD
 - **`[POS-W01]` Native Floor Map & Section Filtering:** Section pills (`AC`, `Non AC`, `Outdoor`). Table cards with statuses: `Vacant 🟢`, `Occupied 🔴`, `Billing 🔵`, `Dirty 🟡`. Table transfer & merge buttons.
 - **`[POS-W02]` Table Session Logging & Covers Stepper:** `[ − ] 2 Pax [ + ]` counter stepper attached to active table order session.
 - **`[POS-W03]` Dedicated Full-Screen Order Canvas:** Replaces cramped sidebars with an 8-col menu grid + 4-col sticky ticket.
-- **`[POS-W04]` Food Photo Tiles Grid:** High-res culinary photography from [`lib/dish-images.ts`](file:///c:/Users/Dell/Desktop/PetPooja/apps/pos-web/lib/dish-images.ts), Indian FSSAI badges (🟢 Veg / 🔴 Non-Veg), price in rupees, and instant `- 1 +` steppers.
+- **`[POS-W04]` Food Photo Tiles Grid:** High-res culinary photography from [`lib/dish-images.ts`](file:///c:/Users/Dell/Desktop/KapMeta/apps/pos-web/lib/dish-images.ts), Indian FSSAI badges (🟢 Veg / 🔴 Non-Veg), price in rupees, and instant `- 1 +` steppers.
 - **`[POS-W05]` Modifier Customizer Sheet (`MenuCustomizerModal.tsx`):** Portion selector (Half/Full), Spice level (Mild/Medium/Spicy), add-ons (Butter, Cheese, Ghee), and cooking instruction note.
 - **`[POS-W06]` Course Tagging & Firing:** Assign course tags (`STARTER`, `MAIN`, `DESSERT`, `BEVERAGE`) and seat numbers. Provides `Fire STARTER Only` and `Fire Everything` action buttons.
 - **`[POS-W07]` Offline LAN Queue & Auto-Sync:** Buffers unsent KOTs in LocalStorage if offline, displays warning badge `⚠️ N Pending`, and auto-retries on network restoration.
@@ -149,7 +149,7 @@ graph TD
 
 ```mermaid
 gantt
-    title PetPooja POS Phased Implementation Roadmap
+    title KapMeta POS Phased Implementation Roadmap
     dateFormat  YYYY-MM-DD
     section Phase 1: Core FOH
     Auth & Fast PIN Pad       :done, p1a, 2026-08-01, 2026-08-05

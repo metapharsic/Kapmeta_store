@@ -19,25 +19,31 @@ export class PrismaRbacChecker {
       },
     });
 
-    if (userRoles.length === 0) {
+    if (!userRoles || userRoles.length === 0) {
       return { roles: [], permissions: [] };
     }
 
-    const roleIds = userRoles.map((ur) => ur.roleId);
-    const roles = await this.prisma.role.findMany({
-      where: { id: { in: roleIds } },
-    });
+    const includedRoles = userRoles.map((ur: any) => ur.role).filter(Boolean);
+    let roles: any[] = includedRoles;
+    let perms: any[] = [];
 
-    const rolePerms = await this.prisma.rolePermission.findMany({
-      where: { roleId: { in: roleIds } },
-    });
+    if (includedRoles.length > 0) {
+      for (const r of includedRoles) {
+        if (Array.isArray(r.rolePermissions)) {
+          for (const rp of r.rolePermissions) {
+            if (rp.permission) perms.push(rp.permission);
+          }
+        }
+      }
+    } else {
+      const roleIds = userRoles.map((ur: any) => ur.roleId).filter(Boolean);
+      roles = this.prisma.role ? await this.prisma.role.findMany({ where: { id: { in: roleIds } } }) : [];
+      const rolePerms = this.prisma.rolePermission ? await this.prisma.rolePermission.findMany({ where: { roleId: { in: roleIds } } }) : [];
+      const permIds = rolePerms.map((rp: any) => rp.permissionId).filter(Boolean);
+      perms = this.prisma.permission ? await this.prisma.permission.findMany({ where: { id: { in: permIds } } }) : [];
+    }
 
-    const permIds = rolePerms.map((rp) => rp.permissionId);
-    const perms = await this.prisma.permission.findMany({
-      where: { id: { in: permIds } },
-    });
-
-    const roleNames = roles.map((r) => r.name);
+    const roleNames = roles.map((r: any) => r.name).filter(Boolean);
     const isSuperAdmin = roles.some(
       (r: any) =>
         r.name === "SUPER_ADMIN" ||
@@ -48,7 +54,7 @@ export class PrismaRbacChecker {
     );
 
     if (isSuperAdmin) {
-      const allPerms = await this.prisma.permission.findMany();
+      const allPerms = this.prisma.permission ? await this.prisma.permission.findMany() : perms;
       const allActions = allPerms.map((p: any) => p.code || p.action).filter(Boolean);
       return { roles: [...new Set(roleNames)], permissions: [...new Set(allActions)] };
     }
@@ -66,17 +72,32 @@ export class PrismaRbacChecker {
       },
     });
 
-    if (userRoles.length === 0) {
+    if (!userRoles || userRoles.length === 0) {
       return {
         allowed: false,
         reason: `no role at this outlet grants '${check.action}'`,
       };
     }
 
-    const roleIds = userRoles.map((ur) => ur.roleId);
-    const roles = await this.prisma.role.findMany({
-      where: { id: { in: roleIds } },
-    });
+    const includedRoles = userRoles.map((ur: any) => ur.role).filter(Boolean);
+    let roles: any[] = includedRoles;
+    let perms: any[] = [];
+
+    if (includedRoles.length > 0) {
+      for (const r of includedRoles) {
+        if (Array.isArray(r.rolePermissions)) {
+          for (const rp of r.rolePermissions) {
+            if (rp.permission) perms.push(rp.permission);
+          }
+        }
+      }
+    } else {
+      const roleIds = userRoles.map((ur: any) => ur.roleId).filter(Boolean);
+      roles = this.prisma.role ? await this.prisma.role.findMany({ where: { id: { in: roleIds } } }) : [];
+      const rolePerms = this.prisma.rolePermission ? await this.prisma.rolePermission.findMany({ where: { roleId: { in: roleIds } } }) : [];
+      const permIds = rolePerms.map((rp: any) => rp.permissionId).filter(Boolean);
+      perms = this.prisma.permission ? await this.prisma.permission.findMany({ where: { id: { in: permIds } } }) : [];
+    }
 
     const isSuperAdmin = roles.some(
       (r: any) =>
@@ -90,15 +111,6 @@ export class PrismaRbacChecker {
     if (isSuperAdmin) {
       return { allowed: true };
     }
-
-    const rolePerms = await this.prisma.rolePermission.findMany({
-      where: { roleId: { in: roleIds } },
-    });
-
-    const permIds = rolePerms.map((rp) => rp.permissionId);
-    const perms = await this.prisma.permission.findMany({
-      where: { id: { in: permIds } },
-    });
 
     const hasPermission = perms.some((p: any) => (p.code || p.action) === check.action);
 

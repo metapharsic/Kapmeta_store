@@ -1,6 +1,6 @@
 # Task 1: GST & Statutory Tax Breakdown API — Completion Report
 
-**Project:** PetPooja POS (Kapmeta) &bull; **Domain:** Admin & Analytics &bull; **Date:** 2026-08-25 &bull; **Status:** Completed & Verified
+**Project:** KapMeta POS (Kapmeta) &bull; **Domain:** Admin & Analytics &bull; **Date:** 2026-08-25 &bull; **Status:** Completed & Verified
 
 ---
 
@@ -51,13 +51,13 @@ Task 1 delivered the complete end-to-end tax calculation and reporting pipeline 
 
 | File | Changes Made |
 | :--- | :--- |
-| [`packages/shared-types/reporting.ts`](file:///c:/Users/Hamza/Downloads/PetPooja/PetPooja/packages/shared-types/reporting.ts) | Added `TaxComponentBreakdown` and `TaxBreakdown` contract interfaces. |
-| [`services/reporting/src/reporting-service.ts`](file:///c:/Users/Hamza/Downloads/PetPooja/PetPooja/services/reporting/src/reporting-service.ts) | Implemented pure computation engine `computeTaxBreakdown` and `getTaxBreakdown`. |
-| [`services/reporting/src/index.ts`](file:///c:/Users/Hamza/Downloads/PetPooja/PetPooja/services/reporting/src/index.ts) | Exported tax functions and types for monorepo consumers. |
-| [`services/reporting/src/stores/prisma-reporting-repository.ts`](file:///c:/Users/Hamza/Downloads/PetPooja/PetPooja/services/reporting/src/stores/prisma-reporting-repository.ts) | Implemented `listTaxOrdersInRange` querying completed order subtotals and taxes. |
-| [`apps/api/src/routes/reporting.ts`](file:///c:/Users/Hamza/Downloads/PetPooja/PetPooja/apps/api/src/routes/reporting.ts) | Mounted `GET /tax-breakdown` with date parsing, permission gating, and BigInt formatting. |
-| [`apps/pos-web/pages/admin.tsx`](file:///c:/Users/Hamza/Downloads/PetPooja/PetPooja/apps/pos-web/pages/admin.tsx) | Replaced static placeholder with dynamic GST Statutory Audit card and added CSV export option. |
-| [`CHECKPOINT.md`](file:///c:/Users/Hamza/Downloads/PetPooja/PetPooja/CHECKPOINT.md) | Updated build log and checkpoint state. |
+| [`packages/shared-types/reporting.ts`](file:///c:/Users/Hamza/Downloads/KapMeta/KapMeta/packages/shared-types/reporting.ts) | Added `TaxComponentBreakdown` and `TaxBreakdown` contract interfaces. |
+| [`services/reporting/src/reporting-service.ts`](file:///c:/Users/Hamza/Downloads/KapMeta/KapMeta/services/reporting/src/reporting-service.ts) | Implemented pure computation engine `computeTaxBreakdown` and `getTaxBreakdown`. |
+| [`services/reporting/src/index.ts`](file:///c:/Users/Hamza/Downloads/KapMeta/KapMeta/services/reporting/src/index.ts) | Exported tax functions and types for monorepo consumers. |
+| [`services/reporting/src/stores/prisma-reporting-repository.ts`](file:///c:/Users/Hamza/Downloads/KapMeta/KapMeta/services/reporting/src/stores/prisma-reporting-repository.ts) | Implemented `listTaxOrdersInRange` querying completed order subtotals and taxes. |
+| [`apps/api/src/routes/reporting.ts`](file:///c:/Users/Hamza/Downloads/KapMeta/KapMeta/apps/api/src/routes/reporting.ts) | Mounted `GET /tax-breakdown` with date parsing, permission gating, and BigInt formatting. |
+| [`apps/pos-web/pages/admin.tsx`](file:///c:/Users/Hamza/Downloads/KapMeta/KapMeta/apps/pos-web/pages/admin.tsx) | Replaced static placeholder with dynamic GST Statutory Audit card and added CSV export option. |
+| [`CHECKPOINT.md`](file:///c:/Users/Hamza/Downloads/KapMeta/KapMeta/CHECKPOINT.md) | Updated build log and checkpoint state. |
 
 ---
 

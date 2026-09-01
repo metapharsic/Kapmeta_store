@@ -8,7 +8,7 @@ Status of this document: execution plan for the two gating phases preceding arch
 
 ### 1. Objective
 
-Phase 0 converts the evidence gathered from the reference application review (86 screenshots of the live PetPooja installation at "Hotel Kapila," a single-outlet, LAN client-server deployment on v126.0.1) into a closed, unambiguous, sign-off-able set of product decisions. Its output is the contract that every later phase — architecture, schema, services, UI — builds against. Nothing in Phase 2 onward may begin design or implementation work against an open or "assumed" decision; Phase 0's entire purpose is to eliminate that condition. The phase produces no code and no schema; it produces decisions, a requirements traceability matrix, and a locked Definition of Ready/Done for downstream phases.
+Phase 0 converts the evidence gathered from the reference application review (86 screenshots of the live KapMeta installation at "Hotel Kapila," a single-outlet, LAN client-server deployment on v126.0.1) into a closed, unambiguous, sign-off-able set of product decisions. Its output is the contract that every later phase — architecture, schema, services, UI — builds against. Nothing in Phase 2 onward may begin design or implementation work against an open or "assumed" decision; Phase 0's entire purpose is to eliminate that condition. The phase produces no code and no schema; it produces decisions, a requirements traceability matrix, and a locked Definition of Ready/Done for downstream phases.
 
 ### 2. Entry criteria
 

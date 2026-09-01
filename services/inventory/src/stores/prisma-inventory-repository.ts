@@ -48,14 +48,17 @@ export class PrismaInventoryRepository implements InventoryRepository {
 
   async postManualAdjustment(input: ManualAdjustmentInput, userId: string): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
-      const ingredient = await (tx as any).ingredients.findUnique({ where: { id: input.ingredientId } });
-      const beforeStock = ingredient ? Number(ingredient.current_stock_qty) : 0;
+      const ingModel = (tx as any).ingredients ?? (tx as any).ingredient;
+      const ingredient = await ingModel.findUnique({ where: { id: input.ingredientId } });
+      const beforeStock = ingredient ? Number(ingredient.current_stock_qty ?? ingredient.currentStock?.toNumber?.() ?? ingredient.currentStock ?? 0) : 0;
       const newStock = Math.max(0, beforeStock + Number(input.quantity));
 
-      const updated = await (tx as any).ingredients.update({
+      const updated = await ingModel.update({
         where: { id: input.ingredientId },
         data: { current_stock_qty: newStock },
       });
+
+      const afterStock = Number(updated?.current_stock_qty ?? updated?.currentStock?.toNumber?.() ?? updated?.currentStock ?? newStock);
 
       await writeAuditLog(tx, {
         outletId: input.outletId,
@@ -64,7 +67,7 @@ export class PrismaInventoryRepository implements InventoryRepository {
         entityType: "STOCK",
         entityId: input.ingredientId,
         beforeState: { currentStock: beforeStock },
-        afterState: { currentStock: updated.currentStock.toNumber() },
+        afterState: { currentStock: afterStock },
         reasonCode: input.reasonCode,
       });
 

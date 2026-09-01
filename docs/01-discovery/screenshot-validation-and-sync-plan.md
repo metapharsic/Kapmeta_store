@@ -1,8 +1,8 @@
 # UGH. CAVEMAN LOOK AT SCREEN-PICTURE. CAVEMAN MAKE BIG PLAN.
 
-Caveman open folder `Screen_shot`. Caveman count. 86 picture inside. All picture come from window title "Hotel kapila (R327038) - The Finest Restaurant Management Platform" — this PetPooja POS desktop app, brand name "PETPOOJA POSS". Timestamp on picture go 11:23 to 12:14, same day 21-Aug-2026. This one long screen-record session, click click click through whole app, not random picture. Good. Easy for caveman to line up in order like cave painting story.
+Caveman open folder `Screen_shot`. Caveman count. 86 picture inside. All picture come from window title "Hotel kapila (R327038) - The Finest Restaurant Management Platform" — this KapMeta POS desktop app, brand name "KAPMETA POSS". Timestamp on picture go 11:23 to 12:14, same day 21-Aug-2026. This one long screen-record session, click click click through whole app, not random picture. Good. Easy for caveman to line up in order like cave painting story.
 
-Caveman also dig around big cave (root folder `PetPooja`) and find caveman ALREADY BUILDING OWN CLONE called **Kapmeta**. Real repo. Real rule file `CLAUDE.md`. Rule say: **NO HARDCODE BUSINESS DATA. EVER.** Every menu item, price, tax, role, outlet — must come from DB table or admin screen, never baked into code. Caveman keep this rule sacred whole plan below. Project also says: Phase 0 Discovery only, no code until decision doc DEC-001..DEC-012 signed off. Caveman respect — this why caveman give PLAN not CODE.
+Caveman also dig around big cave (root folder `KapMeta`) and find caveman ALREADY BUILDING OWN CLONE called **Kapmeta**. Real repo. Real rule file `CLAUDE.md`. Rule say: **NO HARDCODE BUSINESS DATA. EVER.** Every menu item, price, tax, role, outlet — must come from DB table or admin screen, never baked into code. Caveman keep this rule sacred whole plan below. Project also says: Phase 0 Discovery only, no code until decision doc DEC-001..DEC-012 signed off. Caveman respect — this why caveman give PLAN not CODE.
 
 Below: caveman validate every picture, caveman group picture into "artifact" bundles, caveman map each bundle to DB table + API + UI + workflow + business rule, caveman say which little worker-caveman (agent) build which piece, caveman say how it all wire together and sync.
 
@@ -17,7 +17,7 @@ Validation check caveman do on all 86 file:
 - Resolution: consistent app window, same chrome (title bar, top nav bar with New Order / Bill No / KOT No / Item On-Off / Store / Live View / Orders / Recent / Hold / Alerts / Zomato Help / Logout). This one continuous app, not mixed screenshots from different tool.
 - Watermark: "Activate Windows" + "This is a non-commercial session" banner bottom-right on EVERY picture. Confirm this test/demo machine, unlicensed Windows, not production restaurant. Fine for reference capture, caveman just note it — don't ship watermark logic anywhere, it noise not feature.
 - Outlet identity: single outlet "Hotel kapila", ID 327038, phone 07969 223344. All picture same tenant — good, consistent dataset, caveman not mixing two different restaurant by accident.
-- Version stamp: app version "126.0.1" visible in one screenshot (Restaurant Configuration page). Caveman note version so future-caveman know which PetPooja build this reverse-engineered from.
+- Version stamp: app version "126.0.1" visible in one screenshot (Restaurant Configuration page). Caveman note version so future-caveman know which KapMeta build this reverse-engineered from.
 - Client/Server detail: one screenshot show "Machines" panel — Main Server `192.168.29.33`, Client Machine `192.168.29.236 (You)`. CONFIRM: this a LAN client-server desktop app, not pure cloud SaaS. Big deal for sync plan below.
 
 Caveman bucket all 86 picture into **13 feature zones** by what screen show (caveman eyeball each one, not guess):

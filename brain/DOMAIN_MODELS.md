@@ -1,4 +1,4 @@
-# PetPooja POS Platform — Domain Models & Data Dictionary
+# KapMeta POS Platform — Domain Models & Data Dictionary
 
 **For:** Gemini, Claude & AI Coding Agents  
 

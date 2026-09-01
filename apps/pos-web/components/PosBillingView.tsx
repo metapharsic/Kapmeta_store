@@ -1,11 +1,17 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/router";
-import { authedFetch } from "../lib/auth";
+import { authedFetch, fetchMe } from "../lib/auth";
 import { useKapmetaSocket } from "../lib/useKapmetaSocket";
 import BillSplitModal from "./BillSplitModal";
 import AttractiveMenuItemCard, { MenuItemData } from "./menu/AttractiveMenuItemCard";
 import MenuCustomizerModal, { CustomizedItemSelection } from "./menu/MenuCustomizerModal";
 import CategoryNavbar, { DietaryFilter } from "./menu/CategoryNavbar";
+import A2aAgentStatusDrawer from "./A2aAgentStatusDrawer";
+import HeldOrdersDrawer, { HeldOrderData } from "./HeldOrdersDrawer";
+import CustomerCrmModal, { CustomerData } from "./CustomerCrmModal";
+import PosDiscountModal from "./PosDiscountModal";
+import PosKeyboardShortcutsModal from "./PosKeyboardShortcutsModal";
+import { posAudio } from "../lib/posAudio";
 
 interface MenuItem {
   id: string;
@@ -46,7 +52,7 @@ interface PosBillingViewProps {
 }
 
 export default function PosBillingView({
-  initialTable = "B6",
+  initialTable = "",
   initialTableId = "",
   initialMode = "DINE_IN",
   onBackToTables,
@@ -61,9 +67,14 @@ export default function PosBillingView({
   const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Dynamic Outlet Metadata — populated from /auth/me (no hardcoded fallbacks)
+  const [outletName, setOutletName] = useState("");
+  const [outletAddress, setOutletAddress] = useState("");
+  const [outletGstin, setOutletGstin] = useState("");
+
   // Cart & Table Metadata
-  const [tableNumber, setTableNumber] = useState(initialTable);
-  const [tableSection, setTableSection] = useState("Non AC");
+  const [tableNumber, setTableNumber] = useState(initialTable || "Select Table");
+  const [tableSection, setTableSection] = useState("Main Dining");
   const [coversCount, setCoversCount] = useState(2);
   const [waiterName, setWaiterName] = useState("Captain 1");
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -89,11 +100,106 @@ export default function PosBillingView({
   const [receiptModal, setReceiptModal] = useState<any | null>(null);
   const [kotFeedback, setKotFeedback] = useState<{ orderNumber: string; items: string[] } | null>(null);
 
-  // Load Menu & Running Table Order
+  // Enhancement States (Discount, CRM, Park/Recall, Multi-Agent A2A, Cash Tender, Hotkeys)
+  const [isDiscountModalOpen, setIsDiscountModalOpen] = useState(false);
+  const [discountMinor, setDiscountMinor] = useState(0);
+  const [discountReason, setDiscountReason] = useState("");
+
+  const [isCrmModalOpen, setIsCrmModalOpen] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<CustomerData | null>(null);
+
+  const [isHeldDrawerOpen, setIsHeldDrawerOpen] = useState(false);
+  const [heldOrdersCount, setHeldOrdersCount] = useState(0);
+
+  const [isA2aDrawerOpen, setIsA2aDrawerOpen] = useState(false);
+  const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState(false);
+
+  const [cashTendered, setCashTendered] = useState<number | "">("");
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  const refreshHeldCount = () => {
+    try {
+      const stored = JSON.parse(localStorage.getItem("kapmeta_held_orders") || "[]");
+      setHeldOrdersCount(Array.isArray(stored) ? stored.length : 0);
+    } catch {
+      setHeldOrdersCount(0);
+    }
+  };
+
+  // Load Menu, Outlet Info & Running Table Order
   useEffect(() => {
+    fetchMe().then((me) => {
+      if (me?.outlet?.name) setOutletName(me.outlet.name);
+      if (me?.outlet?.address) setOutletAddress(me.outlet.address);
+      if (me?.outlet?.taxNumber) setOutletGstin(me.outlet.taxNumber);
+    });
     loadMenu();
     loadActiveTableOrder();
+    refreshHeldCount();
   }, [initialTableId, initialTable]);
+
+  // Global POS Keyboard Shortcuts Listener (Pro Mode)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isInput =
+        e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+
+      if (e.key === "F1" || (e.key === "/" && !isInput)) {
+        e.preventDefault();
+        const searchEl = document.querySelector<HTMLInputElement>(".search-field");
+        if (searchEl) searchEl.focus();
+      } else if (e.key === "F2") {
+        e.preventDefault();
+        handleHoldCart();
+      } else if (e.key === "F3") {
+        e.preventDefault();
+        refreshHeldCount();
+        setIsHeldDrawerOpen((v) => !v);
+      } else if (e.key === "F4") {
+        e.preventDefault();
+        setIsDiscountModalOpen((v) => !v);
+      } else if (e.key === "F8") {
+        e.preventDefault();
+        setPaymentMethod("CASH");
+      } else if (e.key === "F9") {
+        e.preventDefault();
+        handleKotAndPrint();
+      } else if (e.key === "F10") {
+        e.preventDefault();
+        handlePrintAndEBill();
+      } else if (e.key === "m" || e.key === "M") {
+        if (!isInput) {
+          e.preventDefault();
+          setIsA2aDrawerOpen((v) => !v);
+        }
+      } else if (e.key === "Escape") {
+        if (isDiscountModalOpen) setIsDiscountModalOpen(false);
+        else if (isCrmModalOpen) setIsCrmModalOpen(false);
+        else if (isHeldDrawerOpen) setIsHeldDrawerOpen(false);
+        else if (isA2aDrawerOpen) setIsA2aDrawerOpen(false);
+        else if (isShortcutsModalOpen) setIsShortcutsModalOpen(false);
+        else if (receiptModal) setReceiptModal(null);
+        else if (onBackToTables) onBackToTables();
+      } else if (e.key === "?" && !isInput) {
+        e.preventDefault();
+        setIsShortcutsModalOpen(true);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    cart,
+    runningItems,
+    isDiscountModalOpen,
+    isCrmModalOpen,
+    isHeldDrawerOpen,
+    isA2aDrawerOpen,
+    isShortcutsModalOpen,
+    receiptModal,
+    tableNumber,
+    orderMode,
+  ]);
 
   useKapmetaSocket(
     () => {
@@ -145,30 +251,7 @@ export default function PosBillingView({
         if (matched) {
           setTableNumber(matched.tableNumber);
           setTableSection(matched.section || "Main Dining");
-          // #region agent log
-          fetch("http://127.0.0.1:7323/ingest/28c85a32-5ef1-4fe5-9437-78139f7a5bfb", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c675b" },
-            body: JSON.stringify({
-              sessionId: "9c675b",
-              runId: "post-merge",
-              hypothesisId: "T",
-              location: "PosBillingView.tsx:loadActiveTableOrder",
-              message: "billing opened for table",
-              data: {
-                clickedTableId: initialTableId || null,
-                matchedId: matched.id,
-                tableNumber: matched.tableNumber,
-                activeOrderId: matched.activeOrderId || null,
-                mergeGroupId: matched.mergeGroupId || null,
-                mergePrimaryTableId: matched.mergePrimaryTableId || null,
-                mergedWith: matched.mergedWith || [],
-                itemCount: matched.currentOrder?.items?.length || 0,
-              },
-              timestamp: Date.now(),
-            }),
-          }).catch(() => {});
-          // #endregion
+
           
           if (matched.activeOrderId) {
             const ordRes = await authedFetch(`/orders/${matched.activeOrderId}`);
@@ -296,6 +379,8 @@ export default function PosBillingView({
       return;
     }
 
+    posAudio.playItemAdd();
+
     setCart((prev) => {
       const existingIndex = prev.findIndex((c) => c.item.id === item.id);
       if (existingIndex > -1) {
@@ -346,7 +431,7 @@ export default function PosBillingView({
     );
   };
 
-  // Grand Totals Calculation (Running KOT Items + Draft Cart Items)
+  // Grand Totals Calculation (Running KOT Items + Draft Cart Items - Active Discounts)
   const runningSubtotalMinor = useMemo(
     () => runningItems.reduce((sum, it) => sum + it.subtotalMinor, 0),
     [runningItems]
@@ -356,8 +441,11 @@ export default function PosBillingView({
     [cart]
   );
   const totalSubtotalMinor = runningSubtotalMinor + cartSubtotalMinor;
-  const taxMinor = useMemo(() => Math.round(totalSubtotalMinor * 0.05), [totalSubtotalMinor]); // 5% GST
-  const grandTotalMinor = totalSubtotalMinor + taxMinor;
+  const taxableSubtotalMinor = Math.max(0, totalSubtotalMinor - discountMinor);
+  const taxMinor = useMemo(() => Math.round(taxableSubtotalMinor * 0.05), [taxableSubtotalMinor]); // 5% GST
+  const grandTotalMinor = taxableSubtotalMinor + taxMinor;
+  const grandTotalRupees = grandTotalMinor / 100;
+  const changeDueRupees = typeof cashTendered === "number" ? Math.max(0, cashTendered - grandTotalRupees) : 0;
 
   const handleHoldCart = () => {
     if (cart.length === 0 && runningItems.length === 0) {
@@ -371,13 +459,17 @@ export default function PosBillingView({
       itemCount: cart.reduce((s, c) => s + c.quantity, 0) + runningItems.reduce((s, r) => s + r.quantity, 0),
       totalMinor: grandTotalMinor,
       heldAt: new Date().toISOString(),
+      customerName: selectedCustomer?.name,
+      customerPhone: selectedCustomer?.phone,
       cart,
     };
     try {
-      const stored = JSON.parse(localStorage.getItem("petpooja_held_orders") || "[]");
+      const stored = JSON.parse(localStorage.getItem("kapmeta_held_orders") || "[]");
       stored.push(heldOrder);
-      localStorage.setItem("petpooja_held_orders", JSON.stringify(stored));
+      localStorage.setItem("kapmeta_held_orders", JSON.stringify(stored));
       setCart([]);
+      refreshHeldCount();
+      posAudio.playCartHeld();
       alert(`Order for Table ${tableNumber} is held/parked.`);
     } catch (e) {
       console.error(e);
@@ -451,6 +543,8 @@ export default function PosBillingView({
         const resData = await res.json();
         orderNum = resData.orderNumber || "KOT-NEW";
       }
+
+      posAudio.playKotDispatched();
 
       setKotFeedback({
         orderNumber: orderNum,
@@ -526,6 +620,9 @@ export default function PosBillingView({
           waiterName,
           paymentMethod,
           isPaid: true,
+          discountMinor,
+          discountReason: discountReason || undefined,
+          customerId: selectedCustomer?.id || undefined,
           lines: cart.map((c) => ({
             menuItemId: c.item.id,
             quantity: c.quantity,
@@ -551,13 +648,22 @@ export default function PosBillingView({
         orderNumber = resData.orderNumber || "INV-001";
       }
 
+      posAudio.playPaymentSettled();
+
       setReceiptModal({
         orderNumber,
         tableNumber,
         paymentMethod,
         totalSubtotalMinor,
+        discountMinor,
+        discountReason,
+        taxableSubtotalMinor,
         taxMinor,
         grandTotalMinor,
+        cashTendered: typeof cashTendered === "number" ? cashTendered : undefined,
+        changeDue: typeof cashTendered === "number" ? changeDueRupees : undefined,
+        customerName: selectedCustomer?.name,
+        customerPhone: selectedCustomer?.phone,
         items: allDisplayItems,
         createdAt: new Date().toISOString(),
       });
@@ -565,6 +671,8 @@ export default function PosBillingView({
       setCart([]);
       setRunningItems([]);
       setActiveOrder(null);
+      setDiscountMinor(0);
+      setDiscountReason("");
     } catch (err: any) {
       alert(err.message || "Failed to generate bill");
     } finally {
@@ -650,11 +758,64 @@ export default function PosBillingView({
           </button>
         </div>
 
-        {onBackToTables && (
-          <button type="button" className="btn-back-tables" onClick={onBackToTables}>
-            ← Back to Table View
+        <div className="pos-header-actions">
+          {/* Customer CRM Chip */}
+          <button
+            type="button"
+            className="btn-pos-crm-chip"
+            onClick={() => setIsCrmModalOpen(true)}
+            title="Link Customer & Loyalty"
+          >
+            <span>👤</span>
+            <span>
+              {selectedCustomer ? `${selectedCustomer.name}` : "+ Guest CRM"}
+            </span>
+            {selectedCustomer?.loyaltyPoints ? (
+              <span className="crm-pts-pill">{selectedCustomer.loyaltyPoints} pts</span>
+            ) : null}
           </button>
-        )}
+
+          {/* Held Orders Quick Recall Button */}
+          <button
+            type="button"
+            className="btn-pos-held-chip"
+            onClick={() => {
+              refreshHeldCount();
+              setIsHeldDrawerOpen(true);
+            }}
+            title="Parked / Held Orders (F3)"
+          >
+            <span>⏸ Held</span>
+            {heldOrdersCount > 0 && <span className="held-badge">{heldOrdersCount}</span>}
+          </button>
+
+          {/* A2A Telemetry Status HUD */}
+          <button
+            type="button"
+            className="btn-pos-a2a-chip"
+            onClick={() => setIsA2aDrawerOpen(true)}
+            title="A2A Multi-Agent Telemetry & Mesh Status"
+          >
+            <span className="a2a-live-dot" />
+            <span>A2A (8/8)</span>
+          </button>
+
+          {/* Hotkeys Cheatsheet Button */}
+          <button
+            type="button"
+            className="btn-pos-shortcuts-chip"
+            onClick={() => setIsShortcutsModalOpen(true)}
+            title="Keyboard Shortcuts Cheatsheet (?)"
+          >
+            <span>⌨️ Hotkeys</span>
+          </button>
+
+          {onBackToTables && (
+            <button type="button" className="btn-back-tables" onClick={onBackToTables}>
+              ← Floor View (Esc)
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Main 3-Column Layout */}
@@ -910,6 +1071,34 @@ export default function PosBillingView({
 
           {/* Cart Summary & Rapid Settlement Footer (Sticky at Bottom) */}
           <div className="cart-settlement-footer">
+            {/* Cart Billing Subtotals & Discounts */}
+            <div className="cart-financial-breakdown">
+              <div className="fin-row">
+                <span>Subtotal:</span>
+                <span>₹{(totalSubtotalMinor / 100).toFixed(2)}</span>
+              </div>
+              <div className="fin-row discount-row">
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span>Discount:</span>
+                  <button
+                    type="button"
+                    className="btn-discount-trigger"
+                    onClick={() => setIsDiscountModalOpen(true)}
+                    title="Apply Discount (F4)"
+                  >
+                    {discountMinor > 0 ? `✎ ${discountReason}` : "+ Discount (F4)"}
+                  </button>
+                </div>
+                <span className={discountMinor > 0 ? "text-discount-applied" : ""}>
+                  {discountMinor > 0 ? `-₹${(discountMinor / 100).toFixed(2)}` : "₹0.00"}
+                </span>
+              </div>
+              <div className="fin-row">
+                <span>GST (5%):</span>
+                <span>₹{(taxMinor / 100).toFixed(2)}</span>
+              </div>
+            </div>
+
             {/* Split & Tender Modes */}
             <div className="tender-action-bar">
               <button
@@ -981,6 +1170,57 @@ export default function PosBillingView({
               </div>
             </div>
 
+            {/* Cash Tender & Change Due Strip */}
+            {paymentMethod === "CASH" && (
+              <div className="cash-tender-strip">
+                <div className="cash-tender-inputs">
+                  <span className="cash-tender-label">💵 Tendered:</span>
+                  <div className="cash-input-wrap">
+                    <span>₹</span>
+                    <input
+                      type="number"
+                      placeholder={(grandTotalMinor / 100).toFixed(0)}
+                      value={cashTendered}
+                      onChange={(e) => setCashTendered(e.target.value === "" ? "" : Number(e.target.value))}
+                    />
+                  </div>
+                  <div className="cash-chips">
+                    <button
+                      type="button"
+                      className="cash-chip exact"
+                      onClick={() => setCashTendered(Math.ceil(grandTotalMinor / 100))}
+                    >
+                      Exact (₹{Math.ceil(grandTotalMinor / 100)})
+                    </button>
+                    {[100, 200, 500, 2000].map((denom) => {
+                      if (denom >= Math.ceil(grandTotalMinor / 100) || denom === 500) {
+                        return (
+                          <button
+                            key={denom}
+                            type="button"
+                            className="cash-chip"
+                            onClick={() => setCashTendered(denom)}
+                          >
+                            ₹{denom}
+                          </button>
+                        );
+                      }
+                      return null;
+                    })}
+                  </div>
+                </div>
+
+                {typeof cashTendered === "number" && (
+                  <div className="change-due-box">
+                    <span>Change Due:</span>
+                    <strong className={changeDueRupees > 0 ? "due-positive" : "due-exact"}>
+                      ₹{changeDueRupees.toFixed(2)}
+                    </strong>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Bottom Primary CTAs (Sticky & Always Visible) */}
             <div className="cart-cta-buttons">
               <button
@@ -1030,9 +1270,10 @@ export default function PosBillingView({
       {/* Menu Customizer Modal */}
       {customizingItem && (
         <MenuCustomizerModal
+          isOpen={Boolean(customizingItem)}
           item={customizingItem}
           onClose={() => setCustomizingItem(null)}
-          onAddToCart={addCustomizedToCart}
+          onConfirm={addCustomizedToCart}
         />
       )}
 
@@ -1085,14 +1326,19 @@ export default function PosBillingView({
           <div className="modal-dialog-card receipt-card" onClick={(e) => e.stopPropagation()}>
             <div className="receipt-paper">
               <div className="receipt-header">
-                <h3 style={{ margin: 0, fontWeight: 900 }}>HOTEL KAPILA</h3>
-                <div style={{ fontSize: "0.75rem", color: "#64748b" }}>GSTIN: 27AAAAA0000A1Z5</div>
-                <div style={{ fontSize: "0.75rem", color: "#64748b" }}>Main Branch, Pune</div>
+                <h3 style={{ margin: 0, fontWeight: 900 }}>{outletName.toUpperCase()}</h3>
+                <div style={{ fontSize: "0.75rem", color: "#64748b" }}>GSTIN: {outletGstin}</div>
+                <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{outletAddress}</div>
                 <div className="receipt-divider">================================</div>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem", fontWeight: 700 }}>
                   <span>Table: {receiptModal.tableNumber}</span>
                   <span>Inv #{receiptModal.orderNumber}</span>
                 </div>
+                {receiptModal.customerName && (
+                  <div style={{ fontSize: "0.75rem", color: "#1e293b", textAlign: "left", marginTop: "2px" }}>
+                    Guest: <strong>{receiptModal.customerName}</strong> {receiptModal.customerPhone ? `(${receiptModal.customerPhone})` : ""}
+                  </div>
+                )}
                 <div style={{ fontSize: "0.75rem", color: "#64748b", textAlign: "left", marginTop: "2px" }}>
                   Date: {new Date(receiptModal.createdAt).toLocaleString()}
                 </div>
@@ -1115,6 +1361,12 @@ export default function PosBillingView({
                   <span>Subtotal:</span>
                   <span>₹{(receiptModal.totalSubtotalMinor / 100).toFixed(2)}</span>
                 </div>
+                {receiptModal.discountMinor > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem", color: "#059669", fontWeight: 700 }}>
+                    <span>Discount ({receiptModal.discountReason || "Courtesy"}):</span>
+                    <span>-₹{(receiptModal.discountMinor / 100).toFixed(2)}</span>
+                  </div>
+                )}
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "#64748b" }}>
                   <span>CGST (2.5%):</span>
                   <span>₹{((receiptModal.taxMinor / 2) / 100).toFixed(2)}</span>
@@ -1132,6 +1384,18 @@ export default function PosBillingView({
                   <span>Paid via {receiptModal.paymentMethod}:</span>
                   <span>₹{(receiptModal.grandTotalMinor / 100).toFixed(2)}</span>
                 </div>
+                {receiptModal.cashTendered !== undefined && (
+                  <>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem", marginTop: "2px" }}>
+                      <span>Cash Tendered:</span>
+                      <span>₹{receiptModal.cashTendered.toFixed(2)}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem", color: "#059669", fontWeight: 700 }}>
+                      <span>Change Returned:</span>
+                      <span>₹{(receiptModal.changeDue || 0).toFixed(2)}</span>
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="receipt-footer" style={{ textAlign: "center", marginTop: "16px", fontSize: "0.75rem", color: "#64748b" }}>
@@ -1175,6 +1439,67 @@ export default function PosBillingView({
         </div>
       )}
 
+      {/* Discount Modal */}
+      <PosDiscountModal
+        isOpen={isDiscountModalOpen}
+        subtotalMinor={totalSubtotalMinor}
+        currentDiscountMinor={discountMinor}
+        onClose={() => setIsDiscountModalOpen(false)}
+        onApplyDiscount={(minor, reason) => {
+          setDiscountMinor(minor);
+          setDiscountReason(reason);
+        }}
+        onRemoveDiscount={() => {
+          setDiscountMinor(0);
+          setDiscountReason("");
+        }}
+      />
+
+      {/* Customer CRM Modal */}
+      <CustomerCrmModal
+        isOpen={isCrmModalOpen}
+        onClose={() => setIsCrmModalOpen(false)}
+        onSelectCustomer={(cust) => setSelectedCustomer(cust)}
+      />
+
+      {/* Held Orders Drawer */}
+      <HeldOrdersDrawer
+        isOpen={isHeldDrawerOpen}
+        onClose={() => {
+          setIsHeldDrawerOpen(false);
+          refreshHeldCount();
+        }}
+        onRecallOrder={(held) => {
+          if (held.cart && held.cart.length > 0) {
+            setCart(held.cart);
+          }
+          if (held.tableNumber) {
+            setTableNumber(held.tableNumber);
+          }
+          if (held.customerName) {
+            setSelectedCustomer({
+              id: "crm-held",
+              name: held.customerName,
+              phone: held.customerPhone || "",
+              loyaltyPoints: 50,
+            });
+          }
+          refreshHeldCount();
+        }}
+      />
+
+      {/* A2A Multi-Agent Status Drawer */}
+      <A2aAgentStatusDrawer
+        isOpen={isA2aDrawerOpen}
+        onClose={() => setIsA2aDrawerOpen(false)}
+      />
+
+      {/* Keyboard Shortcuts Cheatsheet Modal */}
+      <PosKeyboardShortcutsModal
+        isOpen={isShortcutsModalOpen}
+        onClose={() => setIsShortcutsModalOpen(false)}
+      />
+
       <style jsx>{`
         .pos-billing-container {
           display: flex;
@@ -1213,6 +1538,98 @@ export default function PosBillingView({
           color: #dc2626;
           box-shadow: inset 0 -2px 0 #dc2626;
         }
+
+        .pos-header-actions {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        .btn-pos-crm-chip {
+          background: #f0fdf4;
+          color: #166534;
+          border: 1px solid #bbf7d0;
+          padding: 4px 10px;
+          border-radius: 6px;
+          font-size: 0.72rem;
+          font-weight: 700;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          cursor: pointer;
+          transition: all 0.12s;
+        }
+        .btn-pos-crm-chip:hover {
+          background: #dcfce7;
+        }
+        .crm-pts-pill {
+          background: #16a34a;
+          color: #ffffff;
+          padding: 1px 5px;
+          border-radius: 999px;
+          font-size: 0.65rem;
+        }
+        .btn-pos-held-chip {
+          background: #fffbeb;
+          color: #92400e;
+          border: 1px solid #fde68a;
+          padding: 4px 10px;
+          border-radius: 6px;
+          font-size: 0.72rem;
+          font-weight: 700;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          cursor: pointer;
+        }
+        .btn-pos-held-chip:hover {
+          background: #fef3c7;
+        }
+        .held-badge {
+          background: #d97706;
+          color: #ffffff;
+          padding: 1px 6px;
+          border-radius: 999px;
+          font-size: 0.65rem;
+          font-weight: 800;
+        }
+        .btn-pos-a2a-chip {
+          background: #0f172a;
+          color: #ffffff;
+          border: 1px solid #334155;
+          padding: 4px 10px;
+          border-radius: 6px;
+          font-size: 0.72rem;
+          font-weight: 700;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          cursor: pointer;
+          transition: background 0.12s;
+        }
+        .btn-pos-a2a-chip:hover {
+          background: #1e293b;
+        }
+        .a2a-live-dot {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: #10b981;
+          box-shadow: 0 0 5px #10b981;
+        }
+        .btn-pos-shortcuts-chip {
+          background: #f1f5f9;
+          color: #334155;
+          border: 1px solid #cbd5e1;
+          padding: 4px 8px;
+          border-radius: 6px;
+          font-size: 0.72rem;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        .btn-pos-shortcuts-chip:hover {
+          background: #e2e8f0;
+        }
+
         .btn-back-tables {
           background: transparent;
           border: 1px solid #cbd5e1;
@@ -1483,6 +1900,125 @@ export default function PosBillingView({
           gap: 8px;
           box-shadow: 0 -2px 6px rgba(0,0,0,0.04);
         }
+
+        .cart-financial-breakdown {
+          display: flex;
+          flex-direction: column;
+          gap: 3px;
+          padding: 6px 8px;
+          background: #f8fafc;
+          border-radius: 6px;
+          border: 1px solid #e2e8f0;
+          font-size: 0.75rem;
+        }
+        .fin-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          color: #475569;
+        }
+        .fin-row.discount-row {
+          color: #0f172a;
+          font-weight: 600;
+        }
+        .btn-discount-trigger {
+          background: #eff6ff;
+          color: #2563eb;
+          border: 1px dashed #93c5fd;
+          padding: 1px 6px;
+          border-radius: 4px;
+          font-size: 0.68rem;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        .btn-discount-trigger:hover {
+          background: #dbeafe;
+        }
+        .text-discount-applied {
+          color: #059669;
+          font-weight: 700;
+        }
+
+        .cash-tender-strip {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          padding: 8px 10px;
+          background: #f0fdf4;
+          border: 1px solid #bbf7d0;
+          border-radius: 6px;
+        }
+        .cash-tender-inputs {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          flex-wrap: wrap;
+        }
+        .cash-tender-label {
+          font-size: 0.72rem;
+          font-weight: 700;
+          color: #166534;
+        }
+        .cash-input-wrap {
+          display: flex;
+          align-items: center;
+          background: #ffffff;
+          border: 1.5px solid #86efac;
+          border-radius: 4px;
+          padding: 2px 6px;
+          font-size: 0.75rem;
+          font-weight: 700;
+        }
+        .cash-input-wrap input {
+          width: 60px;
+          border: none;
+          outline: none;
+          font-size: 0.8rem;
+          font-weight: 700;
+          color: #0f172a;
+        }
+        .cash-chips {
+          display: flex;
+          gap: 4px;
+          flex-wrap: wrap;
+        }
+        .cash-chip {
+          background: #ffffff;
+          border: 1px solid #86efac;
+          color: #166534;
+          border-radius: 4px;
+          padding: 2px 6px;
+          font-size: 0.68rem;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        .cash-chip:hover {
+          background: #dcfce7;
+        }
+        .cash-chip.exact {
+          background: #16a34a;
+          color: #ffffff;
+          border-color: #16a34a;
+        }
+        .change-due-box {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          font-size: 0.78rem;
+          color: #166534;
+          padding-top: 4px;
+          border-top: 1px dashed #86efac;
+        }
+        .due-positive {
+          color: #047857;
+          font-size: 0.95rem;
+          font-weight: 900;
+        }
+        .due-exact {
+          color: #475569;
+          font-weight: 700;
+        }
+
         .tender-action-bar {
           display: flex;
           align-items: center;

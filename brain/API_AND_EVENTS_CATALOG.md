@@ -1,4 +1,4 @@
-# PetPooja POS Platform — API Endpoints & Event Bus Catalog
+# KapMeta POS Platform — API Endpoints & Event Bus Catalog
 
 **For:** Gemini, Claude & AI Coding Agents  
 

@@ -78,7 +78,7 @@ function autoDetectTitle(msg: string, type: AlertType): string {
   if (type === "warning" || m.includes("please") || m.includes("required")) {
     return "Attention Required";
   }
-  return "PetPooja POS";
+  return "KapMeta POS";
 }
 
 export default function GlobalAlertModal() {
@@ -103,7 +103,7 @@ export default function GlobalAlertModal() {
   }, [alertState, handleClose]);
 
   useEffect(() => {
-    // Override default browser window.alert with PetPooja modal popup
+    // Override default browser window.alert with KapMeta modal popup
     const originalAlert = window.alert;
     window.alert = (message?: any) => {
       const msgStr = String(message ?? "");
@@ -238,7 +238,7 @@ export default function GlobalAlertModal() {
           </div>
           <div className="pos-alert-title-area">
             <h3 className="pos-alert-title">{title}</h3>
-            <span className="pos-alert-subtitle">PetPooja POS Terminal</span>
+            <span className="pos-alert-subtitle">KapMeta POS Terminal</span>
           </div>
           <button
             type="button"

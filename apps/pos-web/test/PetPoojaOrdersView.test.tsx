@@ -1,14 +1,14 @@
 import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import PetPoojaOrdersView, {
+import KapMetaOrdersView, {
   REFERENCE_CURRENT_ORDERS,
-} from "../components/PetPoojaOrdersView";
+} from "../components/KapMetaOrdersView";
 
-describe("PetPoojaOrdersView Component", () => {
+describe("KapMetaOrdersView Component", () => {
   it("renders the top subheader tabs and back button", () => {
     const handleBack = vi.fn();
-    render(<PetPoojaOrdersView onBackToPos={handleBack} />);
+    render(<KapMetaOrdersView onBackToPos={handleBack} />);
 
     expect(screen.getByText("Current Order")).toBeInTheDocument();
     expect(screen.getByText("Online Order")).toBeInTheDocument();
@@ -21,7 +21,7 @@ describe("PetPoojaOrdersView Component", () => {
   });
 
   it("renders the 4 channel filter cards (All, Dine In, Delivery, Pick Up)", () => {
-    render(<PetPoojaOrdersView />);
+    render(<KapMetaOrdersView />);
 
     expect(screen.getByText("All")).toBeInTheDocument();
     expect(screen.getAllByText("Dine In").length).toBeGreaterThanOrEqual(1);
@@ -30,7 +30,7 @@ describe("PetPoojaOrdersView Component", () => {
   });
 
   it("renders the status legend indicators (Saved Bill, Printed Bill, Cancelled Bill, Paid)", () => {
-    render(<PetPoojaOrdersView />);
+    render(<KapMetaOrdersView />);
 
     expect(screen.getByText("Saved Bill")).toBeInTheDocument();
     expect(screen.getByText("Printed Bill")).toBeInTheDocument();
@@ -39,7 +39,7 @@ describe("PetPoojaOrdersView Component", () => {
   });
 
   it("renders all 6 reference orders with correct columns and status colors", () => {
-    render(<PetPoojaOrdersView initialOrders={REFERENCE_CURRENT_ORDERS} />);
+    render(<KapMetaOrdersView initialOrders={REFERENCE_CURRENT_ORDERS} />);
 
     // Order numbers
     expect(screen.getByText("8012")).toBeInTheDocument();
@@ -66,7 +66,7 @@ describe("PetPoojaOrdersView Component", () => {
   });
 
   it("filters orders when clicking channel filter buttons", () => {
-    render(<PetPoojaOrdersView initialOrders={REFERENCE_CURRENT_ORDERS} />);
+    render(<KapMetaOrdersView initialOrders={REFERENCE_CURRENT_ORDERS} />);
 
     const deliveryCard = screen.getAllByText("Delivery")[0];
     fireEvent.click(deliveryCard);
@@ -80,7 +80,7 @@ describe("PetPoojaOrdersView Component", () => {
   it("triggers onViewOrderDetails when clicking on order number or view icon", () => {
     const handleView = vi.fn();
     render(
-      <PetPoojaOrdersView
+      <KapMetaOrdersView
         initialOrders={REFERENCE_CURRENT_ORDERS}
         onViewOrderDetails={handleView}
       />

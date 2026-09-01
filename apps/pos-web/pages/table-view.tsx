@@ -1,13 +1,17 @@
-import React, { useState } from "react";
+import React from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
-import PetPoojaHeader from "../components/PetPoojaHeader";
+import KapMetaHeader from "../components/KapMetaHeader";
 import TableViewFloor from "../components/TableViewFloor";
+import { useAuthGuard } from "../lib/auth";
 
 export default function TableViewPage() {
   const router = useRouter();
-  const outletName = "Hotel kapila";
-  const outletCode = "R327038";
+  const { me } = useAuthGuard("order.create");
+
+  // All outlet identity data comes from the authenticated session — no hardcoded literals.
+  const outletName = me?.outlet?.name ?? "";
+  const outletCode = (me?.outlet as any)?.code ?? "";
 
   const handleSelectTable = (table: any) => {
     router.push(`/?table=${encodeURIComponent(table.tableNumber)}&tableId=${table.id}`);
@@ -22,9 +26,9 @@ export default function TableViewPage() {
   };
 
   return (
-    <div className="petpooja-app-root">
+    <div className="kapmeta-app-root">
       <Head>
-        <title>{outletName} ({outletCode}) - The Finest Restaurant Management Platform</title>
+        <title>{outletName ? `${outletName} - Table View` : "KapMeta POS - Table View"}</title>
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
         <meta
           name="description"
@@ -32,8 +36,8 @@ export default function TableViewPage() {
         />
       </Head>
 
-      {/* Universal Top PetPooja Titlebar & Header */}
-      <PetPoojaHeader
+      {/* Universal Top KapMeta Titlebar & Header */}
+      <KapMetaHeader
         outletName={outletName}
         outletCode={outletCode}
         onNewOrder={() => router.push("/?mode=DINE_IN")}

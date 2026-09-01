@@ -1,4 +1,4 @@
-# PetPooja POS Platform — Full System Architecture & Topology
+# KapMeta POS Platform — Full System Architecture & Topology
 
 **For:** Gemini, Claude & Multi-Agent Autonomous Engines  
 
@@ -41,7 +41,7 @@
                                       │
         ┌─────────────────────────────▼─────────────────────────────┐
         │         PERSISTENCE & INFRASTRUCTURE LAYER                │
-        │  PostgreSQL 16 (Port 5432 · db 'petpooja' · Prisma ORM)   │
+        │  PostgreSQL 16 (Port 5432 · db 'kapmeta' · Prisma ORM)   │
         │  Redis 7.0 (Port 6379 · Cache & Session Store)            │
         │  Logs Engine (logs/api, logs/pos-web, logs/app, logs/err) │
         └───────────────────────────────────────────────────────────┘

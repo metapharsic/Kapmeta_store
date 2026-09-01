@@ -72,6 +72,9 @@ function makeFakeRepo(opts: {
         .filter((c) => !orders.some((o) => o.customerId === c.id && o.createdAt >= cutoff))
         .map((c) => c.id);
     },
+    async findBirthdayCustomerIds(outletId: string) {
+      return customers.filter((c) => c.outletId === outletId).map((c) => c.id);
+    },
     async filterExistingCustomerIds(outletId: string, customerIds: string[]) {
       return customers.filter((c) => c.outletId === outletId && customerIds.includes(c.id)).map((c) => c.id);
     },

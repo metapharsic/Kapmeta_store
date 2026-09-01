@@ -31,7 +31,7 @@ STILL UNRECONCILED / not fixed this pass (lower severity, did not block boot):
 - services/finance, services/inventory, services/reporting, services/tables, services/tax, services/settings, services/printing, services/admin, services/aggregator, services/crm as built earlier this session are a SEPARATE, redundant implementation sitting alongside the real @kapmeta/finance, @kapmeta/inventory, @kapmeta/reporting, @kapmeta/crm packages. They do not appear to be imported by any real consumer (no crash from them), but they are dead weight / a maintenance trap and should be deleted once the user confirms.
 - apps/pos-web was also overwritten (Vite-style scaffold over the real Next.js app) — NOT repaired this pass, real pages/login.tsx etc. still needs reconstruction the same way apps/api was fixed, if the user wants pos-web usable too (not just the API).
 
-NEXT STEP FOR USER: run Start_PetPooja.bat for real (not via this sandboxed bridge) to get the authoritative test of the API fix. If /auth/login still fails there, send the fresh logs/api/*.log and logs/errors/*.log.
+NEXT STEP FOR USER: run Start_KapMeta.bat for real (not via this sandboxed bridge) to get the authoritative test of the API fix. If /auth/login still fails there, send the fresh logs/api/*.log and logs/errors/*.log.
 
 ## INCIDENT UPDATE: 2026-08-22 (correction)
 
@@ -57,7 +57,7 @@ No real implementation files were modified. No name collisions found.
 tsc --noEmit shows only pre-existing @kapmeta/shared-types resolution
 errors (unbuilt workspace deps), unrelated to this fix.
 
-STILL NEEDED: user must run Stop_PetPooja.bat then Start_PetPooja.bat on
+STILL NEEDED: user must run Stop_KapMeta.bat then Start_KapMeta.bat on
 real machine and confirm login works — could not start/verify server from
 this session (device bridge cannot execute Windows .bat/exe, files-only).
 
@@ -95,7 +95,7 @@ REMAINING CLEANUP (not yet done, low risk, deferred pending user OK):
 CURRENT LIVE STATE:
 - Backend API listening on port 4001. All 15 core service endpoints passing 200 OK.
 - Frontend POS & Admin Web serving on port 4444.
-- Database PostgreSQL on localhost:5432/petpooja.
+- Database PostgreSQL on localhost:5432/kapmeta.
 
 ## UPDATE: 2026-08-25 — Admin Task 1: GST & Statutory Tax Breakdown API (COMPLETED)
 - Implemented `TaxBreakdown` and `TaxComponentBreakdown` contracts in `packages/shared-types/reporting.ts`.

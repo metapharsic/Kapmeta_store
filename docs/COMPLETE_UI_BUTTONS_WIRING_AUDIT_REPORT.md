@@ -1,4 +1,4 @@
-# PetPooja POS & Admin Platform — Complete UI Buttons, Features & Wiring Audit Report
+# KapMeta POS & Admin Platform — Complete UI Buttons, Features & Wiring Audit Report
 
 ---
 
@@ -19,7 +19,7 @@
 ---
 
 ### MODULE 1: Global Navigation & Universal Header
-- **Files**: `apps/pos-web/components/PetPoojaHeader.tsx`, `apps/pos-web/components/Nav.tsx`, `apps/pos-web/components/NotificationBell.tsx`, `apps/pos-web/components/OutletSwitcher.tsx`, `apps/pos-web/components/QuickLinks.tsx`
+- **Files**: `apps/pos-web/components/KapMetaHeader.tsx`, `apps/pos-web/components/Nav.tsx`, `apps/pos-web/components/NotificationBell.tsx`, `apps/pos-web/components/OutletSwitcher.tsx`, `apps/pos-web/components/QuickLinks.tsx`
 - **Total Buttons / Controls**: 16
 - **Working & Fully Wired (100%)**: 14
 - **Partial / Informational**: 2
@@ -41,7 +41,7 @@
 | `Sidebar Navigation Links` | Slideout Drawer | ✅ **WORKING** | 12 discrete permission-aware navigation links. | Permission check against `GET /auth/me` $\rightarrow$ `role_permissions` table. |
 | `Desktop Notifications` | Bell Dropdown | ✅ **WORKING** | Toggles native OS desktop notifications. | Native Web Notification API. |
 | `Store Open/Paused Toggle` | Top Header | 🟡 **LOCAL/UI** | Toggles store active state locally in header modal. | Client state toggle (disables online order intake locally). |
-| `Need Help? (Phone Pill)` | Top Header Right | ℹ️ **INFO ONLY** | Displays 24/7 PetPooja customer support phone number. | Informational trigger (opens support details modal). |
+| `Need Help? (Phone Pill)` | Top Header Right | ℹ️ **INFO ONLY** | Displays 24/7 KapMeta customer support phone number. | Informational trigger (opens support details modal). |
 
 ---
 
@@ -123,7 +123,7 @@
 | `Retry Failed KOTs` | Offline Modal | ✅ **WORKING** | Replays queued offline orders once connection resumes. | Replays queued POST requests to `/waiters/orders`. |
 | `Clear Failed KOTs` | Offline Modal | ✅ **WORKING** | Clears cached failed orders from local queue. | Clears `localStorage` queue. |
 | `Test Server Ping` | LAN Modal | ✅ **WORKING** | Pings local POS server IP on local Wi-Fi to check latency. | `GET ${serverIp}/health` ping test. |
-| `Save Server IP` | LAN Modal | ✅ **WORKING** | Stores local master POS server IP in device storage. | Stores `petpooja_lan_server_ip`. |
+| `Save Server IP` | LAN Modal | ✅ **WORKING** | Stores local master POS server IP in device storage. | Stores `kapmeta_lan_server_ip`. |
 | `Chef / Staff PIN Keypad` | PIN Modal | ℹ️ **LOCAL LOCK** | 4-digit PIN verification to unlock shared tablet. | `verifyPin(pin)` $\rightarrow$ Validates staff PIN hash. |
 
 ---

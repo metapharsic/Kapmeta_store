@@ -1,6 +1,6 @@
 # Task 3: Recent Settled Invoices List & Receipt Audit Feed — Completion Report
 
-**Project:** PetPooja POS (Kapmeta) &bull; **Domain:** Admin, Finance & Audit &bull; **Date:** 2026-08-25 &bull; **Status:** Completed & Verified
+**Project:** KapMeta POS (Kapmeta) &bull; **Domain:** Admin, Finance & Audit &bull; **Date:** 2026-08-25 &bull; **Status:** Completed & Verified
 
 ---
 
@@ -49,9 +49,9 @@ Task 3 delivered:
 
 | File | Changes Made |
 | :--- | :--- |
-| [`apps/api/src/routes/reporting.ts`](file:///c:/Users/Hamza/Downloads/PetPooja/PetPooja/apps/api/src/routes/reporting.ts) | Implemented `GET /invoices` endpoint querying completed orders, joining tables, items, and captured payments. |
-| [`apps/pos-web/pages/admin.tsx`](file:///c:/Users/Hamza/Downloads/PetPooja/PetPooja/apps/pos-web/pages/admin.tsx) | Added `RecentInvoiceApi` and `InvoiceItemApi` interfaces, wired `/reporting/invoices` into dashboard data loader, rendered live table, added Receipt Drilldown Modal, and added CSV export option. |
-| [`CHECKPOINT.md`](file:///c:/Users/Hamza/Downloads/PetPooja/PetPooja/CHECKPOINT.md) | Recorded completion of Task 3. |
+| [`apps/api/src/routes/reporting.ts`](file:///c:/Users/Hamza/Downloads/KapMeta/KapMeta/apps/api/src/routes/reporting.ts) | Implemented `GET /invoices` endpoint querying completed orders, joining tables, items, and captured payments. |
+| [`apps/pos-web/pages/admin.tsx`](file:///c:/Users/Hamza/Downloads/KapMeta/KapMeta/apps/pos-web/pages/admin.tsx) | Added `RecentInvoiceApi` and `InvoiceItemApi` interfaces, wired `/reporting/invoices` into dashboard data loader, rendered live table, added Receipt Drilldown Modal, and added CSV export option. |
+| [`CHECKPOINT.md`](file:///c:/Users/Hamza/Downloads/KapMeta/KapMeta/CHECKPOINT.md) | Recorded completion of Task 3. |
 
 ---
 

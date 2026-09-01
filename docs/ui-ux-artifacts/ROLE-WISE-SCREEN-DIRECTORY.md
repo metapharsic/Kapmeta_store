@@ -1,6 +1,6 @@
 # Role-Wise Screen Inventory & Architecture Directory
 
-**Status:** APPROVED · **Version:** 2.0 · **Target System:** PetPooja POS Desktop & Web Platform · **Total Analyzed Screens:** 90
+**Status:** APPROVED · **Version:** 2.0 · **Target System:** KapMeta POS Desktop & Web Platform · **Total Analyzed Screens:** 90
 
 This document defines the complete separation of all 90 UI screens captured in `Screen_shot` organized by user role, operational responsibility, and system privilege tier.
 
@@ -8,7 +8,7 @@ This document defines the complete separation of all 90 UI screens captured in `
 
 ## 1. Role Overview & Distribution
 
-The 90 screenshots captured from the PetPooja POS system are partitioned into **8 operational roles**:
+The 90 screenshots captured from the KapMeta POS system are partitioned into **8 operational roles**:
 
 ```mermaid
 graph TD
@@ -32,21 +32,21 @@ graph TD
 
 | Role Folder | Role Name | Screen Count | Primary Responsibilities |
 |---|---|:---:|---|
-| [`01_Cashier_POS_Operator`](file:///c:/Users/BEST%20BUY/Downloads/PetPooja/PetPooja/Screen_shot/By_Role/01_Cashier_POS_Operator) | **Cashier / POS Operator** | **12** | Register billing, dine-in checkout, split bill, cart modifications, cash drawer settlements. |
-| [`02_Captain_Waiter_OrderTaking`](file:///c:/Users/BEST%20BUY/Downloads/PetPooja/PetPooja/Screen_shot/By_Role/02_Captain_Waiter_OrderTaking) | **Captain / Waiter / Steward** | **8** | Dine-in table status tracking, order punching, item variations, cooking notes, table transfers. |
-| [`03_Kitchen_Chef_KDS`](file:///c:/Users/BEST%20BUY/Downloads/PetPooja/PetPooja/Screen_shot/By_Role/03_Kitchen_Chef_KDS) | **Kitchen Staff / Chef / KDS** | **7** | KOT live view, preparation countdown timers, ticket progression, prep time defaults. |
-| [`04_Online_Delivery_Manager`](file:///c:/Users/BEST%20BUY/Downloads/PetPooja/PetPooja/Screen_shot/By_Role/04_Online_Delivery_Manager) | **Online Delivery & Dispatch** | **14** | Swiggy/Zomato live feeds, rider tracking, OTP verification, delay alerts, food-ready updates. |
-| [`05_Store_Inventory_Manager`](file:///c:/Users/BEST%20BUY/Downloads/PetPooja/PetPooja/Screen_shot/By_Role/05_Store_Inventory_Manager) | **Store & Inventory Manager** | **9** | Menu item 86-list on/off, aggregator channel availability, purchase orders, wastage logs. |
-| [`06_Restaurant_Manager_Admin`](file:///c:/Users/BEST%20BUY/Downloads/PetPooja/PetPooja/Screen_shot/By_Role/06_Restaurant_Manager_Admin) | **Restaurant Manager / Admin** | **12** | Master catalog (275 items), area/table layouts, staff biller profiles, CRM, feedback/reviews. |
-| [`07_Accountant_Auditor_Finance`](file:///c:/Users/BEST%20BUY/Downloads/PetPooja/PetPooja/Screen_shot/By_Role/07_Accountant_Auditor_Finance) | **Accountant / Finance** | **8** | GST tax configuration (forward/backward tax), day-end settlements, payment splits, sales BI. |
-| [`08_System_IT_Hardware_Admin`](file:///c:/Users/BEST%20BUY/Downloads/PetPooja/PetPooja/Screen_shot/By_Role/08_System_IT_Hardware_Admin) | **System IT / Hardware Admin** | **28** | POS preferences, thermal printer setup & layout typography, LAN sync (192.168.29.33), DB tools. |
+| [`01_Cashier_POS_Operator`](file:///c:/Users/BEST%20BUY/Downloads/KapMeta/KapMeta/Screen_shot/By_Role/01_Cashier_POS_Operator) | **Cashier / POS Operator** | **12** | Register billing, dine-in checkout, split bill, cart modifications, cash drawer settlements. |
+| [`02_Captain_Waiter_OrderTaking`](file:///c:/Users/BEST%20BUY/Downloads/KapMeta/KapMeta/Screen_shot/By_Role/02_Captain_Waiter_OrderTaking) | **Captain / Waiter / Steward** | **8** | Dine-in table status tracking, order punching, item variations, cooking notes, table transfers. |
+| [`03_Kitchen_Chef_KDS`](file:///c:/Users/BEST%20BUY/Downloads/KapMeta/KapMeta/Screen_shot/By_Role/03_Kitchen_Chef_KDS) | **Kitchen Staff / Chef / KDS** | **7** | KOT live view, preparation countdown timers, ticket progression, prep time defaults. |
+| [`04_Online_Delivery_Manager`](file:///c:/Users/BEST%20BUY/Downloads/KapMeta/KapMeta/Screen_shot/By_Role/04_Online_Delivery_Manager) | **Online Delivery & Dispatch** | **14** | Swiggy/Zomato live feeds, rider tracking, OTP verification, delay alerts, food-ready updates. |
+| [`05_Store_Inventory_Manager`](file:///c:/Users/BEST%20BUY/Downloads/KapMeta/KapMeta/Screen_shot/By_Role/05_Store_Inventory_Manager) | **Store & Inventory Manager** | **9** | Menu item 86-list on/off, aggregator channel availability, purchase orders, wastage logs. |
+| [`06_Restaurant_Manager_Admin`](file:///c:/Users/BEST%20BUY/Downloads/KapMeta/KapMeta/Screen_shot/By_Role/06_Restaurant_Manager_Admin) | **Restaurant Manager / Admin** | **12** | Master catalog (275 items), area/table layouts, staff biller profiles, CRM, feedback/reviews. |
+| [`07_Accountant_Auditor_Finance`](file:///c:/Users/BEST%20BUY/Downloads/KapMeta/KapMeta/Screen_shot/By_Role/07_Accountant_Auditor_Finance) | **Accountant / Finance** | **8** | GST tax configuration (forward/backward tax), day-end settlements, payment splits, sales BI. |
+| [`08_System_IT_Hardware_Admin`](file:///c:/Users/BEST%20BUY/Downloads/KapMeta/KapMeta/Screen_shot/By_Role/08_System_IT_Hardware_Admin) | **System IT / Hardware Admin** | **28** | POS preferences, thermal printer setup & layout typography, LAN sync (192.168.29.33), DB tools. |
 
 ---
 
 ## 2. Detailed Role-Wise Screen Breakdown
 
 ### Role 1: Cashier / Front-Desk Biller (`01_Cashier_POS_Operator`)
-* **Directory:** [`Screen_shot/By_Role/01_Cashier_POS_Operator/`](file:///c:/Users/BEST%20BUY/Downloads/PetPooja/PetPooja/Screen_shot/By_Role/01_Cashier_POS_Operator)
+* **Directory:** [`Screen_shot/By_Role/01_Cashier_POS_Operator/`](file:///c:/Users/BEST%20BUY/Downloads/KapMeta/KapMeta/Screen_shot/By_Role/01_Cashier_POS_Operator)
 * **Screen Count:** 12
 
 | # | Screen ID & Title | Source Screenshot | Functional Description |
@@ -67,7 +67,7 @@ graph TD
 ---
 
 ### Role 2: Captain / Waiter / Table Steward (`02_Captain_Waiter_OrderTaking`)
-* **Directory:** [`Screen_shot/By_Role/02_Captain_Waiter_OrderTaking/`](file:///c:/Users/BEST%20BUY/Downloads/PetPooja/PetPooja/Screen_shot/By_Role/02_Captain_Waiter_OrderTaking)
+* **Directory:** [`Screen_shot/By_Role/02_Captain_Waiter_OrderTaking/`](file:///c:/Users/BEST%20BUY/Downloads/KapMeta/KapMeta/Screen_shot/By_Role/02_Captain_Waiter_OrderTaking)
 * **Screen Count:** 8
 
 | # | Screen ID & Title | Source Screenshot | Functional Description |
@@ -84,7 +84,7 @@ graph TD
 ---
 
 ### Role 3: Kitchen Staff / Head Chef / KDS (`03_Kitchen_Chef_KDS`)
-* **Directory:** [`Screen_shot/By_Role/03_Kitchen_Chef_KDS/`](file:///c:/Users/BEST%20BUY/Downloads/PetPooja/PetPooja/Screen_shot/By_Role/03_Kitchen_Chef_KDS)
+* **Directory:** [`Screen_shot/By_Role/03_Kitchen_Chef_KDS/`](file:///c:/Users/BEST%20BUY/Downloads/KapMeta/KapMeta/Screen_shot/By_Role/03_Kitchen_Chef_KDS)
 * **Screen Count:** 7
 
 | # | Screen ID & Title | Source Screenshot | Functional Description |
@@ -100,7 +100,7 @@ graph TD
 ---
 
 ### Role 4: Online Aggregator & Dispatch Manager (`04_Online_Delivery_Manager`)
-* **Directory:** [`Screen_shot/By_Role/04_Online_Delivery_Manager/`](file:///c:/Users/BEST%20BUY/Downloads/PetPooja/PetPooja/Screen_shot/By_Role/04_Online_Delivery_Manager)
+* **Directory:** [`Screen_shot/By_Role/04_Online_Delivery_Manager/`](file:///c:/Users/BEST%20BUY/Downloads/KapMeta/KapMeta/Screen_shot/By_Role/04_Online_Delivery_Manager)
 * **Screen Count:** 14
 
 | # | Screen ID & Title | Source Screenshot | Functional Description |
@@ -123,7 +123,7 @@ graph TD
 ---
 
 ### Role 5: Store & Inventory Manager (`05_Store_Inventory_Manager`)
-* **Directory:** [`Screen_shot/By_Role/05_Store_Inventory_Manager/`](file:///c:/Users/BEST%20BUY/Downloads/PetPooja/PetPooja/Screen_shot/By_Role/05_Store_Inventory_Manager)
+* **Directory:** [`Screen_shot/By_Role/05_Store_Inventory_Manager/`](file:///c:/Users/BEST%20BUY/Downloads/KapMeta/KapMeta/Screen_shot/By_Role/05_Store_Inventory_Manager)
 * **Screen Count:** 9
 
 | # | Screen ID & Title | Source Screenshot | Functional Description |
@@ -141,7 +141,7 @@ graph TD
 ---
 
 ### Role 6: Restaurant Manager / Outlet General Admin (`06_Restaurant_Manager_Admin`)
-* **Directory:** [`Screen_shot/By_Role/06_Restaurant_Manager_Admin/`](file:///c:/Users/BEST%20BUY/Downloads/PetPooja/PetPooja/Screen_shot/By_Role/06_Restaurant_Manager_Admin)
+* **Directory:** [`Screen_shot/By_Role/06_Restaurant_Manager_Admin/`](file:///c:/Users/BEST%20BUY/Downloads/KapMeta/KapMeta/Screen_shot/By_Role/06_Restaurant_Manager_Admin)
 * **Screen Count:** 12
 
 | # | Screen ID & Title | Source Screenshot | Functional Description |
@@ -162,7 +162,7 @@ graph TD
 ---
 
 ### Role 7: Accountant / Auditor / Financial Controller (`07_Accountant_Auditor_Finance`)
-* **Directory:** [`Screen_shot/By_Role/07_Accountant_Auditor_Finance/`](file:///c:/Users/BEST%20BUY/Downloads/PetPooja/PetPooja/Screen_shot/By_Role/07_Accountant_Auditor_Finance)
+* **Directory:** [`Screen_shot/By_Role/07_Accountant_Auditor_Finance/`](file:///c:/Users/BEST%20BUY/Downloads/KapMeta/KapMeta/Screen_shot/By_Role/07_Accountant_Auditor_Finance)
 * **Screen Count:** 8
 
 | # | Screen ID & Title | Source Screenshot | Functional Description |
@@ -179,7 +179,7 @@ graph TD
 ---
 
 ### Role 8: IT Systems, Hardware & Database Administrator (`08_System_IT_Hardware_Admin`)
-* **Directory:** [`Screen_shot/By_Role/08_System_IT_Hardware_Admin/`](file:///c:/Users/BEST%20BUY/Downloads/PetPooja/PetPooja/Screen_shot/By_Role/08_System_IT_Hardware_Admin)
+* **Directory:** [`Screen_shot/By_Role/08_System_IT_Hardware_Admin/`](file:///c:/Users/BEST%20BUY/Downloads/KapMeta/KapMeta/Screen_shot/By_Role/08_System_IT_Hardware_Admin)
 * **Screen Count:** 28
 
 | # | Screen ID & Title | Source Screenshot | Functional Description |
@@ -218,6 +218,6 @@ graph TD
 ## 3. Storage Location
 
 All separated screens are organized under:
-`PetPooja/Screen_shot/By_Role/`
+`KapMeta/Screen_shot/By_Role/`
 
 Inside each role folder, screenshots are named systematically with their screen sequence number and descriptive title (e.g. `01_Floor_Plan_Table_Status.png`), accompanied by a role-specific `README.md`.

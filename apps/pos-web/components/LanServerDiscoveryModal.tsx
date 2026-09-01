@@ -14,7 +14,7 @@ export default function LanServerDiscoveryModal({
   const [pingStatus, setPingStatus] = useState<string | null>(null);
 
   useEffect(() => {
-    const saved = localStorage.getItem("petpooja_lan_server_ip");
+    const saved = localStorage.getItem("kapmeta_lan_server_ip");
     if (saved) setServerIp(saved);
   }, []);
 
@@ -38,7 +38,7 @@ export default function LanServerDiscoveryModal({
   };
 
   const handleSave = () => {
-    localStorage.setItem("petpooja_lan_server_ip", serverIp.trim());
+    localStorage.setItem("kapmeta_lan_server_ip", serverIp.trim());
     onServerConfigured(serverIp.trim());
     onClose();
   };

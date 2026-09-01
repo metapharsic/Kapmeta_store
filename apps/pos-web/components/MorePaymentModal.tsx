@@ -115,8 +115,8 @@ export default function MorePaymentModal({
   };
 
   return (
-    <div className="petpooja-more-modal-backdrop" onClick={onClose}>
-      <div className="petpooja-more-modal-card" onClick={(e) => e.stopPropagation()}>
+    <div className="kapmeta-more-modal-backdrop" onClick={onClose}>
+      <div className="kapmeta-more-modal-card" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="more-modal-header">
           <h2 className="more-modal-title">More</h2>
@@ -401,7 +401,7 @@ export default function MorePaymentModal({
       </div>
 
       <style jsx>{`
-        .petpooja-more-modal-backdrop {
+        .kapmeta-more-modal-backdrop {
           position: fixed;
           inset: 0;
           background: rgba(0, 0, 0, 0.45);
@@ -422,7 +422,7 @@ export default function MorePaymentModal({
           }
         }
 
-        .petpooja-more-modal-card {
+        .kapmeta-more-modal-card {
           background: #ffffff;
           border-radius: 16px;
           width: 530px;

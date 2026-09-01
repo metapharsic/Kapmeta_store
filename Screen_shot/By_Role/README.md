@@ -1,6 +1,6 @@
-# Role-Based Screen Index for PetPooja POS System
+# Role-Based Screen Index for KapMeta POS System
 
-All 90 screenshots captured from the PetPooja POS platform have been categorized and organized role-wise into dedicated subfolders.
+All 90 screenshots captured from the KapMeta POS platform have been categorized and organized role-wise into dedicated subfolders.
 
 ## Summary of Roles
 

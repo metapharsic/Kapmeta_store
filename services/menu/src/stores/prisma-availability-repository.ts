@@ -87,7 +87,7 @@ export class PrismaAvailabilityRepository implements AvailabilityRepository {
     await this.prisma.auditLog.create({
       data: {
         outletId,
-        actor_id: userId,
+        userId,
         action: "UPDATE",
         entityType: "MENU_ITEM_86",
         entityId: menuItemId,

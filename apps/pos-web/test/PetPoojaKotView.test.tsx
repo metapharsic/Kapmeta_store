@@ -1,11 +1,11 @@
 import React from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import PetPoojaKotView, { REFERENCE_KOT_TICKETS } from "../components/PetPoojaKotView";
+import KapMetaKotView, { REFERENCE_KOT_TICKETS } from "../components/KapMetaKotView";
 
-describe("PetPoojaKotView Component", () => {
+describe("KapMetaKotView Component", () => {
   it("renders the subheader with Order View, Kot View, New View, Old View, and Back button", () => {
-    render(<PetPoojaKotView />);
+    render(<KapMetaKotView />);
 
     expect(screen.getByText("Order View")).toBeInTheDocument();
     expect(screen.getByText("Kot View")).toBeInTheDocument();
@@ -15,7 +15,7 @@ describe("PetPoojaKotView Component", () => {
   });
 
   it("renders the status indicators legend with Delivery, Limit Exceed, Swiggy, Zomato, Dine In, Pick Up", () => {
-    render(<PetPoojaKotView />);
+    render(<KapMetaKotView />);
 
     expect(screen.getByText("Delivery")).toBeInTheDocument();
     expect(screen.getByText("Limit Exceed")).toBeInTheDocument();
@@ -26,7 +26,7 @@ describe("PetPoojaKotView Component", () => {
   });
 
   it("renders all 8 reference KOT cards from the screenshot", () => {
-    render(<PetPoojaKotView initialTickets={REFERENCE_KOT_TICKETS} />);
+    render(<KapMetaKotView initialTickets={REFERENCE_KOT_TICKETS} />);
 
     // KOT Numbers
     expect(screen.getByText("14")).toBeInTheDocument();
@@ -57,7 +57,7 @@ describe("PetPoojaKotView Component", () => {
   it("marks KOT Food Ready on button click", () => {
     const handleMarkReady = vi.fn();
     render(
-      <PetPoojaKotView
+      <KapMetaKotView
         initialTickets={REFERENCE_KOT_TICKETS}
         onMarkFoodReady={handleMarkReady}
       />
@@ -72,7 +72,7 @@ describe("PetPoojaKotView Component", () => {
   });
 
   it("filters KOT cards using the quick search input", () => {
-    render(<PetPoojaKotView initialTickets={REFERENCE_KOT_TICKETS} />);
+    render(<KapMetaKotView initialTickets={REFERENCE_KOT_TICKETS} />);
 
     const searchInput = screen.getByPlaceholderText("Enter kot/Order no.");
     fireEvent.change(searchInput, { target: { value: "Upma" } });
@@ -84,7 +84,7 @@ describe("PetPoojaKotView Component", () => {
   it("marks KOT ready via the MFR button", () => {
     const handleMarkReady = vi.fn();
     render(
-      <PetPoojaKotView
+      <KapMetaKotView
         initialTickets={REFERENCE_KOT_TICKETS}
         onMarkFoodReady={handleMarkReady}
       />

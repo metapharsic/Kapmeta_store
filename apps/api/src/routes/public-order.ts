@@ -27,6 +27,7 @@ router.get("/public/tables/:tableId/menu", async (req, res) => {
   try {
     const table = await prisma.diningTable.findFirst({
       where: { id: req.params.tableId, isActive: true },
+      include: { outlet: { select: { name: true } } },
     });
     if (!table) {
       res.status(404).json({ error: "table not found" });
@@ -40,6 +41,7 @@ router.get("/public/tables/:tableId/menu", async (req, res) => {
     ]);
 
     res.status(200).json({
+      outletName: (table as any).outlet?.name ?? null,
       table: { id: table.id, tableNumber: table.tableNumber, section: table.section },
       categories,
       items: items

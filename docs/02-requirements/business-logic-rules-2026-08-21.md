@@ -2,7 +2,7 @@
 
 **Status:** Draft for Phase 4–6 (Core POS) implementation
 **Owners:** services/orders, services/tax, services/settings, services/menu-sync
-**Source basis:** 86 validated screenshots of PetPooja desktop POS, single outlet "Hotel Kapila" (see Phase 0 discovery notes)
+**Source basis:** 86 validated screenshots of KapMeta desktop POS, single outlet "Hotel Kapila" (see Phase 0 discovery notes)
 **Related:** docs/01-discovery/decision-register.md (blocked on sign-off — items opened by this doc are appended there, see §8)
 **No-hardcode rule:** per CLAUDE.md, every numeric/label value used as an *example* in this document (2.5% CGST, ₹ amounts, "Packing Charge" label, etc.) is illustrative only. All such values MUST be sourced from DB tables (`tax_rules`, `billing_config`, `payment_types`, `print_config`, …) at runtime — none may be inlined as literals in service code. Seed/migration paths for every table referenced below are required deliverables of this phase, not optional.
 

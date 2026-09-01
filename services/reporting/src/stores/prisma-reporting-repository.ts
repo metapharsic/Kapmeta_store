@@ -22,10 +22,7 @@ export class PrismaReportingRepository implements ReportingRepository {
       where: {
         outletId,
         status: "COMPLETED",
-        OR: [
-          { settledAt: { gte: range.fromDate, lte: range.toDate } },
-          { AND: [{ settledAt: null }, { createdAt: { gte: range.fromDate, lte: range.toDate } }] },
-        ],
+        createdAt: { gte: range.fromDate, lte: range.toDate },
       },
       select: { status: true, grandTotal: true },
     });
@@ -38,10 +35,13 @@ export class PrismaReportingRepository implements ReportingRepository {
 
   async listOrderItemsInRange(outletId: string, range: DateRange): Promise<ItemSaleRow[]> {
     const rows = await this.prisma.orderItem.findMany({
-      where: { outletId, order: { status: "COMPLETED", OR: [
-        { settledAt: { gte: range.fromDate, lte: range.toDate } },
-        { AND: [{ settledAt: null }, { createdAt: { gte: range.fromDate, lte: range.toDate } }] },
-      ] } },
+      where: {
+        outletId,
+        order: {
+          status: "COMPLETED",
+          createdAt: { gte: range.fromDate, lte: range.toDate },
+        },
+      },
       select: {
         menuItemId: true,
         quantity: true,
@@ -76,10 +76,7 @@ export class PrismaReportingRepository implements ReportingRepository {
       where: {
         outletId,
         status: "COMPLETED",
-        OR: [
-          { settledAt: { gte: range.fromDate, lte: range.toDate } },
-          { AND: [{ settledAt: null }, { createdAt: { gte: range.fromDate, lte: range.toDate } }] },
-        ],
+        createdAt: { gte: range.fromDate, lte: range.toDate },
       },
       select: { orderType: true, status: true, grandTotal: true },
     });
@@ -98,16 +95,13 @@ export class PrismaReportingRepository implements ReportingRepository {
         outletId,
         orderType: "DINE_IN",
         diningTableId: { not: null },
-        OR: [
-          { settledAt: { gte: range.fromDate, lte: range.toDate } },
-          { AND: [{ settledAt: null }, { createdAt: { gte: range.fromDate, lte: range.toDate } }] },
-        ],
+        createdAt: { gte: range.fromDate, lte: range.toDate },
       },
       select: {
         id: true,
         orderType: true,
         createdAt: true,
-        settledAt: true,
+        updatedAt: true,
       },
     });
 
@@ -115,7 +109,7 @@ export class PrismaReportingRepository implements ReportingRepository {
       orderId: row.id,
       orderType: row.orderType,
       createdAt: row.createdAt,
-      settledAt: row.settledAt,
+      settledAt: row.updatedAt,
     }));
   }
 
@@ -197,10 +191,7 @@ export class PrismaReportingRepository implements ReportingRepository {
       where: {
         outletId,
         status: "COMPLETED",
-        OR: [
-          { settledAt: { gte: range.fromDate, lte: range.toDate } },
-          { AND: [{ settledAt: null }, { createdAt: { gte: range.fromDate, lte: range.toDate } }] },
-        ],
+        createdAt: { gte: range.fromDate, lte: range.toDate },
       },
       select: {
         subtotal: true,

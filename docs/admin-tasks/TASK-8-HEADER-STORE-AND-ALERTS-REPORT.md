@@ -1,9 +1,9 @@
 # Task 8: Top Header "Store" & "Alerts" Interactive Modals Report
 
 ## Executive Summary
-This document provides the post-implementation report for resolving the unresponsive behavior of the **Store** and **Alerts** action buttons located on the top POS navigation header ([`apps/pos-web/components/PetPoojaHeader.tsx`](file:///c:/Users/Hamza/Downloads/PetPooja/PetPooja/apps/pos-web/components/PetPoojaHeader.tsx)).
+This document provides the post-implementation report for resolving the unresponsive behavior of the **Store** and **Alerts** action buttons located on the top POS navigation header ([`apps/pos-web/components/KapMetaHeader.tsx`](file:///c:/Users/Hamza/Downloads/KapMeta/KapMeta/apps/pos-web/components/KapMetaHeader.tsx)).
 
-Both buttons have been transformed from dead static/state-only variables into fully interactive, feature-rich modal interfaces aligned with the PetPooja POS design system and verified with clean production builds.
+Both buttons have been transformed from dead static/state-only variables into fully interactive, feature-rich modal interfaces aligned with the KapMeta POS design system and verified with clean production builds.
 
 ---
 
@@ -11,7 +11,7 @@ Both buttons have been transformed from dead static/state-only variables into fu
 
 ### 1. "🏪 Store" Button Unresponsiveness
 - **Observed Behavior:** Clicking "🏪 Store" on the top header produced no visual feedback, modal, or dropdown.
-- **Root Cause:** In `PetPoojaHeader.tsx`, `onClick={() => setIsStoreOnline(!isStoreOnline)}` only toggled an internal boolean in component state. No modal dialog or view had been implemented.
+- **Root Cause:** In `KapMetaHeader.tsx`, `onClick={() => setIsStoreOnline(!isStoreOnline)}` only toggled an internal boolean in component state. No modal dialog or view had been implemented.
 - **Resolution:**
   - Implemented the **Store Operations Control Modal** (`showStoreModal`):
     1. **Master Store Status Switch:** Toggle between `🟢 STORE IS ONLINE (OPEN)` and `🔴 STORE IS PAUSED (OFFLINE)` with real-time descriptions and slider animations.
@@ -24,7 +24,7 @@ Both buttons have been transformed from dead static/state-only variables into fu
 
 ### 2. "🔔 Alerts" Button Unresponsiveness
 - **Observed Behavior:** Clicking "🔔 Alerts (3)" wiped the counter badge to 0 without opening or listing any alerts.
-- **Root Cause:** In `PetPoojaHeader.tsx`, `onClick={() => setAlertsCount(0)}` simply reset the state count to zero without rendering any alert feed.
+- **Root Cause:** In `KapMetaHeader.tsx`, `onClick={() => setAlertsCount(0)}` simply reset the state count to zero without rendering any alert feed.
 - **Resolution:**
   - Implemented the **Live Operational Alerts & Notification Panel** (`showAlertsModal`):
     1. **Live Alert Feed:** Categorized alert cards with icons:

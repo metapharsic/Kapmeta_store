@@ -91,6 +91,7 @@ async function runStatusCheck() {
     { name: 'Redis Cache  ', host: '127.0.0.1', port: 6379, type: 'tcp', status: 'OFFLINE' },
     { name: 'API Gateway  ', host: '127.0.0.1', port: 4001, type: 'http', path: '/healthz', status: 'OFFLINE' },
     { name: 'POS Web UI   ', host: '127.0.0.1', port: 4444, type: 'http', path: '/', status: 'OFFLINE' },
+    { name: 'Admin Hub    ', host: '127.0.0.1', port: 4444, type: 'http', path: '/admin', status: 'OFFLINE' },
   ];
 
   for (const svc of services) {
@@ -143,10 +144,10 @@ async function runStatusCheck() {
     try {
       const agentData = JSON.parse(fs.readFileSync(agentRegistryPath, 'utf8'));
       const activeAgents = agentData.agents || [];
-      console.log(`  * Registered Agents    : ${activeAgents.length} Agents`);
-      activeAgents.slice(0, 5).forEach((agent: any) => {
-        const icon = agent.status === 'WORKING' ? '🟡' : agent.status === 'READY' || agent.status === 'IDLE' ? '🟢' : '⚪';
-        console.log(`    ${icon} ${agent.name.padEnd(20)} [${agent.status}] - ${agent.currentTask || 'Ready'}`);
+      console.log(`  * Registered Agents    : ${activeAgents.length} Agents in Active Topology`);
+      activeAgents.forEach((agent: any) => {
+        const icon = agent.status === 'WORKING' ? '🟡' : agent.status === 'READY' || agent.status === 'ONLINE' ? '🟢' : '⚪';
+        console.log(`    ${icon} ${agent.name.padEnd(25)} [${agent.status || 'READY'}] - ${agent.currentTask || 'Ready'}`);
       });
     } catch {
       console.log('  * Agent registry initialized.');
@@ -181,8 +182,8 @@ async function runStatusCheck() {
 
   console.log('\n=======================================================================');
   console.log('Quick Actions:');
-  console.log('  - Start Services : npm run start:all   (or .\\Start_PetPooja.bat)');
-  console.log('  - Stop Services  : npm run stop:all    (or .\\Stop_PetPooja.bat)');
+  console.log('  - Start Services : npm run start:all   (or .\\Start_KapMeta.bat)');
+  console.log('  - Stop Services  : npm run stop:all    (or .\\Stop_KapMeta.bat)');
   console.log('  - Error Scanner  : npm run logs:errors');
   console.log('  - Checkpoints    : npm run checkpoint:status');
   console.log('=======================================================================\n');

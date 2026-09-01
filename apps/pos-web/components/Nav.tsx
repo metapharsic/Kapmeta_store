@@ -53,7 +53,7 @@ interface SidebarGroupDef {
 }
 
 const SIDEBAR_GROUPS: SidebarGroupDef[] = [
-  { header: null, links: [{ href: "/admin", permission: "report.read", label: "Dashboard" }] },
+  { header: null, links: [{ href: "/admin?tab=daily-ops", permission: "report.read", label: "Operations Dashboard" }] },
   {
     header: "Daily Operations",
     links: [

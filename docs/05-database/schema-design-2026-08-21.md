@@ -113,7 +113,7 @@ Implied by the "Logout" nav item and by `actor_id` needed on every audit row. Ro
 Indexes: `(outlet_id)`; `unique (username) where deleted_at is null`; `unique (phone) where deleted_at is null`.
 
 ### `roles`
-Purpose: tenant-definable role names ("Cashier", "Manager", "Kitchen Staff") — not hardcoded, since PetPooja-style tenants customize titles.
+Purpose: tenant-definable role names ("Cashier", "Manager", "Kitchen Staff") — not hardcoded, since KapMeta-style tenants customize titles.
 
 | id uuid PK | outlet_id uuid FK | name text not null | is_system boolean default false | deleted_at |
 

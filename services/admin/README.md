@@ -1,7 +1,7 @@
 # Admin / System Configuration Service
 
 Implements the "System Configuration" screen's destructive one-click tiles
-from the reference PetPooja app (Reset Bill No., Reset Sync Code, Database
+from the reference KapMeta app (Reset Bill No., Reset Sync Code, Database
 Migration, Remove All Orders/KOT, Remove Backup Files, Logs, Check Machine)
 -- but safely, not as one-click actions with no confirmation.
 

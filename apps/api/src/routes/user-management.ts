@@ -90,7 +90,7 @@ router.get(
   async (_req: AuthedRequest, res) => {
     try {
       const permissions = await prisma.permission.findMany({
-        orderBy: { code: "asc" },
+        orderBy: { action: "asc" },
       });
       res.status(200).json(
         permissions.map((p) => ({

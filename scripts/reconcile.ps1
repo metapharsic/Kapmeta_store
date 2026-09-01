@@ -1,4 +1,4 @@
-# PetPooja POS Sales Reconciliation Automation Runner
+# KapMeta POS Sales Reconciliation Automation Runner
 
 Write-Host "=========================================================" -ForegroundColor Green
 Write-Host "SALES RECONCILIATION AUDIT RUNNER - INITIALIZING" -ForegroundColor Green

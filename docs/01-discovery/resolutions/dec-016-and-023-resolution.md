@@ -1,8 +1,8 @@
 # Decision Closure: DEC-016 and DEC-023
 
-Project: Kapmeta (restaurant POS clone of PetPooja)
+Project: Kapmeta (restaurant POS clone of KapMeta)
 Date: 2026-08-21
-Source evidence: 86 validated reference screenshots (single outlet "Hotel kapila", R-327038, LAN client-server topology, PetPooja app v126.0.1)
+Source evidence: 86 validated reference screenshots (single outlet "Hotel kapila", R-327038, LAN client-server topology, KapMeta app v126.0.1)
 
 ---
 

@@ -4,7 +4,7 @@ Status: Draft (Phase 2-3 architecture deliverable). Feeds `contracts/*.yaml`.
 Owner: Platform/API architecture. Depends on: docs/03-domain-model (assumed), docs/05-events (assumed).
 Date: 2026-08-21.
 
-This document is a **spec-of-specs**: it enumerates every contract file to be created under `contracts/`, and for each of the 13 validated PetPooja feature areas lists concrete endpoints with method, path, purpose, auth/role, and key request/response fields — enough for an engineer to start writing OpenAPI and handlers. It is not itself the OpenAPI source of truth.
+This document is a **spec-of-specs**: it enumerates every contract file to be created under `contracts/`, and for each of the 13 validated KapMeta feature areas lists concrete endpoints with method, path, purpose, auth/role, and key request/response fields — enough for an engineer to start writing OpenAPI and handlers. It is not itself the OpenAPI source of truth.
 
 All business data (menu items, prices, taxes, print text, outlets, payment types, roles-to-permissions) referenced by these endpoints is DB-backed per CLAUDE.md's no-hardcode rule. Where an endpoint is explicitly the write-path for such data, this is called out.
 
@@ -29,7 +29,7 @@ Global shell actions (feature 13) are not a separate file — they are thin comp
 
 All files share `contracts/common/` components: `Error`, `Pagination`, `Money`, `OutletContext`, `AuditFields` schemas, referenced via `$ref`.
 
-**Path convention:** outlet-scoped resources live under `/api/v1/outlets/{outletId}/...`. Tenant-global resources (e.g. cross-outlet admin, aggregator webhook ingress) live under `/api/v1/...` without outlet, or under `/api/v1/tenants/{tenantId}/...` where tenant scope matters. All webhook ingress paths are outlet-scoped since PetPooja/Swiggy/Zomato route per store.
+**Path convention:** outlet-scoped resources live under `/api/v1/outlets/{outletId}/...`. Tenant-global resources (e.g. cross-outlet admin, aggregator webhook ingress) live under `/api/v1/...` without outlet, or under `/api/v1/tenants/{tenantId}/...` where tenant scope matters. All webhook ingress paths are outlet-scoped since KapMeta/Swiggy/Zomato route per store.
 
 ---
 
@@ -288,7 +288,7 @@ Each request-level folder should include a pre-request script that fetches/refre
 ## 7. Open questions (carried from discovery, not resolved here)
 
 1. **"MFR" bulk button on live orders** — meaning unconfirmed. Provisional endpoint `POST .../live-orders/bulk-mark-food-ready` drafted in §2.3 as a guess (Mark Food Ready, bulk); needs screenshot re-review or client confirmation before finalizing in `contracts/orders.yaml`.
-2. **Reprint vs edit permission** — modeled provisionally as distinct permission keys (`orders.reprint` vs `orders.edit.override_total`) in §2.7/§4; needs product confirmation on whether PetPooja treats them as one permission.
+2. **Reprint vs edit permission** — modeled provisionally as distinct permission keys (`orders.reprint` vs `orders.edit.override_total`) in §2.7/§4; needs product confirmation on whether KapMeta treats them as one permission.
 3. **Multi-outlet auth model** — only one outlet ("Hotel kapila") was captured in screenshots. §4's `outletIds[]`-on-token model is a reasonable default but unverified against real multi-outlet tenant behavior (e.g., can a role differ per outlet for the same user?). Needs confirmation before `auth.yaml` is finalized.
 4. **"Store" toggle semantics** (§2.13b) — assumed open/closed for accepting new orders; not confirmed against screenshots which only showed the shortcut icon, not its effect.
 5. **Print config's exact 13 toggles** — this doc used a placeholder set of 13 in §2.9; needs the actual screenshot-derived list substituted before `contracts/settings.yaml` is written.

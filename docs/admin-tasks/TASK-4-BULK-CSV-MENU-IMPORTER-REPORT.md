@@ -1,6 +1,6 @@
 # Task 4: Bulk CSV / Excel Menu Catalog Importer — Completion Report
 
-**Project:** PetPooja POS (Kapmeta) &bull; **Domain:** Admin, Menu Catalog & Ingestion &bull; **Date:** 2026-08-25 &bull; **Status:** Completed & Verified
+**Project:** KapMeta POS (Kapmeta) &bull; **Domain:** Admin, Menu Catalog & Ingestion &bull; **Date:** 2026-08-25 &bull; **Status:** Completed & Verified
 
 ---
 
@@ -12,7 +12,7 @@ Task 4 delivered:
 1. A batch catalog ingestion endpoint (`POST /menu/items/bulk-upload`) in `apps/api/src/routes/menu.ts`.
 2. Automatic category detection and on-the-fly creation for missing categories.
 3. Safe upsert logic updating prices/attributes of existing items and inserting new dishes with prices converted to integer minor units (paise `BIGINT`).
-4. An interactive **Bulk Import Menu (CSV / Excel)** modal on [`apps/pos-web/pages/menu.tsx`](file:///c:/Users/Hamza/Downloads/PetPooja/PetPooja/apps/pos-web/pages/menu.tsx) with direct file upload, Excel copy-paste box, a downloadable sample CSV template, and real-time import summaries.
+4. An interactive **Bulk Import Menu (CSV / Excel)** modal on [`apps/pos-web/pages/menu.tsx`](file:///c:/Users/Hamza/Downloads/KapMeta/KapMeta/apps/pos-web/pages/menu.tsx) with direct file upload, Excel copy-paste box, a downloadable sample CSV template, and real-time import summaries.
 
 ---
 
@@ -47,9 +47,9 @@ Task 4 delivered:
 
 | File | Changes Made |
 | :--- | :--- |
-| [`apps/api/src/routes/menu.ts`](file:///c:/Users/Hamza/Downloads/PetPooja/PetPooja/apps/api/src/routes/menu.ts) | Implemented `POST /items/bulk-upload` with CSV parser, auto category provisioning, minor unit price conversions, and transactional upserts. |
-| [`apps/pos-web/pages/menu.tsx`](file:///c:/Users/Hamza/Downloads/PetPooja/PetPooja/apps/pos-web/pages/menu.tsx) | Added Bulk Import modal, sample CSV generator (`downloadSampleCsv`), file reader (`handleFileUpload`), and batch submission workflow. |
-| [`CHECKPOINT.md`](file:///c:/Users/Hamza/Downloads/PetPooja/PetPooja/CHECKPOINT.md) | Recorded completion of Task 4. |
+| [`apps/api/src/routes/menu.ts`](file:///c:/Users/Hamza/Downloads/KapMeta/KapMeta/apps/api/src/routes/menu.ts) | Implemented `POST /items/bulk-upload` with CSV parser, auto category provisioning, minor unit price conversions, and transactional upserts. |
+| [`apps/pos-web/pages/menu.tsx`](file:///c:/Users/Hamza/Downloads/KapMeta/KapMeta/apps/pos-web/pages/menu.tsx) | Added Bulk Import modal, sample CSV generator (`downloadSampleCsv`), file reader (`handleFileUpload`), and batch submission workflow. |
+| [`CHECKPOINT.md`](file:///c:/Users/Hamza/Downloads/KapMeta/KapMeta/CHECKPOINT.md) | Recorded completion of Task 4. |
 
 ---
 

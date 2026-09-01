@@ -11,7 +11,7 @@ echo.
 echo [CONFIG] Fixed Ports and Endpoints:
 echo  - POS Web UI (Frontend)   : http://localhost:4444 (PORT/APP_PORT/POS_PORT)
 echo  - API Gateway (Backend)   : http://localhost:4001 (API_PORT)
-echo  - Local Database Check    : localhost:5432 (petpooja)
+echo  - Local Database Check    : localhost:5432 (kapmeta)
 echo  - Redis Cache             : localhost:6379
 echo.
 
@@ -25,7 +25,7 @@ set ADMIN_PORT=4445
 set DB_PORT=5432
 set REDIS_PORT=6379
 set LOG_LEVEL=debug
-set DATABASE_URL=postgresql://pos:pos@localhost:5432/petpooja
+set DATABASE_URL=postgresql://pos:pos@localhost:5432/kapmeta
 set DATABASE_POOL_MAX=20
 set REDIS_URL=redis://localhost:6379
 set QUEUE_URL=amqp://localhost:5672

@@ -1441,7 +1441,7 @@ export default function WaiterDashboard() {
 
       <div className="flex-1 flex flex-col min-w-0">
 
-      {/* PetPooja Captain Mobile / Tablet Topbar */}
+      {/* KapMeta Captain Mobile / Tablet Topbar */}
       <div className="bg-slate-900 border-b border-slate-800 px-4 py-2.5 flex items-center justify-between sticky top-0 z-30">
         <div className="flex items-center gap-3">
           <button
@@ -1458,7 +1458,7 @@ export default function WaiterDashboard() {
           </button>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-extrabold text-blue-400 text-xs tracking-wider">PETPOOJA CAPTAIN</span>
+              <span className="font-extrabold text-blue-400 text-xs tracking-wider">KAPMETA CAPTAIN</span>
               <span className="text-[10px] bg-amber-500/20 text-amber-400 font-bold px-1.5 py-0.5 rounded">cp4</span>
             </div>
             <div className="text-[11px] text-slate-400 font-medium">{me?.outlet?.name || "Hotel kapila"}</div>
@@ -1466,6 +1466,30 @@ export default function WaiterDashboard() {
         </div>
 
         <div className="flex items-center gap-2 text-slate-400 text-xs">
+          <Link
+            href="/"
+            className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 py-1 rounded-lg text-[11px] font-bold"
+            title="Switch to POS Terminal"
+          >
+            🖥️ POS
+          </Link>
+
+          <Link
+            href="/kitchen"
+            className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 py-1 rounded-lg text-[11px] font-bold"
+            title="Switch to Kitchen KOT"
+          >
+            👨‍🍳 KOT
+          </Link>
+
+          <Link
+            href="/admin?tab=daily-ops"
+            className="flex items-center gap-1 bg-indigo-950/60 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-900/80 px-2.5 py-1 rounded-lg text-[11px] font-bold"
+            title="Switch to Daily Operations"
+          >
+            📊 Ops
+          </Link>
+
           <button
             type="button"
             onClick={() => setIsCashTipsCalculatorOpen(true)}

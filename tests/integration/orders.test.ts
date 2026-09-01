@@ -21,7 +21,7 @@ async function api(method: string, path: string, body?: unknown) {
 beforeAll(async () => {
   try {
     const r = await api("POST", "/auth/login", {
-      email: process.env.TEST_MANAGER_EMAIL ?? "manager@test.petpooja",
+      email: process.env.TEST_MANAGER_EMAIL ?? "manager@test.kapmeta",
       password: process.env.TEST_MANAGER_PASSWORD ?? "Test@123",
     });
     if (r.ok) {

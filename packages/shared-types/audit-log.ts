@@ -1,4 +1,4 @@
-export type AuditEntityType = "ORDER" | "PAYMENT" | "MENU_ITEM" | "STOCK" | "KOT" | "PURCHASE_ORDER" | "REFUND" | "USER";
+export type AuditEntityType = "ORDER" | "PAYMENT" | "MENU_ITEM" | "STOCK" | "KOT" | "PURCHASE_ORDER" | "REFUND" | "USER" | "DINING_TABLE" | "OUTLET" | "PERMISSION";
 
 export interface AuditLogInput {
   outletId: string;
@@ -46,13 +46,17 @@ export async function writeAuditLog(client: AuditLogWriter, input: AuditLogInput
 
   await client.auditLog.create({
     data: {
+      id: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : undefined,
       outletId: input.outletId,
-      actor_id: input.userId,
+      userId: input.userId,
       action: actionEnum,
       entityType: input.entityType,
       entityId: input.entityId,
       beforeState: (input.beforeState as any) ?? undefined,
       afterState: afterStateObj,
+      reasonCode: input.reasonCode || null,
+      approverUserId: input.approverUserId || null,
+      ipAddress: input.ipAddress || null,
     },
   });
 }

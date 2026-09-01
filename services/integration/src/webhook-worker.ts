@@ -132,15 +132,18 @@ export class WebhookWorker {
 
         // 4. Record Price Mismatch as integration error if computed total differs from partner stated total
         const mismatchCheck = checkTotalMismatch(order.partnerStatedTotalMinor, computedTotalMinor);
-        if (mismatchCheck.mismatched) {
-          await (this.prisma.integrationError as any).create({
-            data: {
-              source: "WEBHOOK_WORKER",
-              sourceId: event.externalEventId,
-              errorCode: "PRICE_MISMATCH",
-              message: `Price mismatch: partner stated ₹${Number(order.partnerStatedTotalMinor) / 100}, computed ₹${Number(computedTotalMinor) / 100}. Delta: ₹${Number(mismatchCheck.deltaMinor) / 100}`,
-            },
-          }).catch(() => {});
+        if (mismatchCheck.mismatched && (this.prisma.integrationError as any)?.create) {
+          try {
+            await (this.prisma.integrationError as any).create({
+              data: {
+                channelAccountId: event.channelAccountId,
+                source: "WEBHOOK_WORKER",
+                sourceId: event.externalEventId,
+                errorCode: "PRICE_MISMATCH",
+                message: `Price mismatch: partner stated ₹${Number(order.partnerStatedTotalMinor) / 100}, computed ₹${Number(computedTotalMinor) / 100}. Delta: ₹${Number(mismatchCheck.deltaMinor) / 100}`,
+              },
+            });
+          } catch {}
         }
 
         // 5. Transition order to CONFIRMED
@@ -184,20 +187,29 @@ export class WebhookWorker {
     } catch (err: any) {
       console.error(`Failed to process event ${eventId}:`, err);
       // DLQ logic: Move to QUARANTINED
-      await (this.prisma.inboundEvent as any).update({
-        where: { id: event.id },
-        data: { status: 'QUARANTINED' }
-      }).catch(() => {});
+      if ((this.prisma.inboundEvent as any)?.update) {
+        try {
+          await (this.prisma.inboundEvent as any).update({
+            where: { id: event.id },
+            data: { status: 'QUARANTINED' }
+          });
+        } catch {}
+      }
       
       // Log integration error
-      await (this.prisma.integrationError as any).create({
-        data: {
-          source: 'WEBHOOK_WORKER',
-          sourceId: event.externalEventId,
-          errorCode: 'TRANSLATION_FAILED',
-          message: err.message || 'Unknown error',
-        }
-      }).catch(() => {});
+      if ((this.prisma.integrationError as any)?.create) {
+        try {
+          await (this.prisma.integrationError as any).create({
+            data: {
+              channelAccountId: event.channelAccountId,
+              source: 'WEBHOOK_WORKER',
+              sourceId: event.externalEventId,
+              errorCode: 'TRANSLATION_FAILED',
+              message: err.message || 'Unknown error',
+            }
+          });
+        } catch {}
+      }
     }
   }
 

@@ -2,7 +2,7 @@
 
 Status: DRAFT — Phase 2/3 Architecture deliverable
 Owner: Architecture (feeds `docs/03-architecture/`, `infra/`)
-Inputs: 86-screenshot validation of PetPooja desktop POS at outlet "Hotel kapila" (see Phase 0 discovery notes)
+Inputs: 86-screenshot validation of KapMeta desktop POS at outlet "Hotel kapila" (see Phase 0 discovery notes)
 Scope: `services/sync`, `apps/pos-web` (LAN client), `apps/api` (cloud), local outlet server, `infra/`
 
 Labeling convention used throughout: **[EVIDENCE]** = directly supported by a screenshot; **[PROPOSAL]** = senior-engineer recommendation filling a gap the screenshots don't resolve; **[OPEN]** = flagged for the decision register, not decided here.
@@ -315,7 +315,7 @@ CREATE TABLE backup_jobs (
 
 ### On-prem (per outlet)
 
-- **Local Outlet Server**: a lightweight, installable service (`services/sync` local agent + thin local API) running as a background service on a Windows or Linux box at the restaurant — **[OPEN]**: which OS(es) must be supported (screenshots show a Windows-style desktop app; recommend at minimum Windows service support given existing PetPooja client precedent, Linux as a stretch/self-hosted-appliance option).
+- **Local Outlet Server**: a lightweight, installable service (`services/sync` local agent + thin local API) running as a background service on a Windows or Linux box at the restaurant — **[OPEN]**: which OS(es) must be supported (screenshots show a Windows-style desktop app; recommend at minimum Windows service support given existing KapMeta client precedent, Linux as a stretch/self-hosted-appliance option).
 - **Local Postgres** (or SQLite fallback per §2) co-located with the local server.
 - **Local printers**: LAN or USB-attached, driven by print-format config synced down from cloud (or configured locally if §3.4's local-override path is enabled).
 - Packaging: needs an installer/updater — ties to the "Version: 126.0.1" evidence; **[OPEN]**: auto-update mechanism for the local server binary (staged rollout, rollback) is out of scope for this doc but should get its own deliverable — flag for decision register / a future `08-client-release-management.md`.

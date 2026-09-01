@@ -34,7 +34,7 @@ export class MenuSyncWorker {
         await this.prisma.auditLog.create({
           data: {
             outletId,
-            actor_id: userId,
+            userId,
             action: "UPDATE",
             entityType: "MENU_ITEM",
             entityId: outletId,

@@ -18,7 +18,7 @@ if ($null -eq $engine) {
     $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
 }
 
-$screenshotDir = "c:\Users\BEST BUY\Downloads\PetPooja\PetPooja\Screen_shot"
+$screenshotDir = "c:\Users\BEST BUY\Downloads\KapMeta\KapMeta\Screen_shot"
 $files = Get-ChildItem -Path $screenshotDir -Filter "*.png" | Sort-Object Name
 
 $results = @()
@@ -53,6 +53,6 @@ foreach ($f in $files) {
     }
 }
 
-$outputJson = "c:\Users\BEST BUY\Downloads\PetPooja\PetPooja\scripts\ocr_results.json"
+$outputJson = "c:\Users\BEST BUY\Downloads\KapMeta\KapMeta\scripts\ocr_results.json"
 $results | ConvertTo-Json -Depth 10 | Out-File -FilePath $outputJson -Encoding utf8
 Write-Host "Done! Saved $count items to $outputJson"

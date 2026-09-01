@@ -1,4 +1,4 @@
-# Workspace Agent Rules — PetPooja POS Platform
+# Workspace Agent Rules — KapMeta POS Platform
 
 ## 1. No Hardcoded Business Data & Mandatory User Ingestion Provision
 

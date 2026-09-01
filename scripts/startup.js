@@ -14,7 +14,7 @@ console.log('\x1b[32m===========================================================
 console.log('\x1b[36m[PORTS AND ENDPOINTS CONFIGURATION]\x1b[0m');
 console.log('  - POS Web UI       : http://localhost:4444 (Port 4444)');
 console.log('  - API Gateway      : http://localhost:4001 (Port 4001)');
-console.log('  - PostgreSQL DB    : localhost:5432 (Database: petpooja)');
+console.log('  - PostgreSQL DB    : localhost:5432 (Database: kapmeta)');
 console.log('  - Redis Cache      : localhost:6379');
 console.log(`  - Logs Directory   : ${path.join(rootDir, 'logs')}`);
 console.log(`  - Checkpoints Dir  : ${path.join(rootDir, 'checkpoints')}`);

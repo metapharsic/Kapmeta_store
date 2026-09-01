@@ -37,6 +37,7 @@ export interface StoredSession {
 export interface MeOutlet {
   id: string;
   name: string;
+  code: string | null;
   address: string | null;
   fssaiNumber: string | null;
   upiVpa: string | null;
@@ -107,7 +108,8 @@ export async function login(
   outletId: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
-    const res = await fetch(`${API_BASE}/auth/login`, {
+    const base = getApiBase();
+    const res = await fetch(`${base}/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password, outletId }),
@@ -149,7 +151,8 @@ export async function logout(): Promise<void> {
   const stored = getStoredSessionFull();
   if (stored?.sessionId) {
     try {
-      await fetch(`${API_BASE}/auth/logout`, {
+      const base = getApiBase();
+      await fetch(`${base}/auth/logout`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId: stored.sessionId }),
@@ -178,7 +181,8 @@ export async function fetchMyOutlets(): Promise<OutletSummary[]> {
   const session = getSession();
   if (!session) return [];
   try {
-    const res = await fetch(`${API_BASE}/auth/outlets/mine`, {
+    const base = getApiBase();
+    const res = await fetch(`${base}/auth/outlets/mine`, {
       headers: { Authorization: `Bearer ${session.accessToken}` },
     });
     if (!res.ok) return [];
@@ -195,7 +199,8 @@ export async function switchOutlet(outletId: string): Promise<{ ok: true } | { o
   const session = getSession();
   if (!session) return { ok: false, error: "NOT_LOGGED_IN" };
   try {
-    const res = await fetch(`${API_BASE}/auth/switch-outlet`, {
+    const base = getApiBase();
+    const res = await fetch(`${base}/auth/switch-outlet`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -254,7 +259,8 @@ export async function verifyPin(pin: string): Promise<boolean> {
   const session = getSession();
   if (!session) return false;
   try {
-    const res = await fetch(`${API_BASE}/auth/verify-pin`, {
+    const base = getApiBase();
+    const res = await fetch(`${base}/auth/verify-pin`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -310,36 +316,64 @@ export function useAuthGuard(requiredPermission?: string): { me: MeResponse | nu
 
     const session = getSession();
     if (!session) {
-      window.location.href = "/login";
+      if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+        window.location.href = "/login";
+      }
       return;
     }
 
     fetchMe().then((result) => {
       if (cancelled) return;
       if (!result) {
-        window.localStorage.removeItem(STORAGE_KEY);
-        window.location.href = "/login";
+        if (typeof window !== "undefined") {
+          window.localStorage.removeItem(STORAGE_KEY);
+          if (window.location.pathname !== "/login") {
+            window.location.href = "/login";
+          }
+        }
         return;
       }
-      if (requiredPermission && !result.permissions.includes(requiredPermission)) {
-        if (result.permissions.includes("kot.read")) {
-          window.location.href = "/kitchen";
-          return;
-        }
-        if (result.permissions.includes("inventory.stock.adjust")) {
-          window.location.href = "/inventory";
-          return;
-        }
-        if (result.permissions.includes("menu.category.manage")) {
-          window.location.href = "/admin";
-          return;
-        }
+
+      const isSuperAdmin = Array.isArray(result.roles) && (
+        result.roles.includes("SUPER_ADMIN") ||
+        result.roles.includes("SUPERADMIN") ||
+        result.roles.includes("OWNER")
+      );
+
+      // Super Admins have full access across all screens
+      if (isSuperAdmin || !requiredPermission || result.permissions.includes(requiredPermission)) {
         setMe(result);
         setLoading(false);
         return;
       }
+
+      // If user lacks required permission, route to their primary domain screen if not already there
+      if (typeof window !== "undefined") {
+        const currentPath = window.location.pathname;
+        let target: string | null = null;
+
+        if (result.permissions.includes("order.create")) {
+          target = "/";
+        } else if (result.permissions.includes("kot.read")) {
+          target = "/kitchen";
+        } else if (result.permissions.includes("inventory.stock.adjust") || result.permissions.includes("inventory.read")) {
+          target = "/inventory";
+        } else if (result.permissions.includes("menu.category.manage") || result.permissions.includes("report.read")) {
+          target = "/admin";
+        }
+
+        if (target && currentPath !== target) {
+          window.location.href = target;
+          return;
+        }
+      }
+
       setMe(result);
       setLoading(false);
+    }).catch(() => {
+      if (!cancelled) {
+        setLoading(false);
+      }
     });
 
     return () => {
@@ -350,3 +384,4 @@ export function useAuthGuard(requiredPermission?: string): { me: MeResponse | nu
 
   return { me, loading };
 }
+

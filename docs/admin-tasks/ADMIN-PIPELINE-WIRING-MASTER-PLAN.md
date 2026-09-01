@@ -138,7 +138,7 @@ Numbering continues from the user’s table.
 | 40 | P1 | `orders.ts:480` | Settle not gated on `bill.settle` | RBAC hole |
 | 41 | P1 | `admin.tsx:397-461` | `Promise.all` still all-or-nothing on leakage 403 | Whole dashboard blank |
 | 42 | P2 | Summary tables (`hourly_sales_summary`, `item_sales_summary`, `payment_summary`, `kot_performance`) | Never populated | Future admin charts |
-| 43 | P2 | `PetPoojaHeader` store PATCH fail | Local toggle no rollback | Header vs DB |
+| 43 | P2 | `KapMetaHeader` store PATCH fail | Local toggle no rollback | Header vs DB |
 | 44 | P2 | Admin pages no WS | `/finance`, `/inventory`, `/crm`, `/table-management` refetch on date/mount only | Stale ops |
 
 ---

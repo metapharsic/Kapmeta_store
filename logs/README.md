@@ -1,4 +1,4 @@
-# PetPooja POS Platform — Unified Logging Architecture
+# KapMeta POS Platform — Unified Logging Architecture
 
 **Owner:** SRE & Multi-Agent Operations  
 **Format Standard:** Structured JSON Lines (`.log`) and UTF-8 Plain Text Streams with ISO 8601 Timestamps  

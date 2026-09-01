@@ -1,6 +1,6 @@
 # Decision Closure — DEC-015 and DEC-017
 
-**Project:** Kapmeta (Restaurant POS, PetPooja-parity clone)
+**Project:** Kapmeta (Restaurant POS, KapMeta-parity clone)
 **Reference outlet:** Hotel kapila (single outlet, LAN client-server topology, app v126.0.1)
 **Date closed:** 2026-08-21
 **Closed by:** Engineering decision review (this document)
@@ -115,7 +115,7 @@ This treats the helper note as documenting an edge case for simpler outlets rath
 
 **Risk assessment:** This is the lower-risk interpretation because it is additive — it fully explains and preserves the observed real-world evidence (the four-row setup keeps working exactly as captured) while still accounting for the helper note as a legitimate, narrower code path for other outlet types. The alternative reading (tax mode is strictly either/or) would require explaining away directly observed production data as a bug or misconfiguration, which is a much larger and less defensible assumption to build a tax engine on.
 
-**Residual caveat:** This is a reasonable, evidence-backed interpretation, not a confirmed fact from PetPooja/the client. It should be explicitly confirmed with the client (or via PetPooja support/documentation) before production sign-off, specifically to verify: (a) whether the outlet-level toggle, when set to "forward tax configuration," actually suppresses/replaces backward rows rather than coexisting with them, and (b) whether any other outlet in scope relies on the single-mode path. However, it is **not a blocker for Phase 4-6 engineering** — the channel-scoped tax row model is a strict superset of the simple single-mode case (a single-mode outlet is just one that only populates one channel's rows, or uses the outlet-level default), so building it now carries no rework risk if the client confirmation later narrows the scope.
+**Residual caveat:** This is a reasonable, evidence-backed interpretation, not a confirmed fact from KapMeta/the client. It should be explicitly confirmed with the client (or via KapMeta support/documentation) before production sign-off, specifically to verify: (a) whether the outlet-level toggle, when set to "forward tax configuration," actually suppresses/replaces backward rows rather than coexisting with them, and (b) whether any other outlet in scope relies on the single-mode path. However, it is **not a blocker for Phase 4-6 engineering** — the channel-scoped tax row model is a strict superset of the simple single-mode case (a single-mode outlet is just one that only populates one channel's rows, or uses the outlet-level default), so building it now carries no rework risk if the client confirmation later narrows the scope.
 
 ### 3. Decision-register text
 
@@ -167,6 +167,6 @@ Resolution logic for the billing engine: for a given outlet and order channel, l
 | Item | Status | Blocks Phase 4-6? | Residual action |
 |---|---|---|---|
 | DEC-015 | Provisionally Closed | No | None — enum and flag design final pending normal QA |
-| DEC-017 | Provisionally Closed | No | Client/PetPooja-support confirmation required before production sign-off |
+| DEC-017 | Provisionally Closed | No | Client/KapMeta-support confirmation required before production sign-off |
 
 Both decisions are closed for engineering purposes effective 2026-08-21. Phase 4-6 (Core POS) may proceed using the schema and enum definitions specified above.

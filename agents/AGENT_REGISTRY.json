@@ -17,6 +17,21 @@
       ]
     },
     {
+      "id": "agent-a2a",
+      "name": "A2A Coordination Agent",
+      "role": "A2A_COORDINATOR",
+      "status": "READY",
+      "domain": "Inter-Agent Protocol, Multi-Agent Telemetry & Admin Hub Wiring",
+      "currentTask": "Wiring multi-agent telemetry into Admin Hub and resolving cross-domain conflicts",
+      "assignedFiles": [
+        "agents/a2a-agent.md",
+        "agents/AGENT_REGISTRY.json",
+        "agents/task-board.json",
+        "apps/api/src/routes/admin.ts",
+        "apps/pos-web/pages/admin.tsx"
+      ]
+    },
+    {
       "id": "agent-frontend",
       "name": "Frontend UI Agent",
       "role": "UI_ENGINEER",

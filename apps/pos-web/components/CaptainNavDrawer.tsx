@@ -1,4 +1,5 @@
 import React from "react";
+import Link from "next/link";
 
 interface CaptainNavDrawerProps {
   isOpen: boolean;
@@ -21,9 +22,9 @@ interface CaptainNavDrawerProps {
 export default function CaptainNavDrawer({
   isOpen,
   onClose,
-  outletName = "Hotel Kapila",
-  stationCode = "cp4",
-  appVersion = "V 15.0.0 (2009)",
+  outletName = "",
+  stationCode = "",
+  appVersion = "",
   staffName,
   unsuccessfulCount = 0,
   onNewKot,
@@ -47,7 +48,7 @@ export default function CaptainNavDrawer({
               🍽️
             </div>
             <div className="brand-titles">
-              <div className="brand-title">PETPOOJA</div>
+              <div className="brand-title">KAPMETA</div>
               <div className="brand-subtitle">CAPTAIN TABLET</div>
             </div>
             <button
@@ -159,6 +160,28 @@ export default function CaptainNavDrawer({
             <span className="menu-icon">⚙️</span>
             <span className="menu-label">Station Settings</span>
           </button>
+
+          <div style={{ height: "1px", background: "rgba(255,255,255,0.12)", margin: "8px 0" }} />
+
+          <Link href="/" className="menu-item-btn" onClick={onClose} style={{ textDecoration: "none" }}>
+            <span className="menu-icon">🖥️</span>
+            <span className="menu-label">POS Terminal Floor</span>
+          </Link>
+
+          <Link href="/kitchen" className="menu-item-btn" onClick={onClose} style={{ textDecoration: "none" }}>
+            <span className="menu-icon">👨‍🍳</span>
+            <span className="menu-label">Kitchen Display (KDS)</span>
+          </Link>
+
+          <Link href="/orders?tab=live" className="menu-item-btn" onClick={onClose} style={{ textDecoration: "none" }}>
+            <span className="menu-icon">⚡</span>
+            <span className="menu-label">Live Orders Register</span>
+          </Link>
+
+          <Link href="/admin?tab=daily-ops" className="menu-item-btn" onClick={onClose} style={{ textDecoration: "none" }}>
+            <span className="menu-icon">📊</span>
+            <span className="menu-label">Daily Operations Hub</span>
+          </Link>
         </div>
 
         {/* Drawer Footer: Staff Profile & Logout */}

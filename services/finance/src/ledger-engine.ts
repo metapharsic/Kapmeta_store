@@ -140,7 +140,7 @@ export class LedgerEngine {
     const totalCredit = lines.reduce((acc, l) => acc + l.creditMinor, 0n);
 
     if (totalDebit !== totalCredit) {
-      return { voucherId: "IMBALANCE", lines: lines.length };
+      throw new Error("DOUBLE_ENTRY_IMBALANCE");
     }
 
     // Atomic persistence of all balanced ledger entries

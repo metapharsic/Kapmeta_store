@@ -20,7 +20,7 @@ export default function HoldOrdersDrawer({ onClose, onResumeOrder }: HoldOrdersD
 
   useEffect(() => {
     try {
-      const stored = localStorage.getItem("petpooja_held_orders");
+      const stored = localStorage.getItem("kapmeta_held_orders");
       if (stored) {
         setHeldOrders(JSON.parse(stored));
       }
@@ -32,7 +32,7 @@ export default function HoldOrdersDrawer({ onClose, onResumeOrder }: HoldOrdersD
   const handleResume = (order: HeldOrder) => {
     const next = heldOrders.filter((o) => o.id !== order.id);
     setHeldOrders(next);
-    localStorage.setItem("petpooja_held_orders", JSON.stringify(next));
+    localStorage.setItem("kapmeta_held_orders", JSON.stringify(next));
     if (onResumeOrder) onResumeOrder(order);
     onClose();
   };
@@ -40,7 +40,7 @@ export default function HoldOrdersDrawer({ onClose, onResumeOrder }: HoldOrdersD
   const handleDiscard = (id: string) => {
     const next = heldOrders.filter((o) => o.id !== id);
     setHeldOrders(next);
-    localStorage.setItem("petpooja_held_orders", JSON.stringify(next));
+    localStorage.setItem("kapmeta_held_orders", JSON.stringify(next));
   };
 
   return (

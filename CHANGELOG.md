@@ -1,6 +1,6 @@
-# Changelog — Kapmeta PetPooja POS Platform
+# Changelog — Kapmeta KapMeta POS Platform
 
-All notable changes, architectural milestones, and multi-agent coordination records for the PetPooja POS platform are documented in this file.
+All notable changes, architectural milestones, and multi-agent coordination records for the KapMeta POS platform are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).

@@ -131,30 +131,6 @@ tablesRouter.get("/tables", requireAuth, async (req: AuthedRequest, res) => {
     }
     const tables = await (prisma.diningTable as any).findMany({
       where: { outletId, isActive: true },
-<<<<<<< HEAD
-      include: {
-        orders: {
-          where: {
-            status: { notIn: ["COMPLETED", "CANCELLED", "VOIDED"] },
-          },
-          include: {
-            kotTickets: true,
-            orderItems: true,
-          },
-          orderBy: { createdAt: "desc" },
-          take: 1,
-        },
-      },
-      orderBy: { tableNumber: "asc" },
-    });
-
-    const mapped = tables.map((t) => {
-      const activeOrder = t.orders[0];
-      const hasKot = Boolean(
-        (activeOrder?.kotTickets && activeOrder.kotTickets.length > 0) ||
-        (activeOrder && ["CONFIRMED", "IN_KITCHEN", "READY", "KOT_CREATED", "IN_PREPARATION"].includes(activeOrder.status))
-      );
-=======
       orderBy: { tableNumber: "asc" },
     });
 
@@ -254,7 +230,6 @@ tablesRouter.get("/tables", requireAuth, async (req: AuthedRequest, res) => {
 
       const kitchenStage = deriveKitchenStage(activeOrder);
       const computedStatus = deriveFloorStatus(activeOrder);
->>>>>>> hamza/main
 
       return {
         id: t.id,
@@ -266,29 +241,10 @@ tablesRouter.get("/tables", requireAuth, async (req: AuthedRequest, res) => {
         status: computedStatus,
         kitchenStage,
         isActive: t.isActive,
-<<<<<<< HEAD
-        activeOrderId: activeOrder?.id || null,
-        active_order_id: activeOrder?.id || null,
-        currentOrder: activeOrder
-          ? {
-              id: activeOrder.id,
-              orderNumber: activeOrder.orderNumber,
-              status: activeOrder.status,
-              hasKot,
-              kotSent: hasKot,
-              grandTotalPaise: Number(activeOrder.grandTotalMinor),
-              totalAmount: Number(activeOrder.grandTotalMinor) / 100,
-              guestCount: activeOrder.guestCount,
-              createdAt: activeOrder.createdAt,
-              itemCount: activeOrder.orderItems?.length || 0,
-            }
-          : null,
-=======
         activeOrderId: activeOrder.id,
         active_order_id: activeOrder.id,
         currentOrder: serializeCurrentOrder(activeOrder),
         ...extra,
->>>>>>> hamza/main
       };
     });
 
@@ -604,11 +560,7 @@ tablesRouter.get("/tables/occupancy", requireAuth, async (req: AuthedRequest, re
 });
 
 // POST /tables - Create a new dining table
-<<<<<<< HEAD
-tablesRouter.post("/tables", requireAuth, requirePermission("settings.manage", "order.create", "table.manage"), async (req: AuthedRequest, res) => {
-=======
 tablesRouter.post("/tables", requireAuth, async (req: AuthedRequest, res) => {
->>>>>>> hamza/main
   try {
     const outletId = req.auth!.outletId;
     const { tableNumber, name, capacity, section } = req.body;
@@ -617,26 +569,14 @@ tablesRouter.post("/tables", requireAuth, async (req: AuthedRequest, res) => {
       return res.status(400).json({ error: "Table number is required" });
     }
 
-<<<<<<< HEAD
-    const trimmedNum = String(num).trim();
-
-    const existing = await prisma.diningTable.findFirst({
-      where: {
-        outletId,
-        tableNumber: { equals: trimmedNum, mode: "insensitive" },
-=======
     const existing = await prisma.diningTable.findFirst({
       where: {
         outletId,
         tableNumber: String(num).trim(),
->>>>>>> hamza/main
       },
     });
 
     if (existing) {
-<<<<<<< HEAD
-      return res.status(409).json({ error: `Table "${trimmedNum}" already exists. Please choose a unique table number.` });
-=======
       if (!existing.isActive) {
         // Reactivate existing table
         const reactivated = await prisma.diningTable.update({
@@ -660,21 +600,14 @@ tablesRouter.post("/tables", requireAuth, async (req: AuthedRequest, res) => {
         });
       }
       return res.status(409).json({ error: `Table "${num}" already exists in this outlet.` });
->>>>>>> hamza/main
     }
 
     const table = await prisma.diningTable.create({
       data: {
         outletId,
-<<<<<<< HEAD
-        tableNumber: trimmedNum,
-        capacity: capacity ? Number(capacity) : 4,
-        section: section || "Main Dining",
-=======
         tableNumber: String(num).trim(),
         capacity: capacity ? Number(capacity) : 4,
         section: section ? String(section).trim() : "Main Dining",
->>>>>>> hamza/main
         status: "VACANT",
       },
     });
@@ -692,8 +625,6 @@ tablesRouter.post("/tables", requireAuth, async (req: AuthedRequest, res) => {
   } catch (err: any) {
     console.error("Error creating table:", err);
     res.status(500).json({ error: err.message || "Failed to create table" });
-<<<<<<< HEAD
-=======
   }
 });
 
@@ -713,7 +644,6 @@ tablesRouter.get("/tables/sections", requireAuth, async (req: AuthedRequest, res
   } catch (err) {
     console.error("Error listing table sections:", err);
     res.status(500).json({ error: "Failed to list table sections" });
->>>>>>> hamza/main
   }
 });
 
@@ -766,43 +696,19 @@ tablesRouter.get("/tables/:id", requireAuth, async (req: AuthedRequest, res) => 
 });
 
 // PUT /tables/:id - Update table properties
-tablesRouter.put("/tables/:id", requireAuth, requirePermission("settings.manage", "order.create", "table.manage"), async (req: AuthedRequest, res) => {
+tablesRouter.put("/tables/:id", requireAuth, requirePermission("settings.manage"), async (req: AuthedRequest, res) => {
   try {
     const outletId = req.auth!.outletId;
-<<<<<<< HEAD
-    const { id } = req.params;
-    const { tableNumber, name, capacity, section, status } = req.body;
-    const num = tableNumber || name;
-
-    if (num) {
-      const trimmed = String(num).trim();
-      const existing = await prisma.diningTable.findFirst({
-        where: {
-          outletId,
-          tableNumber: { equals: trimmed, mode: "insensitive" },
-          NOT: { id },
-        },
-      });
-      if (existing) {
-        return res.status(409).json({ error: `Table "${trimmed}" already exists.` });
-      }
-    }
-=======
     const { tableNumber, name, capacity, section, status, isActive } = req.body;
->>>>>>> hamza/main
 
     const table = await prisma.diningTable.update({
-      where: { id, outletId },
+      where: { id: req.params.id, outletId },
       data: {
-        ...(num ? { tableNumber: String(num).trim() } : {}),
+        ...(tableNumber || name ? { tableNumber: String(tableNumber || name) } : {}),
         ...(capacity !== undefined ? { capacity: Number(capacity) } : {}),
         ...(section !== undefined ? { section } : {}),
-<<<<<<< HEAD
-        ...(status ? { status } : {}),
-=======
         ...(status !== undefined ? { status } : {}),
         ...(isActive !== undefined ? { isActive: Boolean(isActive) } : {}),
->>>>>>> hamza/main
       },
     });
 
@@ -1464,51 +1370,6 @@ tablesRouter.patch("/tables/:id", requireAuth, async (req: AuthedRequest, res) =
   }
 });
 
-// POST /tables/:id/vacate - Force clear/vacate a table and close any open orders
-tablesRouter.post("/tables/:id/vacate", requireAuth, async (req: AuthedRequest, res) => {
-  try {
-    const outletId = req.auth!.outletId;
-    const tableParam = req.params.id;
-
-    const table = await prisma.diningTable.findFirst({
-      where: {
-        outletId,
-        OR: [
-          { id: tableParam },
-          { id: tableParam.toLowerCase() },
-          { tableNumber: tableParam },
-          { tableNumber: tableParam.toUpperCase() },
-          { tableNumber: tableParam.toLowerCase() },
-        ],
-      },
-    });
-
-    if (!table) {
-      return res.status(404).json({ error: "Table not found" });
-    }
-
-    // Complete any open non-completed orders on this table
-    await prisma.order.updateMany({
-      where: {
-        outletId,
-        diningTableId: table.id,
-        status: { notIn: ["COMPLETED", "CANCELLED", "VOIDED"] },
-      },
-      data: { status: "COMPLETED" },
-    });
-
-    await prisma.diningTable.update({
-      where: { id: table.id },
-      data: { status: "VACANT" },
-    });
-
-    res.status(200).json({ success: true, tableId: table.id, status: "VACANT" });
-  } catch (err: any) {
-    console.error("Error vacating table:", err);
-    res.status(500).json({ error: err.message || "Failed to vacate table" });
-  }
-});
-
 // DELETE /tables/:id - Deactivate table
 tablesRouter.delete("/tables/:id", requireAuth, requirePermission("settings.manage"), async (req: AuthedRequest, res) => {
   try {
@@ -1544,4 +1405,3 @@ tablesRouter.delete("/tables/:id", requireAuth, requirePermission("settings.mana
     res.status(500).json({ error: err.message || "Failed to delete table" });
   }
 });
-

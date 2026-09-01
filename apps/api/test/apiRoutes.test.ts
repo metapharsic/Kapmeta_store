@@ -26,6 +26,21 @@ describe('Real API Gateway Routes', () => {
   });
 
   it('isolates table active orders: B1 order does not leak to B2 or T-05', async () => {
+    const { PrismaClient } = await import('@prisma/client');
+    const prisma = new PrismaClient();
+    await prisma.order.updateMany({
+      where: {
+        outletId: '11111111-1111-1111-1111-111111111111',
+        status: { in: ['DRAFT', 'PLACED', 'CONFIRMED', 'KOT_CREATED', 'IN_PREPARATION', 'READY', 'SERVED', 'HANDED_OVER'] },
+      },
+      data: { status: 'COMPLETED' },
+    });
+    await prisma.diningTable.updateMany({
+      where: { outletId: '11111111-1111-1111-1111-111111111111' },
+      data: { status: 'VACANT' },
+    });
+    await prisma.$disconnect();
+
     const loginRes = await request(app)
       .post('/auth/login')
       .send({ email: 'cashier@hotelkapila.com', password: 'password123', outletId: '11111111-1111-1111-1111-111111111111' })

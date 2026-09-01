@@ -511,7 +511,7 @@ inventoryRouter.post("/purchase-orders/:id/receive", requireAuth, requirePermiss
     }
 
     const requested = Array.isArray(req.body.items) ? req.body.items as { ingredientId: string; quantity: number }[] : null;
-    const receivedItems = [];
+    const receivedItems: any[] = [];
     let allComplete = true;
 
     for (const item of po.purchase_order_items) {
