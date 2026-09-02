@@ -156,8 +156,13 @@ export default function KapMetaHeader({
   const refId = me?.outletId ? `${me.outletId.slice(0, 8).toUpperCase()}` : (me?.outlet as any)?.code || "";
 
   // Left Drawer expanded submenu state, keyed by SIDEBAR_GROUPS group id.
+  // "menu" (Menu & Discounts) defaults open too - same "open by default for
+  // discoverability" fix applied to Reports in the prior CP-14 round
+  // (7fb1ce0, "Make the reports findable"); this round's whole point is
+  // making the Menu & Discounts tools easy to find.
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
     "daily-operations": true,
+    "menu": true,
   });
   const [activeMenuItem, setActiveMenuItem] = useState<string>("daily-operations");
 

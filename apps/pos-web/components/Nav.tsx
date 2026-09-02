@@ -52,7 +52,7 @@ export type NavVariant = "topbar" | "pill" | "sidebar";
 /* docs/03-design/artifact-03-design-contract.md section 6.                 */
 /*                                                                          */
 /* Structure/labels/order follow the reference design:                      */
-/*   Dashboard | Daily Operations | Menu | Inventory |                      */
+/*   Dashboard | Daily Operations | Menu & Discounts | Inventory |           */
 /*   Marketing Automation [New] | Finance [New] | Reports | Management |    */
 /*   CRM | Aggregator Center | Quick Links                                  */
 /* ------------------------------------------------------------------------ */
@@ -106,15 +106,18 @@ export const SIDEBAR_GROUPS: SidebarGroupDef[] = [
   },
   {
     id: "menu",
-    header: "Menu",
+    header: "Menu & Discounts",
     links: [
-      { href: "/menu", permission: "menu.category.manage", label: "Menu Management" },
-      {
-        href: "/inventory",
-        permission: "menu.86.toggle",
-        label: "Menu Item On/Off (86 Stock)",
-        action: "item-toggle",
-      },
+      { href: "/menu/hub", permission: "menu.category.manage", label: "All In One Menu" },
+      { href: "/menu", permission: "menu.category.manage", label: "Base Menu" },
+      { href: "/menu/images-upload", permission: "menu.category.manage", label: "Multi-Item Images Upload" },
+      // Reused from the old "Aggregator Center" group (was "Online Item Status")
+      // rather than duplicated - this is the same /channel-availability screen.
+      { href: "/channel-availability", permission: "integration.manage", label: "Menu on/off" },
+      { href: "/menu/special-notes", permission: "menu.category.manage", label: "Special Note" },
+      { href: "/menu/commission", permission: "menu.category.manage", label: "Set Item Commission" },
+      { href: "/menu/scheduling", permission: "menu.category.manage", label: "Schedule Changes" },
+      { href: "/menu/physical", permission: "menu.category.manage", label: "Physical Menu" },
     ],
   },
   {
@@ -170,8 +173,9 @@ export const SIDEBAR_GROUPS: SidebarGroupDef[] = [
     id: "aggregator-center",
     header: "Aggregator Center",
     links: [
+      // "Online Item Status" moved into the "Menu & Discounts" group above
+      // (as "Menu on/off") rather than living in both places.
       { href: "/integrations", permission: "integration.manage", label: "Connect Delivery Apps" },
-      { href: "/channel-availability", permission: "integration.manage", label: "Online Item Status" },
     ],
   },
 ];
