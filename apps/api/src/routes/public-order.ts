@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../prisma";
+import { sendServerError } from "../errors";
 import { PrismaMenuCatalogRepository } from "@kapmeta/menu";
 import {
   createOrder,
@@ -50,8 +51,7 @@ router.get("/public/tables/:tableId/menu", async (req, res) => {
         .map((item) => ({ ...item, priceMinor: String(item.priceMinor) })),
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "internal error" });
+    sendServerError(res, err, "GET /public/tables/:tableId/menu");
   }
 });
 
@@ -121,8 +121,7 @@ router.post("/public/tables/:tableId/order", async (req, res) => {
       res.status(400).json({ error: err.message });
       return;
     }
-    console.error(err);
-    res.status(500).json({ error: "internal error" });
+    sendServerError(res, err, "POST /public/tables/:tableId/order");
   }
 });
 

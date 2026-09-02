@@ -18,6 +18,37 @@ interface CompanyDetailsApi {
   taxNumber: string | null;
 }
 
+// Error contract returned by the API's sendServerError (apps/api/src/errors.ts):
+// { code: "SCHEMA_OUT_OF_SYNC" | "DB_UNAVAILABLE" | "INTERNAL_ERROR", error, detail? }.
+// Older/other endpoints may only send { error }, so `code`/`detail` are optional.
+interface ApiErrorInfo {
+  message: string;
+  code?: string;
+  detail?: string;
+}
+
+// Never discard what the server said — a 503 SCHEMA_OUT_OF_SYNC tells the
+// operator exactly which commands to run, which a generic string does not.
+async function readApiError(res: Response, fallback: string): Promise<ApiErrorInfo> {
+  let body: Record<string, unknown> | null = null;
+  try {
+    body = (await res.json()) as Record<string, unknown>;
+  } catch {
+    body = null;
+  }
+  const serverMessage =
+    body && typeof body.error === "string" && body.error.trim()
+      ? body.error
+      : body && typeof body.message === "string" && body.message.trim()
+        ? body.message
+        : null;
+  return {
+    message: serverMessage ?? `${fallback} (HTTP ${res.status})`,
+    code: body && typeof body.code === "string" ? body.code : undefined,
+    detail: body && typeof body.detail === "string" ? body.detail : undefined,
+  };
+}
+
 interface FormState {
   name: string;
   address: string;
@@ -54,9 +85,9 @@ const FIELDS: { key: keyof FormState; label: string; type?: string; placeholder?
 export default function CompanyDetailsPanel(): JSX.Element {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<ApiErrorInfo | null>(null);
   const [saving, setSaving] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<ApiErrorInfo | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
 
   const fetchData = async () => {
@@ -65,7 +96,8 @@ export default function CompanyDetailsPanel(): JSX.Element {
     try {
       const res = await authedFetch("/settings/company");
       if (!res.ok) {
-        throw new Error("HTTP error " + res.status);
+        setLoadError(await readApiError(res, "Failed to load company details"));
+        return;
       }
       const data: CompanyDetailsApi = await res.json();
       setForm({
@@ -79,7 +111,9 @@ export default function CompanyDetailsPanel(): JSX.Element {
         taxNumber: data.taxNumber ?? "",
       });
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : "Failed to load company details");
+      setLoadError({
+        message: err instanceof Error ? err.message : "Failed to load company details",
+      });
     } finally {
       setLoading(false);
     }
@@ -106,13 +140,15 @@ export default function CompanyDetailsPanel(): JSX.Element {
         body: JSON.stringify(form),
       });
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || "HTTP error " + res.status);
+        setActionError(await readApiError(res, "Failed to save company details"));
+        return;
       }
       setActionNotice("Company details saved.");
       fetchData();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Failed to save company details");
+      setActionError({
+        message: err instanceof Error ? err.message : "Failed to save company details",
+      });
     } finally {
       setSaving(false);
     }
@@ -131,7 +167,11 @@ export default function CompanyDetailsPanel(): JSX.Element {
       {actionError && (
         <div className="empty-state-card error-card">
           <span className="empty-icon">⚠️</span>
-          <p>{actionError}</p>
+          <p>{actionError.message}</p>
+          {actionError.detail && <p style={{ opacity: 0.85 }}>{actionError.detail}</p>}
+          {actionError.code && (
+            <p style={{ opacity: 0.7, fontSize: "0.8rem" }}>Error code: {actionError.code}</p>
+          )}
         </div>
       )}
 
@@ -153,7 +193,12 @@ export default function CompanyDetailsPanel(): JSX.Element {
         <div className="empty-state-card">
           <span className="empty-icon">⚠️</span>
           <h3>Could not load company details</h3>
-          <p>{loadError}. Check that the API is running and you are signed in.</p>
+          <p>{loadError.message}</p>
+          {loadError.detail && <p style={{ opacity: 0.85 }}>{loadError.detail}</p>}
+          {loadError.code && (
+            <p style={{ opacity: 0.7, fontSize: "0.8rem" }}>Error code: {loadError.code}</p>
+          )}
+          <p style={{ opacity: 0.7 }}>Check that the API is running and you are signed in.</p>
         </div>
       )}
 

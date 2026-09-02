@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../prisma";
+import { sendServerError } from "../errors";
 import { createPurchaseOrder, receiveGoods, transitionPurchaseOrder, PrismaPurchaseRepository } from "@kapmeta/purchase";
 import { requireAuth, requirePermission, type AuthedRequest } from "../middleware/require-auth";
 
@@ -30,8 +31,7 @@ router.post("/purchase-orders", requireAuth, requirePermission("inventory.po.cre
       res.status(400).json({ error: err.message });
       return;
     }
-    console.error(err);
-    res.status(500).json({ error: "internal error" });
+    sendServerError(res, err, "POST /purchase-orders");
   }
 });
 
@@ -62,8 +62,7 @@ router.post("/goods-received-notes", requireAuth, requirePermission("inventory.g
 
     res.status(201).json(result);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "internal error" });
+    sendServerError(res, err, "POST /goods-received-notes");
   }
 });
 
@@ -89,8 +88,7 @@ router.patch(
 
       res.status(200).json({ status: result.newStatus });
     } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "internal error" });
+      sendServerError(res, err, "PATCH /purchase-orders/:id/status");
     }
   },
 );

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { requireAuth, requirePermission, type AuthedRequest } from "../middleware/require-auth";
 import { prisma } from "../prisma";
+import { sendServerError } from "../errors";
 import { PgSettingsRepository } from "../../../../services/settings/src/PgSettingsRepository";
 import { getPool } from "../../../../services/shared/src/db/Pool";
 import type { OutletBillingSettings, OutletPrintSettings } from "../../../../services/settings/src/types";
@@ -20,8 +21,7 @@ const handleGetOutletStatus = async (req: AuthedRequest, res: any) => {
       updatedAt: status?.updated_at?.toISOString() ?? null,
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "internal error" });
+    sendServerError(res, err, "GET /settings/outlet-status");
   }
 };
 
@@ -33,7 +33,7 @@ const handleUpdateOutletStatus = async (req: AuthedRequest, res: any) => {
   const isOnline = req.body.isOnline ?? req.body.isOpen ?? req.body.active;
 
   if (typeof isOnline !== "boolean") {
-    return res.status(400).json({ error: "isOnline must be boolean" });
+    return res.status(400).json({ code: "INVALID_INPUT", error: "isOnline must be boolean" });
   }
 
   try {
@@ -66,8 +66,7 @@ const handleUpdateOutletStatus = async (req: AuthedRequest, res: any) => {
       updatedAt: status.updated_at.toISOString(),
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "internal error" });
+    sendServerError(res, err, "PATCH /settings/outlet-status");
   }
 };
 
@@ -88,8 +87,7 @@ settingsRouter.get("/settings/print", requireAuth, requirePermission("settings.m
     const settings = await settingsRepo.getPrintSettings(outletId);
     res.status(200).json(settings);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "internal error" });
+    sendServerError(res, err, "GET /settings/print");
   }
 });
 
@@ -107,8 +105,7 @@ settingsRouter.put("/settings/print", requireAuth, requirePermission("settings.m
     const saved = await settingsRepo.savePrintSettings(updated);
     res.status(200).json(saved);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "internal error" });
+    sendServerError(res, err, "PUT /settings/print");
   }
 });
 
@@ -118,8 +115,7 @@ settingsRouter.get("/settings/billing", requireAuth, requirePermission("settings
     const settings = await settingsRepo.getBillingSettings(outletId);
     res.status(200).json(settings);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "internal error" });
+    sendServerError(res, err, "GET /settings/billing");
   }
 });
 
@@ -137,8 +133,7 @@ settingsRouter.put("/settings/billing", requireAuth, requirePermission("settings
     const saved = await settingsRepo.saveBillingSettings(updated);
     res.status(200).json(saved);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "internal error" });
+    sendServerError(res, err, "PUT /settings/billing");
   }
 });
 
@@ -150,7 +145,7 @@ settingsRouter.get("/settings/company", requireAuth, requirePermission("settings
     const outletId = req.auth!.outletId;
     const outlet = await prisma.outlet.findUnique({ where: { id: outletId } });
     if (!outlet) {
-      res.status(404).json({ error: "outlet not found" });
+      res.status(404).json({ code: "OUTLET_NOT_FOUND", error: "outlet not found" });
       return;
     }
     const organization = await prisma.organization.findUnique({
@@ -169,8 +164,7 @@ settingsRouter.get("/settings/company", requireAuth, requirePermission("settings
       taxNumber: (organization as any)?.taxNumber ?? null,
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "internal error" });
+    sendServerError(res, err, "GET /settings/company");
   }
 });
 
@@ -185,7 +179,7 @@ settingsRouter.patch("/settings/company", requireAuth, requirePermission("settin
 
     const outlet = await prisma.outlet.findUnique({ where: { id: outletId } });
     if (!outlet) {
-      res.status(404).json({ error: "outlet not found" });
+      res.status(404).json({ code: "OUTLET_NOT_FOUND", error: "outlet not found" });
       return;
     }
     const organizationId = (outlet as any).organizationId as string;
@@ -236,7 +230,6 @@ settingsRouter.patch("/settings/company", requireAuth, requirePermission("settin
       taxNumber: (updatedOrg as any)?.taxNumber ?? null,
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "internal error" });
+    sendServerError(res, err, "PATCH /settings/company");
   }
 });
