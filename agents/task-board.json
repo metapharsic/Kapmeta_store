@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-09-02T11:18:08Z",
+  "lastUpdated": "2026-09-02T17:53:33Z",
   "activeTasks": [
     {
       "taskId": "TSK-001",
@@ -542,6 +542,78 @@
       "status": "PENDING",
       "priority": "P0",
       "relatedGate": "CP-18"
+    },
+    {
+      "taskId": "TSK-019-A1",
+      "title": "DB: fix UUID/TEXT FK mismatch in 0040/0041, add 0042 (daily_stock_closings, stock_purchases/items) + 6 Prisma models",
+      "assignedTo": "database-agent",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "relatedGate": "CP-19"
+    },
+    {
+      "taskId": "TSK-019-A2",
+      "title": "Backend: strip 6 AGENTS.md Rule-1 violations from /inventory/dashboard/summary + /availability/export, reuse honest margin service for profit items",
+      "assignedTo": "backend-agent",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "relatedGate": "CP-19"
+    },
+    {
+      "taskId": "TSK-019-A3",
+      "title": "Backend: reconcile agent telemetry roster 8->7 (merge QA+SRE), fix hardcoded 8-agent count in /admin/daily-operations",
+      "assignedTo": "backend-agent",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "relatedGate": "CP-19"
+    },
+    {
+      "taskId": "TSK-019-A4",
+      "title": "Frontend: InventoryHeader.tsx, Dashboard tab on pages/inventory.tsx, fix+reuse existing A2aAgentStatusDrawer (deleted duplicate A2AAgentStatusModal)",
+      "assignedTo": "frontend-agent",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "relatedGate": "CP-19"
+    },
+    {
+      "taskId": "TSK-019-A5",
+      "title": "Frontend: pages/inventory/purchase.tsx (Stock Purchase screen)",
+      "assignedTo": "frontend-agent",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "relatedGate": "CP-19"
+    },
+    {
+      "taskId": "TSK-019-A6",
+      "title": "Frontend: pages/inventory/purchase-orders.tsx (PO screen, built against existing /inventory/purchase-orders)",
+      "assignedTo": "frontend-agent",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "relatedGate": "CP-19"
+    },
+    {
+      "taskId": "TSK-019b",
+      "title": "POST /inventory/seed-mock-data still hardcodes demo vendor/ingredient/invoice data - real AGENTS.md Rule 1 violation, separate route, not fixed this round",
+      "assignedTo": "backend-agent",
+      "status": "PENDING",
+      "priority": "P2",
+      "relatedGate": "CP-19"
+    },
+    {
+      "taskId": "TSK-019c",
+      "title": "Purchase orders exist as 2 parallel backends: /inventory/purchase-orders (raw CRUD, used by UI) vs purchase.ts/services/purchase (state-machine domain service, unused by any UI) - needs a consolidation decision",
+      "assignedTo": "backend-agent",
+      "status": "PENDING",
+      "priority": "P2",
+      "relatedGate": "CP-19"
+    },
+    {
+      "taskId": "TSK-019-U1",
+      "title": "USER ACTION: same as TSK-018-U1 - npm run db:verify, npm run db:migrate, npx prisma generate, restart API (now also covers migration 0042)",
+      "assignedTo": "user",
+      "status": "PENDING",
+      "priority": "P0",
+      "relatedGate": "CP-19"
     }
   ]
 }

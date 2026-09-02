@@ -1,6 +1,6 @@
 # PetPooja POS Platform — Multi-Agent Operational Status
 
-**Last Updated:** 2026-09-02T10:15:00Z · **System Status:** 🟢 OPERATIONAL
+**Last Updated:** 2026-09-02T17:55:00Z · **System Status:** 🟢 OPERATIONAL
 
 ---
 
@@ -227,3 +227,13 @@ Built: migration 0041 (item_channel_prices table, additive, does NOT touch item_
 Two things surfaced honestly instead of faked: the Zomato/Swiggy "Last Menu Triggered..." sync banner and "Visit Store" button have no real data source anywhere in this schema (no lastSyncedAt/store-URL field on ChannelAccount) — rendered as neutral placeholders, not fabricated names/dates. The Manage Menu top tab bar's Variants and Discounts tabs have zero backend anywhere — marked "coming soon"; Addons and Taxes have real backend routes but no frontend page ever calls them, so those two are also "coming soon" on this tab bar pending a future round.
 
 tsc: pos-web 0, api 100 (same baseline, 0 new). No line-ending churn. Commits: 86673b6 (schema), b1d8cea (backend+frontend).
+
+## 2026-09-02 — CP-19 Inventory Dashboard, Stock Purchase, Purchase Orders, Agent Status
+
+5 agents (1 DB, 2 backend, 3 frontend split across 2 rounds). Unusual round: found a large chunk of this exact feature already written, UNCOMMITTED, in the working tree by a separate process working the same implementation plan concurrently. Rather than discard or duplicate it, verified it line by line and fixed what was actually wrong, then completed the gaps.
+
+Real bugs found and fixed: migrations 0040/0041/0042 had every id/FK column declared TEXT with `gen_random_uuid()::text` while every table they reference (outlets, menu_items, ingredients, vendors, purchase_orders, users) uses native UUID PKs — a hard Postgres FK type mismatch that guarantees migrate failure; converted back to UUID. `GET /inventory/dashboard/summary` violated `.agents/AGENTS.md` Rule 1 in six places: fake "412/167 ready to add" targets, fabricated highest/least-profit item names ("Matar Paneer"/"Bhindi Masala"), fake nonzero fallbacks when a real total is legitimately 0, a "×10" fake consumption multiplier, a hardcoded `stockQty:100` on every item, and a fabricated price-trend line from static multipliers — all replaced with real computed values (profit items now reuse the honest hasRecipe-aware margin service from this session's CP-14 reporting work). Agent telemetry roster reconciled from 8 agents to the 7 this round's spec names (QA+SRE merged into one row), plus a second hardcoded "8 agents" found in `/admin/daily-operations`. A newly-dropped `A2AAgentStatusModal.tsx` duplicated an already-wired `A2aAgentStatusDrawer.tsx` from an earlier session round (live in PosBillingView/TableViewFloor) — deleted the duplicate, fixed the original's stale hardcoded topology roster and wired its events tab to the real audit-log endpoint instead of 4 fake static events.
+
+Built: 6 Prisma models for the previously raw-SQL-only tables; InventoryHeader.tsx + a new Dashboard tab on the existing `pages/inventory.tsx` (its 4 existing tabs untouched, avoided the route collision a fresh `pages/inventory/index.tsx` would have caused); `pages/inventory/purchase.tsx` and `pages/inventory/purchase-orders.tsx`, both built against the existing, already-wired `/inventory/purchases` and `/inventory/purchase-orders` endpoints rather than adding a third parallel PO implementation on top of the pre-existing `purchase.ts`/`services/purchase` domain service (flagged as known debt, not resolved).
+
+tsc: pos-web 0, api 106 (this round's starting baseline, unchanged by our fixes — the +6 over the prior 100 baseline comes from the other process's still-untyped raw-SQL additions, pre-existing before we touched anything). No line-ending churn. Commit: e028d07.
