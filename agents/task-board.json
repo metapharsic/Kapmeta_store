@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-09-02T17:53:33Z",
+  "lastUpdated": "2026-09-02T18:03:16Z",
   "activeTasks": [
     {
       "taskId": "TSK-001",
@@ -612,6 +612,14 @@
       "title": "USER ACTION: same as TSK-018-U1 - npm run db:verify, npm run db:migrate, npx prisma generate, restart API (now also covers migration 0042)",
       "assignedTo": "user",
       "status": "PENDING",
+      "priority": "P0",
+      "relatedGate": "CP-19"
+    },
+    {
+      "taskId": "TSK-020",
+      "title": "Fix: migrations 0018/0022 recorded applied but missing live columns/tables (vendors.contact_name, ingredients.unit_cost_minor, purchase_orders.total_amount_minor, outbox_events) - repaired via migration 0043, root cause of dashboard-summary failure",
+      "assignedTo": "database-agent",
+      "status": "COMPLETED",
       "priority": "P0",
       "relatedGate": "CP-19"
     }
