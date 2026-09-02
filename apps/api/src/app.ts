@@ -23,6 +23,9 @@ import { waitersRouter } from './routes/waiters';
 import { tablesRouter } from './routes/tables';
 import { ordersRouter } from './routes/orders';
 import { settingsRouter } from './routes/settings';
+import { commissionRouter } from './routes/commission';
+import { physicalMenuRouter } from './routes/physical-menu';
+import { menuSchedulingRouter } from './routes/menu-scheduling';
 import { taxSettingsRouter } from './routes/tax-settings';
 import { adminRouter } from './routes/admin';
 import { mapDomainError } from './errors';
@@ -68,6 +71,9 @@ export function createApp(): Express {
   app.use(tablesRouter);
   app.use(ordersRouter);
   app.use(settingsRouter);
+  app.use('/commission', commissionRouter);
+  app.use('/physical-menu', physicalMenuRouter);
+  app.use('/menu-scheduling', menuSchedulingRouter);
   app.use(taxSettingsRouter);
 
   app.get('/health', (_req, res) => res.json({ status: 'ok' }));

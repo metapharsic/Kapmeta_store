@@ -218,6 +218,8 @@ router.post("/items/bulk-upload", requireAuth, requirePermission("menu.item.mana
       }
     }
 
+    await (prisma as any).outlet.update({ where: { id: outletId }, data: { lastMenuSyncAt: new Date() } });
+
     res.status(200).json({
       success: true,
       totalProcessed: itemsInput.length,
