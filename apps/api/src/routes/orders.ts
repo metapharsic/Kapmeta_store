@@ -5,6 +5,7 @@ import {
   createOrder,
   transitionOrder,
   listOrders,
+  countOrders,
   getOrderDetail,
   addOrderItems,
   PrismaOrderRepository,
@@ -23,23 +24,37 @@ const modifierPriceLookup = new PrismaModifierPriceLookup(prisma);
 
 export const ordersRouter = Router();
 
-// GET /orders - List orders with optional filters
+// GET /orders - List orders with optional filters.
+// Returns an envelope ({ orders, total, page, limit }) because the orders
+// table footer shows "Showing 1 to N of TOTAL records" - the page slice alone
+// cannot produce that number.
 ordersRouter.get("/orders", requireAuth, async (req: AuthedRequest, res) => {
   try {
     const outletId = req.auth!.outletId;
-    const { status, channel, orderType, page, limit, fromDate, toDate } = req.query;
+    const { status, channel, orderType, view, page, limit, fromDate, toDate, orderNumber, search } = req.query;
 
-    const filter: any = {};
+    const pageNum = Math.max(1, Number(page) || 1);
+    const limitNum = Math.min(200, Math.max(1, Number(limit) || 50));
+
+    const filter: any = { limit: limitNum, offset: (pageNum - 1) * limitNum };
     if (status) filter.status = status as OrderStatus;
     if (channel) filter.channel = channel as any;
     if (orderType) filter.orderType = orderType as any;
-    if (page) filter.page = Number(page);
-    if (limit) filter.limit = Number(limit);
+    if (view === "live" || view === "online" || view === "all") filter.view = view;
+    // The header quick-search sends orderNumber/search; the repository filter
+    // calls it orderNumberSearch. Without this mapping the search was silently
+    // dropped and the caller got the unfiltered first page back.
+    const numberSearch = String(orderNumber || search || "").trim();
+    if (numberSearch) filter.orderNumberSearch = numberSearch;
     if (fromDate) filter.fromDate = new Date(String(fromDate));
     if (toDate) filter.toDate = new Date(String(toDate));
 
-    const orders = await listOrders(outletId, filter, orderRepo);
-    res.status(200).json(orders);
+    const [orders, total] = await Promise.all([
+      listOrders(outletId, filter, orderRepo),
+      countOrders(outletId, filter, orderRepo),
+    ]);
+
+    res.status(200).json({ orders, total, page: pageNum, limit: limitNum });
   } catch (err) {
     console.error("Error listing orders:", err);
     res.status(500).json({ error: "Failed to list orders" });
@@ -275,6 +290,340 @@ ordersRouter.get("/orders/live", requireAuth, async (req: AuthedRequest, res) =>
   } catch (err) {
     console.error("Error fetching live orders:", err);
     res.status(500).json({ error: "Failed to fetch live orders" });
+  }
+});
+
+// Non-terminal statuses = an order still "running" on the floor / in the pass.
+const RUNNING_ORDER_STATUSES = [
+  "DRAFT",
+  "PLACED",
+  "CONFIRMED",
+  "KOT_CREATED",
+  "IN_PREPARATION",
+  "READY",
+  "ASSIGNED",
+  "OUT_FOR_DELIVERY",
+  "SERVED",
+  "HANDED_OVER",
+];
+
+// orders.order_type is a free-text column (there is no Prisma enum), and older
+// rows still carry TAKEAWAY / AGGREGATOR. Fold them onto the three buckets the
+// Running Orders header actually shows.
+function normalizeOrderTypeBucket(orderType: string | null | undefined): "DINE_IN" | "PICKUP" | "DELIVERY" {
+  const t = String(orderType || "").toUpperCase();
+  if (t === "PICKUP" || t === "TAKEAWAY" || t === "CURBSIDE" || t === "DRIVE_THRU") return "PICKUP";
+  if (t === "DELIVERY" || t === "AGGREGATOR") return "DELIVERY";
+  return "DINE_IN";
+}
+
+// GET /orders/live/summary - Running Orders header tiles.
+// "Running"  = every non-terminal order, split by order type.
+// "Pending"  = the three kitchen/fulfilment waits the screen calls out.
+ordersRouter.get("/orders/live/summary", requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+
+    const rows = await prisma.order.findMany({
+      where: { outletId, status: { in: RUNNING_ORDER_STATUSES } },
+      select: { status: true, orderType: true, grandTotal: true },
+    });
+
+    const bucket = () => ({ count: 0, amountMinor: 0n });
+    const running = {
+      total: bucket(),
+      DINE_IN: bucket(),
+      PICKUP: bucket(),
+      DELIVERY: bucket(),
+    };
+    const pending = {
+      total: bucket(),
+      inPreparation: bucket(),
+      waitingForPickup: bucket(),
+      outForDelivery: bucket(),
+    };
+
+    for (const row of rows) {
+      const amount = BigInt(row.grandTotal ?? 0n);
+      const type = normalizeOrderTypeBucket(row.orderType);
+      const status = String(row.status || "").toUpperCase();
+
+      running.total.count += 1;
+      running.total.amountMinor += amount;
+      running[type].count += 1;
+      running[type].amountMinor += amount;
+
+      let pendingKey: "inPreparation" | "waitingForPickup" | "outForDelivery" | null = null;
+      if (status === "IN_PREPARATION") pendingKey = "inPreparation";
+      else if (status === "READY" && type === "PICKUP") pendingKey = "waitingForPickup";
+      else if (status === "OUT_FOR_DELIVERY") pendingKey = "outForDelivery";
+
+      if (pendingKey) {
+        pending[pendingKey].count += 1;
+        pending[pendingKey].amountMinor += amount;
+        pending.total.count += 1;
+        pending.total.amountMinor += amount;
+      }
+    }
+
+    const ser = (b: { count: number; amountMinor: bigint }) => ({
+      count: b.count,
+      amountMinor: b.amountMinor.toString(),
+    });
+
+    res.status(200).json({
+      outletId,
+      running: {
+        totalOrders: running.total.count,
+        totalAmountMinor: running.total.amountMinor.toString(),
+        byOrderType: {
+          DINE_IN: ser(running.DINE_IN),
+          PICKUP: ser(running.PICKUP),
+          DELIVERY: ser(running.DELIVERY),
+        },
+      },
+      pending: {
+        totalOrders: pending.total.count,
+        totalAmountMinor: pending.total.amountMinor.toString(),
+        inPreparation: ser(pending.inPreparation),
+        waitingForPickup: ser(pending.waitingForPickup),
+        outForDelivery: ser(pending.outForDelivery),
+      },
+    });
+  } catch (err) {
+    console.error("Error building live order summary:", err);
+    res.status(500).json({ error: "Failed to build live order summary" });
+  }
+});
+
+// Aggregator/dispatch columns landed on orders after the checked-in Prisma
+// client was generated. Read them in a separate, catch-guarded query so a
+// stale client degrades these fields to null instead of 500-ing the screen.
+async function loadOnlineOrderColumns(orderIds: string[]): Promise<Map<string, any>> {
+  const map = new Map<string, any>();
+  if (orderIds.length === 0) return map;
+  try {
+    const rows: any[] = await (prisma.order as any).findMany({
+      where: { id: { in: orderIds } },
+      select: {
+        id: true,
+        channel: true,
+        externalOrderId: true,
+        customerName: true,
+        customerPhone: true,
+        riderName: true,
+        riderPhone: true,
+        otp: true,
+        receivedAt: true,
+        acceptedAt: true,
+      },
+    });
+    for (const r of rows) map.set(r.id, r);
+  } catch {
+    // Columns not in the generated client yet.
+  }
+  return map;
+}
+
+// GET /orders/online - Aggregator (Zomato/Swiggy) order list.
+// Registered before /orders/:id so "online" is not swallowed as an order id.
+ordersRouter.get("/orders/online", requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const { channel, status, orderNo, fromDate, toDate, page, limit } = req.query;
+
+    const pageNum = Math.max(1, Number(page) || 1);
+    const limitNum = Math.min(200, Math.max(1, Number(limit) || 20));
+    const channelUpper = String(channel || "ALL").trim().toUpperCase() || "ALL";
+
+    const baseWhere: any = { outletId };
+    if (status) {
+      const statuses = String(status)
+        .split(",")
+        .map((v) => v.trim().toUpperCase())
+        .filter(Boolean);
+      if (statuses.length === 1) baseWhere.status = statuses[0];
+      else if (statuses.length > 1) baseWhere.status = { in: statuses };
+    }
+    if (orderNo) {
+      baseWhere.orderNumber = { contains: String(orderNo).trim(), mode: "insensitive" };
+    }
+    if (fromDate || toDate) {
+      const createdAt: any = {};
+      if (fromDate) createdAt.gte = new Date(String(fromDate));
+      if (toDate) createdAt.lte = new Date(String(toDate));
+      baseWhere.createdAt = createdAt;
+    }
+
+    // Preferred scoping: the orders.channel column. Fallback (stale client /
+    // pre-migration rows): orderType AGGREGATOR plus the "<CHANNEL>-<id>"
+    // orderNumber prefix the webhook writes.
+    const channelWhere: any = {
+      ...baseWhere,
+      ...(channelUpper === "ALL" ? { channel: { not: null } } : { channel: channelUpper }),
+    };
+    const fallbackWhere: any = {
+      ...baseWhere,
+      OR:
+        channelUpper === "ALL"
+          ? [
+              { orderType: "AGGREGATOR" },
+              { orderNumber: { startsWith: "ZOMATO-" } },
+              { orderNumber: { startsWith: "SWIGGY-" } },
+            ]
+          : [{ orderNumber: { startsWith: `${channelUpper}-` } }],
+    };
+
+    const runQuery = async (where: any) =>
+      Promise.all([
+        (prisma.order as any).findMany({
+          where,
+          orderBy: { createdAt: "desc" },
+          skip: (pageNum - 1) * limitNum,
+          take: limitNum,
+          include: { diningTable: { select: { tableNumber: true } } },
+        }),
+        (prisma.order as any).count({ where }),
+      ]);
+
+    let rows: any[];
+    let total: number;
+    try {
+      [rows, total] = await runQuery(channelWhere);
+    } catch {
+      [rows, total] = await runQuery(fallbackWhere);
+    }
+
+    const [outlet, extras] = await Promise.all([
+      prisma.outlet.findUnique({ where: { id: outletId }, select: { name: true } }).catch(() => null),
+      loadOnlineOrderColumns(rows.map((r: any) => r.id)),
+    ]);
+
+    const now = Date.now();
+    const orders = rows.map((row: any) => {
+      const extra = extras.get(row.id) || {};
+      const channelFromNumber = String(row.orderNumber || "").includes("-")
+        ? String(row.orderNumber).split("-")[0].toUpperCase()
+        : null;
+      const createdAt: Date = row.createdAt instanceof Date ? row.createdAt : new Date(row.createdAt);
+
+      return {
+        id: row.id,
+        orderNo: row.orderNumber,
+        orderNumber: row.orderNumber,
+        externalOrderId: extra.externalOrderId ?? row.externalOrderId ?? null,
+        outletName: outlet?.name ?? null,
+        channel:
+          extra.channel ??
+          row.channel ??
+          (channelFromNumber === "ZOMATO" || channelFromNumber === "SWIGGY" ? channelFromNumber : null),
+        orderType: row.orderType,
+        tableNumber: row.diningTable?.tableNumber ?? null,
+        riderName: extra.riderName ?? row.riderName ?? null,
+        riderPhone: extra.riderPhone ?? row.riderPhone ?? null,
+        customerName: extra.customerName ?? row.customerName ?? null,
+        customerPhone: extra.customerPhone ?? row.customerPhone ?? null,
+        otp: extra.otp ?? row.otp ?? null,
+        createdAt,
+        receivedAt: extra.receivedAt ?? row.receivedAt ?? null,
+        acceptedAt: extra.acceptedAt ?? row.acceptedAt ?? null,
+        updatedAt: row.updatedAt ?? null,
+        grandTotalMinor: String(row.grandTotal ?? 0n),
+        status: row.status,
+        elapsedMinutes: Math.max(0, Math.floor((now - createdAt.getTime()) / 60000)),
+      };
+    });
+
+    res.status(200).json({ orders, total, page: pageNum, limit: limitNum });
+  } catch (err) {
+    console.error("Error listing online orders:", err);
+    res.status(500).json({ error: "Failed to list online orders" });
+  }
+});
+
+// GET /orders/advance/cumulative-items - "how much of each dish do I owe over
+// this window", aggregated across advance orders. Same advance predicate as
+// GET /orders/advance.
+ordersRouter.get("/orders/advance/cumulative-items", requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const { fromDate, toDate } = req.query;
+
+    const from = fromDate ? new Date(String(fromDate)) : null;
+    const to = toDate ? new Date(String(toDate)) : null;
+
+    // Same predicate GET /orders/advance uses.
+    const advancePredicate: any = {
+      OR: [{ scheduledFireAt: { not: null } }, { advanceStatus: { not: null } }],
+    };
+
+    const andClauses: any[] = [advancePredicate];
+    if (from || to) {
+      const range: any = {};
+      if (from) range.gte = from;
+      if (to) range.lte = to;
+      // Range applies to when the order is due; orders with no fire time fall
+      // back to when they were taken.
+      andClauses.push({
+        OR: [
+          { scheduledFireAt: range },
+          { AND: [{ scheduledFireAt: null }, { createdAt: range }] },
+        ],
+      });
+    }
+
+    const orders: any[] = await (prisma.order as any).findMany({
+      where: { outletId, AND: andClauses },
+      select: { id: true },
+    });
+
+    const orderIds = orders.map((o) => o.id);
+    const items = orderIds.length
+      ? await prisma.orderItem.findMany({
+          where: { outletId, orderId: { in: orderIds }, isVoided: false },
+          include: { menuItem: { select: { name: true } } },
+        })
+      : [];
+
+    const byItem = new Map<string, { menuItemId: string; menuItemName: string; totalQuantity: number; totalAmountMinor: bigint }>();
+    let totalQuantity = 0;
+    let totalAmountMinor = 0n;
+
+    for (const it of items as any[]) {
+      const key = it.menuItemId;
+      const name = it.item_name || it.menuItem?.name || "Menu Item";
+      const qty = Number(it.quantity || 0);
+      const amount = BigInt(it.subtotal ?? 0n);
+
+      const agg = byItem.get(key) || { menuItemId: key, menuItemName: name, totalQuantity: 0, totalAmountMinor: 0n };
+      agg.totalQuantity += qty;
+      agg.totalAmountMinor += amount;
+      byItem.set(key, agg);
+
+      totalQuantity += qty;
+      totalAmountMinor += amount;
+    }
+
+    const rows = Array.from(byItem.values())
+      .sort((a, b) => b.totalQuantity - a.totalQuantity || a.menuItemName.localeCompare(b.menuItemName))
+      .map((r) => ({
+        menuItemId: r.menuItemId,
+        menuItemName: r.menuItemName,
+        totalQuantity: r.totalQuantity,
+        totalAmountMinor: r.totalAmountMinor.toString(),
+      }));
+
+    res.status(200).json({
+      outletId,
+      fromDate: from ? from.toISOString() : null,
+      toDate: to ? to.toISOString() : null,
+      orderCount: orderIds.length,
+      items: rows,
+      totals: { totalQuantity, totalAmountMinor: totalAmountMinor.toString() },
+    });
+  } catch (err) {
+    console.error("Error aggregating advance order items:", err);
+    res.status(500).json({ error: "Failed to aggregate advance order items" });
   }
 });
 

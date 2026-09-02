@@ -164,6 +164,165 @@ router.get("/kot", requireAuth, requirePermission("kot.read", "kitchen.kds.view"
   }
 });
 
+// Columns that landed after the checked-in Prisma client was generated
+// (kot_tickets.bill_printed_at, and the denormalised customer fields on
+// orders). Read in separate catch-guarded queries so a stale client degrades
+// the field to null instead of failing the whole history page.
+async function loadKotBillPrintedAt(kotIds: string[]): Promise<Map<string, Date | null>> {
+  const map = new Map<string, Date | null>();
+  if (kotIds.length === 0) return map;
+  try {
+    const rows: any[] = await (prisma.kOTTicket as any).findMany({
+      where: { id: { in: kotIds } },
+      select: { id: true, billPrintedAt: true },
+    });
+    for (const r of rows) map.set(r.id, r.billPrintedAt ?? null);
+  } catch {}
+  return map;
+}
+
+async function loadOrderCustomerFields(
+  orderIds: string[]
+): Promise<Map<string, { customerName: string | null; customerPhone: string | null; billPrintedAt: Date | null }>> {
+  const map = new Map<string, any>();
+  if (orderIds.length === 0) return map;
+  try {
+    const rows: any[] = await (prisma.order as any).findMany({
+      where: { id: { in: orderIds } },
+      select: { id: true, customerName: true, customerPhone: true, billPrintedAt: true },
+    });
+    for (const r of rows) {
+      map.set(r.id, {
+        customerName: r.customerName ?? null,
+        customerPhone: r.customerPhone ?? null,
+        billPrintedAt: r.billPrintedAt ?? null,
+      });
+    }
+  } catch {}
+  return map;
+}
+
+function formatDuration(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const sec = total % 60;
+  return [h, m, sec].map((n) => String(n).padStart(2, "0")).join(":");
+}
+
+// GET /kitchen/kot/history - the KOT report screen.
+// GET /kitchen/kot is deliberately live-only (open statuses plus a recall
+// grace window) and unpaginated, so history gets its own endpoint with a date
+// range and a total count instead of widening the KDS board query.
+router.get("/kot/history", requireAuth, requirePermission("kot.read", "kitchen.kds.view"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const { fromDate, toDate, orderType, page, limit } = req.query;
+
+    const pageNum = Math.max(1, Number(page) || 1);
+    const limitNum = Math.min(200, Math.max(1, Number(limit) || 20));
+
+    const where: any = { outletId };
+    if (fromDate || toDate) {
+      const createdAt: any = {};
+      if (fromDate) createdAt.gte = new Date(String(fromDate));
+      if (toDate) createdAt.lte = new Date(String(toDate));
+      where.createdAt = createdAt;
+    }
+    if (orderType) {
+      const types = String(orderType)
+        .split(",")
+        .map((t) => t.trim().toUpperCase())
+        .filter(Boolean);
+      if (types.length === 1) where.order = { orderType: types[0] };
+      else if (types.length > 1) where.order = { orderType: { in: types } };
+    }
+
+    const [tickets, total] = await Promise.all([
+      prisma.kOTTicket.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip: (pageNum - 1) * limitNum,
+        take: limitNum,
+        include: {
+          kotItems: { include: { menuItem: { select: { name: true } } } },
+          station: { select: { name: true } },
+          order: {
+            select: {
+              id: true,
+              orderNumber: true,
+              orderType: true,
+              customerId: true,
+              diningTable: { select: { id: true, tableNumber: true } },
+            },
+          },
+        },
+      }),
+      prisma.kOTTicket.count({ where }),
+    ]);
+
+    const orderIds = Array.from(new Set(tickets.map((t) => t.orderId).filter(Boolean)));
+    const customerIds = Array.from(
+      new Set(tickets.map((t) => (t.order as any)?.customerId).filter((id: any): id is string => Boolean(id)))
+    );
+
+    const [kotPrinted, orderFields, customers] = await Promise.all([
+      loadKotBillPrintedAt(tickets.map((t) => t.id)),
+      loadOrderCustomerFields(orderIds),
+      customerIds.length
+        ? (prisma.customer as any)
+            .findMany({
+              where: { id: { in: customerIds } },
+              select: { id: true, name: true, firstName: true, lastName: true, phone: true },
+            })
+            .catch(() => [])
+        : Promise.resolve([]),
+    ]);
+
+    const customerMap = new Map<string, { name: string | null; phone: string | null }>();
+    for (const c of customers as any[]) {
+      customerMap.set(c.id, {
+        name: c.name || [c.firstName, c.lastName].filter(Boolean).join(" ").trim() || null,
+        phone: c.phone ?? null,
+      });
+    }
+
+    const items = tickets.map((t) => {
+      const ord: any = t.order || {};
+      const fields = orderFields.get(t.orderId) || {};
+      const customer = ord.customerId ? customerMap.get(ord.customerId) : undefined;
+      const createdAt = t.createdAt;
+      const servedAt = t.servedAt ?? null;
+      const durationMs = servedAt ? servedAt.getTime() - createdAt.getTime() : null;
+
+      return {
+        kotId: t.id,
+        ticketNumber: t.ticketNumber,
+        orderId: t.orderId,
+        orderNumber: ord.orderNumber ?? null,
+        orderType: ord.orderType ?? null,
+        tableNumber: (ord as any).table_number || ord.diningTable?.tableNumber || null,
+        stationName: t.station?.name ?? null,
+        customerName: (fields as any).customerName ?? customer?.name ?? null,
+        customerPhone: (fields as any).customerPhone ?? customer?.phone ?? null,
+        itemCount: t.kotItems.reduce((sum, ki) => sum + Number(ki.quantity || 0), 0),
+        itemNames: t.kotItems.map((ki) => ki.menuItem?.name).filter(Boolean),
+        status: t.status,
+        billPrintedAt: kotPrinted.get(t.id) ?? (fields as any).billPrintedAt ?? null,
+        servedAt,
+        completeDurationSeconds: durationMs === null ? null : Math.max(0, Math.floor(durationMs / 1000)),
+        completeDuration: durationMs === null ? null : formatDuration(durationMs),
+        createdAt,
+      };
+    });
+
+    res.status(200).json({ items, total, page: pageNum, limit: limitNum });
+  } catch (err) {
+    console.error("Error listing KOT history:", err);
+    res.status(500).json({ error: "internal error" });
+  }
+});
+
 router.post("/kot", requireAuth, requirePermission("order.create"), async (req: AuthedRequest, res) => {
   try {
     const repository = new PrismaKotRepository(prisma);

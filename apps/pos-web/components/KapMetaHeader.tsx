@@ -5,6 +5,7 @@ import { authedFetch, fetchMe, logout, type MeResponse } from "../lib/auth";
 import QuickSearchModal from "./QuickSearchModal";
 import ItemToggleModal from "./ItemToggleModal";
 import HoldOrdersDrawer from "./HoldOrdersDrawer";
+import { filterSidebarGroups } from "./Nav";
 
 export interface KapMetaHeaderProps {
   outletName?: string;
@@ -17,6 +18,109 @@ export interface KapMetaHeaderProps {
 }
 
 
+
+
+// Icon per SIDEBAR_GROUPS group id. The drawer is the only surface that draws
+// icons, so they live here rather than in Nav.tsx's data.
+function drawerGroupIcon(id: string): JSX.Element {
+  const common = {
+    width: 22,
+    height: 22,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "#ffffff",
+    strokeWidth: 2,
+    "aria-hidden": true,
+  } as const;
+
+  switch (id) {
+    case "dashboard":
+      return (
+        <svg {...common}>
+          <line x1="4" y1="21" x2="4" y2="14" />
+          <line x1="4" y1="10" x2="4" y2="3" />
+          <line x1="12" y1="21" x2="12" y2="12" />
+          <line x1="12" y1="8" x2="12" y2="3" />
+          <line x1="20" y1="21" x2="20" y2="16" />
+          <line x1="20" y1="12" x2="20" y2="3" />
+          <line x1="1" y1="14" x2="7" y2="14" />
+          <line x1="9" y1="8" x2="15" y2="8" />
+          <line x1="17" y1="16" x2="23" y2="16" />
+        </svg>
+      );
+    case "daily-operations":
+      return (
+        <svg {...common}>
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+        </svg>
+      );
+    case "menu":
+      return (
+        <svg {...common}>
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <polyline points="14 2 14 8 20 8" />
+          <line x1="16" y1="13" x2="8" y2="13" />
+          <line x1="16" y1="17" x2="8" y2="17" />
+        </svg>
+      );
+    case "inventory":
+      return (
+        <svg {...common}>
+          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+          <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+          <line x1="12" y1="22.08" x2="12" y2="12" />
+        </svg>
+      );
+    case "marketing":
+      return (
+        <svg {...common}>
+          <path d="M3 11v2a1 1 0 0 0 1 1h3l5 4V6L7 10H4a1 1 0 0 0-1 1z" />
+          <path d="M16 8a5 5 0 0 1 0 8" />
+        </svg>
+      );
+    case "finance":
+      return (
+        <svg {...common}>
+          <line x1="12" y1="1" x2="12" y2="23" />
+          <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+        </svg>
+      );
+    case "reports":
+      return (
+        <svg {...common}>
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+        </svg>
+      );
+    case "management":
+      return (
+        <svg {...common}>
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+        </svg>
+      );
+    case "crm":
+      return (
+        <svg {...common}>
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+          <circle cx="9" cy="7" r="4" />
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+          <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+        </svg>
+      );
+    case "aggregator-center":
+      return (
+        <svg {...common}>
+          <path d="M4.93 19.07A10 10 0 0 1 12 16a10 10 0 0 1 7.07 3.07M1.39 15.54A15 15 0 0 1 12 11a15 15 0 0 1 10.61 4.54M8.46 22.54A5 5 0 0 1 12 21a5 5 0 0 1 3.54 1.54" />
+          <circle cx="12" cy="11" r="1.5" fill="#ffffff" />
+        </svg>
+      );
+    default:
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="9" />
+        </svg>
+      );
+  }
+}
 
 export default function KapMetaHeader({
   outletName: outletNameProp,
@@ -51,13 +155,11 @@ export default function KapMetaHeader({
   const billerName = me?.name || "";
   const refId = me?.outletId ? `${me.outletId.slice(0, 8).toUpperCase()}` : (me?.outlet as any)?.code || "";
 
-  // Left Drawer Expanded Submenu States
-  const [dailyOpsExpanded, setDailyOpsExpanded] = useState(true);
-  const [adminExpanded, setAdminExpanded] = useState(true);
-  const [reportsExpanded, setReportsExpanded] = useState(true);
-  const [operationsExpanded, setOperationsExpanded] = useState(false);
-  const [settingsExpanded, setSettingsExpanded] = useState(false);
-  const [activeMenuItem, setActiveMenuItem] = useState<string>("Billing");
+  // Left Drawer expanded submenu state, keyed by SIDEBAR_GROUPS group id.
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
+    "daily-operations": true,
+  });
+  const [activeMenuItem, setActiveMenuItem] = useState<string>("daily-operations");
 
   const [notifications, setNotifications] = useState<Array<{
     id: string;
@@ -484,330 +586,93 @@ export default function KapMetaHeader({
               </button>
             </div>
 
-            {/* 2. Menu Navigation Items List */}
+            {/* 2. Menu Navigation Items List.
+                Rendered from SIDEBAR_GROUPS in components/Nav.tsx - the single
+                source of truth shared with <Nav variant="sidebar" />. Add a
+                link there and it appears in both surfaces. Only the items
+                below this list (Check Updates, Logout) and the footer
+                metadata block are genuinely drawer-specific. */}
             <div className="drawer-menu-items-scroll">
-              {/* Item 0: Daily Operations & Floor Flow (Expandable) */}
-              <div
-                className={`menu-row-item ${activeMenuItem === "DailyOps" ? "is-selected" : ""}`}
-                onClick={() => {
-                  setActiveMenuItem("DailyOps");
-                  setDailyOpsExpanded(!dailyOpsExpanded);
-                }}
-              >
-                <div className="item-icon-col">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
-                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                  </svg>
-                </div>
-                <span className="item-label-text">Daily Operations Flow</span>
-                <span className={`chevron-indicator ${dailyOpsExpanded ? "open" : ""}`}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.5">
-                    <polyline points="6 9 12 15 18 9" />
-                  </svg>
-                </span>
-              </div>
+              {/* Until /auth/me resolves we render no destinations rather than a
+                  flash of links the user may not be allowed to see - same rule
+                  Nav.tsx applies. */}
+              {(me ? filterSidebarGroups(me.permissions, me.roles) : []).map((group) => {
+                if (group.header === null) {
+                  const link = group.links[0];
+                  return (
+                    <button
+                      type="button"
+                      key={group.id}
+                      className={`menu-row-item ${activeMenuItem === group.id ? "is-selected" : ""}`}
+                      onClick={() => {
+                        setActiveMenuItem(group.id);
+                        setShowMenuDrawer(false);
+                        router.push(link.href);
+                      }}
+                    >
+                      <div className="item-icon-col">{drawerGroupIcon(group.id)}</div>
+                      <span className="item-label-text">{link.label}</span>
+                      {group.badge && <span className="item-new-badge">{group.badge}</span>}
+                    </button>
+                  );
+                }
 
-              {dailyOpsExpanded && (
-                <div className="submenu-container">
-                  <Link href="/admin?tab=daily-ops" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
-                    📊 Daily Operations Dashboard
-                  </Link>
-                  <Link href="/" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
-                    🖥️ POS Terminal Floor
-                  </Link>
-                  <Link href="/waiter" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
-                    📱 Captain & Waiter App
-                  </Link>
-                  <Link href="/orders?tab=live" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
-                    ⚡ Live Orders Register
-                  </Link>
-                  <Link href="/orders?tab=all" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
-                    📋 All Orders Registry
-                  </Link>
-                  <Link href="/orders?tab=online" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
-                    🛵 Online Aggregator Orders
-                  </Link>
-                  <Link href="/kitchen" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
-                    👨‍🍳 Kitchen KOT Display
-                  </Link>
-                </div>
-              )}
+                const isExpanded = Boolean(expandedGroups[group.id]);
+                return (
+                  <React.Fragment key={group.id}>
+                    <button
+                      type="button"
+                      className={`menu-row-item ${activeMenuItem === group.id ? "is-selected" : ""}`}
+                      aria-expanded={isExpanded}
+                      onClick={() => {
+                        setActiveMenuItem(group.id);
+                        setExpandedGroups((prev) => ({ ...prev, [group.id]: !prev[group.id] }));
+                      }}
+                    >
+                      <div className="item-icon-col">{drawerGroupIcon(group.id)}</div>
+                      <span className="item-label-text">{group.header}</span>
+                      {group.badge && <span className="item-new-badge">{group.badge}</span>}
+                      <span className={`chevron-indicator ${isExpanded ? "open" : ""}`}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.5" aria-hidden="true">
+                          <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                      </span>
+                    </button>
 
-              {/* Item 1: Billing */}
-              <div
-                className={`menu-row-item ${activeMenuItem === "Billing" ? "is-selected" : ""}`}
-                onClick={() => {
-                  setActiveMenuItem("Billing");
-                  setShowMenuDrawer(false);
-                  router.push("/");
-                }}
-              >
-                <div className="item-icon-col">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                    <polyline points="14 2 14 8 20 8" />
-                    <line x1="16" y1="13" x2="8" y2="13" />
-                    <line x1="16" y1="17" x2="8" y2="17" />
-                    <polyline points="10 9 9 9 8 9" />
-                  </svg>
-                </div>
-                <span className="item-label-text">Billing (POS)</span>
-              </div>
+                    {isExpanded && (
+                      <div className="submenu-container">
+                        {group.links.map((link) =>
+                          link.action === "item-toggle" ? (
+                            <button
+                              type="button"
+                              key={`${group.id}-${link.label}`}
+                              className="submenu-link submenu-link-btn"
+                              onClick={() => {
+                                setShowMenuDrawer(false);
+                                setIsItemToggleOpen(true);
+                              }}
+                            >
+                              {link.label}
+                            </button>
+                          ) : (
+                            <Link
+                              key={`${group.id}-${link.label}`}
+                              href={link.href}
+                              className="submenu-link"
+                              onClick={() => setShowMenuDrawer(false)}
+                            >
+                              {link.label}
+                            </Link>
+                          )
+                        )}
+                      </div>
+                    )}
+                  </React.Fragment>
+                );
+              })}
 
-              {/* Item 1a: User Management (always-visible top-level link) */}
-              <div
-                className={`menu-row-item ${activeMenuItem === "UserManagement" ? "is-selected" : ""}`}
-                onClick={() => {
-                  setActiveMenuItem("UserManagement");
-                  setShowMenuDrawer(false);
-                  router.push("/user-management");
-                }}
-              >
-                <div className="item-icon-col">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
-                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                    <circle cx="9" cy="7" r="4" />
-                    <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                  </svg>
-                </div>
-                <span className="item-label-text">User Management</span>
-              </div>
-
-              {/* Item 1b: Company Details (always-visible top-level link) */}
-              <div
-                className={`menu-row-item ${activeMenuItem === "CompanyDetails" ? "is-selected" : ""}`}
-                onClick={() => {
-                  setActiveMenuItem("CompanyDetails");
-                  setShowMenuDrawer(false);
-                  router.push("/settings/company");
-                }}
-              >
-                <div className="item-icon-col">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
-                    <path d="M3 21h18" />
-                    <path d="M5 21V7l8-4v18" />
-                    <path d="M19 21V11l-6-4" />
-                    <line x1="9" y1="9" x2="9" y2="9.01" />
-                  </svg>
-                </div>
-                <span className="item-label-text">Company Details</span>
-              </div>
-
-              {/* Item 2: Admin Console & Multi-Agent Operations (Expandable) */}
-              <div
-                className={`menu-row-item ${activeMenuItem === "Admin" ? "is-selected" : ""}`}
-                onClick={() => {
-                  setActiveMenuItem("Admin");
-                  setAdminExpanded(!adminExpanded);
-                }}
-              >
-                <div className="item-icon-col">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
-                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                  </svg>
-                </div>
-                <span className="item-label-text">Admin & A2A Operations</span>
-                <span className={`chevron-indicator ${adminExpanded ? "open" : ""}`}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.5">
-                    <polyline points="6 9 12 15 18 9" />
-                  </svg>
-                </span>
-              </div>
-
-              {/* Admin Sub-items */}
-              {adminExpanded && (
-                <div className="submenu-container">
-                  <Link href="/admin" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
-                    🛡️ Admin Overview Hub
-                  </Link>
-                  <Link href="/admin?tab=agents" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
-                    🤖 Multi-Agent & A2A Status
-                  </Link>
-                  <Link href="/admin?tab=analytics" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
-                    📊 Executive Sales Analytics
-                  </Link>
-                  <Link href="/admin?tab=audit" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
-                    📋 Immutable Audit Logs
-                  </Link>
-                  <Link href="/menu" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
-                    🍽️ Menu & Category Ingestion
-                  </Link>
-                  <Link href="/table-management" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
-                    🪑 Table & Floor Layout
-                  </Link>
-                  <Link href="/user-management" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
-                    👥 Staff & RBAC Permissions
-                  </Link>
-                  <Link href="/inventory" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
-                    📦 Inventory & BOM Recipes
-                  </Link>
-                  <Link href="/finance" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
-                    💰 Finance & Z-Report Settlement
-                  </Link>
-                  <Link href="/crm" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
-                    🎁 Customers & Loyalty CRM
-                  </Link>
-                </div>
-              )}
-
-              {/* Item 2: Operations (Expandable) */}
-              <div
-                className={`menu-row-item ${activeMenuItem === "Operations" ? "is-selected" : ""}`}
-                onClick={() => {
-                  setActiveMenuItem("Operations");
-                  setOperationsExpanded(!operationsExpanded);
-                }}
-              >
-                <div className="item-icon-col">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
-                    <line x1="4" y1="21" x2="4" y2="14" />
-                    <line x1="4" y1="10" x2="4" y2="3" />
-                    <line x1="12" y1="21" x2="12" y2="12" />
-                    <line x1="12" y1="8" x2="12" y2="3" />
-                    <line x1="20" y1="21" x2="20" y2="16" />
-                    <line x1="20" y1="12" x2="20" y2="3" />
-                    <line x1="1" y1="14" x2="7" y2="14" />
-                    <line x1="9" y1="8" x2="15" y2="8" />
-                    <line x1="17" y1="16" x2="23" y2="16" />
-                  </svg>
-                </div>
-                <span className="item-label-text">Operations</span>
-                <span className={`chevron-indicator ${operationsExpanded ? "open" : ""}`}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.5">
-                    <polyline points="6 9 12 15 18 9" />
-                  </svg>
-                </span>
-              </div>
-
-              {/* Operations Sub-items */}
-              {operationsExpanded && (
-                <div className="submenu-container">
-                  <Link href="/admin?tab=analytics" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
-                    Cash Flow & Sales
-                  </Link>
-                  <Link href="/menu" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
-                    Menu & Inventory
-                  </Link>
-                  <Link href="/crm" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
-                    Customers CRM
-                  </Link>
-                  <button
-                    type="button"
-                    className="submenu-link"
-                    style={{ background: "transparent", border: "none", width: "100%", textAlign: "left", cursor: "pointer", font: "inherit", color: "inherit" }}
-                    onClick={() => {
-                      setShowMenuDrawer(false);
-                      setIsItemToggleOpen(true);
-                    }}
-                  >
-                    Menu Item On/Off (86 Stock)
-                  </button>
-                </div>
-              )}
-
-              {/* Item 3: Reports (Expandable with Down Chevron) */}
-              <div
-                className={`menu-row-item ${activeMenuItem === "Reports" ? "is-selected" : ""}`}
-                onClick={() => {
-                  setActiveMenuItem("Reports");
-                  setReportsExpanded(!reportsExpanded);
-                }}
-              >
-                <div className="item-icon-col">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
-                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                  </svg>
-                </div>
-                <span className="item-label-text">Reports</span>
-                <span className={`chevron-indicator ${reportsExpanded ? "open" : ""}`}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.5">
-                    <polyline points="6 9 12 15 18 9" />
-                  </svg>
-                </span>
-              </div>
-
-              {/* Reports Sub-items */}
-              {reportsExpanded && (
-                <div className="submenu-container">
-                  <Link href="/admin?tab=analytics" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
-                    Sales & Analytics
-                  </Link>
-                  <Link href="/finance" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
-                    Day-End Settlement / Z-Report
-                  </Link>
-                  <Link href="/kitchen-analytics" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
-                    Kitchen Prep Times
-                  </Link>
-                  <Link href="/waiter-monitor" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
-                    Waiter Floor Monitor
-                  </Link>
-                  <Link href="/admin?tab=audit" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
-                    Audit Log
-                  </Link>
-                </div>
-              )}
-
-              {/* Item 4: Live View */}
-              <div
-                className={`menu-row-item ${activeMenuItem === "Live View" ? "is-selected" : ""}`}
-                onClick={() => {
-                  setActiveMenuItem("Live View");
-                  setShowMenuDrawer(false);
-                  router.push("/orders?tab=live");
-                }}
-              >
-                <div className="item-icon-col">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
-                    <path d="M4.93 19.07A10 10 0 0 1 12 16a10 10 0 0 1 7.07 3.07M1.39 15.54A15 15 0 0 1 12 11a15 15 0 0 1 10.61 4.54M8.46 22.54A5 5 0 0 1 12 21a5 5 0 0 1 3.54 1.54" />
-                    <circle cx="12" cy="11" r="1.5" fill="#ffffff" />
-                  </svg>
-                </div>
-                <span className="item-label-text">Live View</span>
-              </div>
-
-              {/* Item 5: Settings (Expandable) */}
-              <div
-                className={`menu-row-item ${activeMenuItem === "Settings" ? "is-selected" : ""}`}
-                onClick={() => {
-                  setActiveMenuItem("Settings");
-                  setSettingsExpanded(!settingsExpanded);
-                }}
-              >
-                <div className="item-icon-col">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
-                    <circle cx="12" cy="12" r="3" />
-                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                  </svg>
-                </div>
-                <span className="item-label-text">Settings</span>
-                <span className={`chevron-indicator ${settingsExpanded ? "open" : ""}`}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.5">
-                    <polyline points="6 9 12 15 18 9" />
-                  </svg>
-                </span>
-              </div>
-
-              {/* Settings Sub-items */}
-              {settingsExpanded && (
-                <div className="submenu-container">
-                  <Link href="/table-management" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
-                    Table & Area Configuration
-                  </Link>
-                  <Link href="/user-management" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
-                    Biller Profile & Users
-                  </Link>
-                  <Link href="/integrations" className="submenu-link" onClick={() => setShowMenuDrawer(false)}>
-                    LAN / Cloud Sync Setup
-                  </Link>
-                </div>
-              )}
-
-              {/* Item 6: Check Updates */}
-              <div
-                className="menu-row-item"
-                onClick={handleCheckUpdates}
-              >
+              {/* Drawer-only item: Check Updates */}
+              <button type="button" className="menu-row-item" onClick={handleCheckUpdates}>
                 <div className="item-icon-col">
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
                     <polyline points="23 4 23 10 17 10" />
@@ -816,10 +681,11 @@ export default function KapMetaHeader({
                   </svg>
                 </div>
                 <span className="item-label-text">Check Updates</span>
-              </div>
+              </button>
 
-              {/* Item 7: Logout */}
-              <div
+              {/* Drawer-only item: Logout */}
+              <button
+                type="button"
                 className="menu-row-item"
                 onClick={() => {
                   if (confirm("Are you sure you want to log out of kapMeta POS?")) {
@@ -835,7 +701,7 @@ export default function KapMetaHeader({
                   </svg>
                 </div>
                 <span className="item-label-text">Logout</span>
-              </div>
+              </button>
             </div>
 
             {/* 3. Bottom Metadata Block (Ref ID, Version, Biller Name) — all from /auth/me */}
@@ -1458,11 +1324,31 @@ export default function KapMetaHeader({
         .menu-row-item {
           display: flex;
           align-items: center;
+          width: 100%;
           padding: 14px 18px;
           cursor: pointer;
           transition: background 0.12s;
+          background: transparent;
+          border: none;
           border-left: 4px solid transparent;
+          font: inherit;
+          text-align: left;
+          color: inherit;
           position: relative;
+        }
+        .menu-row-item:focus-visible {
+          outline: 2px solid var(--bg-card);
+          outline-offset: -2px;
+        }
+        .item-new-badge {
+          background: var(--accent);
+          color: var(--bg-card);
+          font-size: 0.62rem;
+          font-weight: 700;
+          letter-spacing: 0.02em;
+          padding: 2px 6px;
+          border-radius: 9999px;
+          margin-right: 8px;
         }
         .menu-row-item:hover {
           background: #4a4a4a;
@@ -1515,6 +1401,18 @@ export default function KapMetaHeader({
         .submenu-link:hover {
           color: #ffffff;
           padding-left: 16px;
+        }
+        .submenu-link-btn {
+          background: transparent;
+          border: none;
+          width: 100%;
+          text-align: left;
+          font: inherit;
+          cursor: pointer;
+        }
+        .submenu-link:focus-visible {
+          outline: 2px solid var(--bg-card);
+          outline-offset: -2px;
         }
 
         /* 3. Bottom Metadata Panel */

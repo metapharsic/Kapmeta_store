@@ -29,10 +29,10 @@
     "contracts:validate": "redocly lint --config=redocly.yaml",
     "db:migrate": "node scripts/db-migrate.js",
     "seed:dynamic": "ts-node scripts/seed-dynamic-data.ts",
-    "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug",
-    "test:e2e:report": "playwright show-report"
+    "test:e2e:report": "playwright show-report",
+    "db:verify": "node scripts/db-verify.js"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

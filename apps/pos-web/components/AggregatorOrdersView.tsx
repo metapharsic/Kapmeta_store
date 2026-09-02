@@ -1,718 +1,903 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import { authedFetch } from "../lib/auth";
+import {
+  downloadCsv,
+  formatDateTime,
+  formatMinor,
+  humanizeCode,
+  minorToMajor,
+  statusTone,
+} from "./orders-shared";
 
-interface OnlineOrder {
+/**
+ * One row of `GET /orders/online`. Every field below is served by the API —
+ * rider name/phone, OTP and the received/accepted timestamps come from the
+ * `orders` columns migration 0039 adds, and are null (rendered as a dash)
+ * until an aggregator webhook fills them in. Nothing here is invented.
+ */
+export interface OnlineOrderRow {
   id: string;
+  orderNo: string;
   orderNumber: string;
-  externalOrderId?: string;
-  channel: "SWIGGY" | "ZOMATO" | "DIRECT";
-  status: "PENDING" | "ACCEPTED" | "FOOD_READY" | "DISPATCHED" | "DELIVERED" | "CANCELLED";
-  customerName?: string;
-  customerPhone?: string;
-  riderName?: string;
-  riderPhone?: string;
-  grandTotalMinor: number;
-  itemCount: number;
+  externalOrderId: string | null;
+  outletName: string | null;
+  channel: string | null;
+  orderType: string;
+  tableNumber: string | null;
+  riderName: string | null;
+  riderPhone: string | null;
+  customerName: string | null;
+  customerPhone: string | null;
+  otp: string | null;
   createdAt: string;
-  items?: { name: string; quantity: number; priceMinor: number }[];
+  receivedAt: string | null;
+  acceptedAt: string | null;
+  updatedAt: string | null;
+  grandTotalMinor: string;
+  status: string;
+  elapsedMinutes: number;
 }
 
-export default function AggregatorOrdersView() {
+export interface AggregatorOrdersViewProps {
+  onViewOrder?: (orderId: string) => void;
+}
+
+type ChannelTab = "ALL" | "ZOMATO" | "SWIGGY";
+
+const PAGE_SIZE = 20;
+
+const STATUS_OPTIONS = [
+  "PLACED",
+  "CONFIRMED",
+  "KOT_CREATED",
+  "IN_PREPARATION",
+  "READY",
+  "OUT_FOR_DELIVERY",
+  "HANDED_OVER",
+  "COMPLETED",
+  "CANCELLED",
+];
+
+// `orders.order_type` is free text; these are the values the aggregator
+// webhook and the POS write for an online order.
+const RECORD_TYPE_OPTIONS = ["DELIVERY", "PICKUP", "DINE_IN", "AGGREGATOR"];
+
+function IconPhone() {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M6.2 3.5h3l1.5 3.8-2 1.4a11 11 0 0 0 4.6 4.6l1.4-2 3.8 1.5v3a1.7 1.7 0 0 1-1.9 1.7A15.5 15.5 0 0 1 4.5 5.4 1.7 1.7 0 0 1 6.2 3.5Z" />
+    </svg>
+  );
+}
+
+function IconHelp() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M9.8 9.4a2.3 2.3 0 1 1 3.1 2.2c-.6.3-.9.8-.9 1.4v.4" />
+      <path d="M12 16.6h.01" />
+    </svg>
+  );
+}
+
+function IconEye() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+/** Renders a value or an em dash so an empty cell never reads as a bug. */
+function orDash(value: string | null | undefined) {
+  return value && String(value).trim() ? String(value) : "—";
+}
+
+export default function AggregatorOrdersView({ onViewOrder }: AggregatorOrdersViewProps) {
   const router = useRouter();
-  const [topTab, setTopTab] = useState<"CURRENT" | "ONLINE" | "ADVANCE">("ONLINE");
-  const [statusFilter, setStatusFilter] = useState<OnlineOrder["status"] | "ALL">("ALL");
-  const [search, setSearch] = useState("");
-  const [orders, setOrders] = useState<OnlineOrder[]>([]);
+
+  const [channelTab, setChannelTab] = useState<ChannelTab>("ALL");
+  const [draftRecordType, setDraftRecordType] = useState("");
+  const [draftStatus, setDraftStatus] = useState("");
+  const [draftOrderNo, setDraftOrderNo] = useState("");
+  const [recordType, setRecordType] = useState("");
+  const [status, setStatus] = useState("");
+  const [orderNo, setOrderNo] = useState("");
+
+  const [orders, setOrders] = useState<OnlineOrderRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [selectedOrder, setSelectedOrder] = useState<OnlineOrder | null>(null);
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const fetchOrders = async () => {
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
-      setLoading(true);
-      let endpoint = "/orders?orderType=AGGREGATOR,DELIVERY";
-      if (topTab === "ADVANCE") {
-        endpoint = "/orders/advance";
-      } else if (topTab === "CURRENT") {
-        endpoint = "/orders/live";
-      }
+      const qs = new URLSearchParams();
+      qs.set("channel", channelTab);
+      qs.set("page", String(page));
+      qs.set("limit", String(PAGE_SIZE));
+      if (status) qs.set("status", status);
+      if (orderNo.trim()) qs.set("orderNo", orderNo.trim());
 
-      const res = await authedFetch(endpoint);
-      if (res.ok) {
-        const data = await res.json();
-        const list = data.orders || (Array.isArray(data) ? data : []);
-        const mapped: OnlineOrder[] = list.map((ord: any) => {
-          let status: OnlineOrder["status"] = "PENDING";
-          if (ord.status === "CONFIRMED" || ord.status === "ACTIVE" || ord.status === "PREPARING" || ord.status === "IN_PREPARATION" || ord.status === "KOT_CREATED") {
-            status = "ACCEPTED";
-          } else if (ord.status === "READY" || ord.status === "FOOD_READY") {
-            status = "FOOD_READY";
-          } else if (ord.status === "DISPATCHED" || ord.status === "OUT_FOR_DELIVERY" || ord.status === "HANDED_OVER" || ord.status === "SERVED") {
-            status = "DISPATCHED";
-          } else if (ord.status === "DELIVERED" || ord.status === "COMPLETED") {
-            status = "DELIVERED";
-          } else if (ord.status === "CANCELLED" || ord.status === "VOIDED") {
-            status = "CANCELLED";
-          }
-
-          return {
-            id: ord.id,
-            orderNumber: ord.orderNumber,
-            externalOrderId: ord.externalOrderId || ord.orderNumber,
-            channel: (ord.channel as any) || (topTab === "ADVANCE" ? "ADVANCE" : "SWIGGY"),
-            status,
-            customerName: ord.customerName || ord.customer?.name || "Customer",
-            customerPhone: ord.customerPhone || ord.customer?.phone || "+91 98765 43210",
-            riderName: ord.riderName || (topTab === "ADVANCE" ? "Scheduled Pickup" : "Delivery Partner"),
-            riderPhone: "+91 91234 56789",
-            grandTotalMinor: Number(ord.grandTotalMinor || ord.grandTotal || 0),
-            itemCount: ord.itemCount || (ord.orderItems?.length || ord.items?.length || 1),
-            createdAt: ord.createdAt || new Date().toISOString(),
-            items: (ord.orderItems || ord.items || []).map((it: any) => ({
-              name: it.item_name || it.menuItemName || it.name || it.menuItem?.name || "Item",
-              quantity: Number(it.quantity || 1),
-              priceMinor: Number(it.unitPriceMinor || it.unitPrice || it.subtotalMinor || it.subtotal || 0),
-            })),
-          };
-        });
-        setOrders(mapped);
-      }
-    } catch (e) {
-      console.error("Failed to fetch orders:", e);
+      const res = await authedFetch(`/orders/online?${qs.toString()}`);
+      if (!res.ok) throw new Error("Failed to load online orders");
+      const data = await res.json();
+      setOrders(data.orders || []);
+      setTotal(Number(data.total || 0));
+    } catch (err) {
+      console.error(err);
+      setError("Could not reach the aggregator order feed.");
     } finally {
       setLoading(false);
     }
-  };
+  }, [channelTab, page, status, orderNo]);
 
   useEffect(() => {
-    fetchOrders();
-    const interval = setInterval(fetchOrders, 10000);
-    return () => clearInterval(interval);
-  }, [topTab]);
+    load();
+    const id = setInterval(load, 20000);
+    return () => clearInterval(id);
+  }, [load]);
 
-  const handleUpdateStatus = async (orderId: string, nextStatus: OnlineOrder["status"]) => {
-    setUpdatingId(orderId);
-    try {
-      let apiStatus = "CONFIRMED";
-      if (nextStatus === "FOOD_READY") apiStatus = "READY";
-      if (nextStatus === "DISPATCHED") apiStatus = "HANDED_OVER";
-      if (nextStatus === "DELIVERED") apiStatus = "COMPLETED";
-      if (nextStatus === "CANCELLED") apiStatus = "CANCELLED";
+  // Record Type has no server-side parameter on GET /orders/online, so it is
+  // applied to the fetched page here.
+  const visibleOrders = useMemo(
+    () =>
+      recordType
+        ? orders.filter((o) => String(o.orderType || "").toUpperCase() === recordType)
+        : orders,
+    [orders, recordType]
+  );
 
-      const res = await authedFetch(`/orders/${orderId}/status`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ toStatus: apiStatus, status: apiStatus }),
-      });
-      if (res.ok) {
-        setOrders((prev) =>
-          prev.map((o) => (o.id === orderId ? { ...o, status: nextStatus } : o))
-        );
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setUpdatingId(null);
-    }
+  const apply = () => {
+    setRecordType(draftRecordType);
+    setStatus(draftStatus);
+    setOrderNo(draftOrderNo);
+    setPage(1);
   };
 
-  const handleFireAdvance = async (orderId: string) => {
-    setUpdatingId(orderId);
-    try {
-      const res = await authedFetch(`/orders/${orderId}/fire-advance`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (res.ok) {
-        alert("Advance order successfully fired to Kitchen KDS!");
-        fetchOrders();
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setUpdatingId(null);
-    }
+  const showAll = () => {
+    setDraftRecordType("");
+    setDraftStatus("");
+    setDraftOrderNo("");
+    setRecordType("");
+    setStatus("");
+    setOrderNo("");
+    setChannelTab("ALL");
+    setPage(1);
   };
 
-  const handleMarkAllFoodReady = async () => {
-    const accepted = orders.filter((o) => o.status === "ACCEPTED" || o.status === "PENDING");
-    for (const ord of accepted) {
-      await handleUpdateStatus(ord.id, "FOOD_READY");
-    }
-    alert(`Marked ${accepted.length} orders as Food Ready!`);
+  const exportReport = () => {
+    downloadCsv(
+      `online-orders-${channelTab.toLowerCase()}-page${page}.csv`,
+      [
+        "Order No.",
+        "External Order Id",
+        "Outlet",
+        "Order From",
+        "Order Type",
+        "Table",
+        "Rider Name",
+        "Rider Phone",
+        "Customer Name",
+        "Customer Phone",
+        "OTP",
+        "Created",
+        "Received",
+        "Accepted",
+        "Updated",
+        "Total",
+        "Status",
+        "Elapsed (min)",
+      ],
+      visibleOrders.map((o) => [
+        o.orderNo,
+        o.externalOrderId || "",
+        o.outletName || "",
+        o.channel || "",
+        humanizeCode(o.orderType),
+        o.tableNumber || "",
+        o.riderName || "",
+        o.riderPhone || "",
+        o.customerName || "",
+        o.customerPhone || "",
+        o.otp || "",
+        formatDateTime(o.createdAt),
+        formatDateTime(o.receivedAt),
+        formatDateTime(o.acceptedAt),
+        formatDateTime(o.updatedAt),
+        minorToMajor(o.grandTotalMinor).toFixed(2),
+        o.status,
+        o.elapsedMinutes,
+      ])
+    );
   };
 
-  const filteredOrders = useMemo(() => {
-    return orders.filter((ord) => {
-      const matchStatus = statusFilter === "ALL" || ord.status === statusFilter;
-      const matchSearch =
-        !search ||
-        ord.orderNumber.toLowerCase().includes(search.toLowerCase()) ||
-        (ord.externalOrderId && ord.externalOrderId.toLowerCase().includes(search.toLowerCase())) ||
-        (ord.customerName && ord.customerName.toLowerCase().includes(search.toLowerCase()));
-      return matchStatus && matchSearch;
-    });
-  }, [orders, statusFilter, search]);
+  const openOrder = (id: string) => {
+    if (onViewOrder) onViewOrder(id);
+    else router.push(`/pending-order-detail?orderId=${id}`);
+  };
+
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const firstRecord = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const lastRecord = Math.min(page * PAGE_SIZE, total);
 
   return (
-    <div className="aggregator-container">
-      {/* Top Main Tabs */}
-      <div className="aggregator-top-tabs">
-        <button
-          className={`top-tab ${topTab === "CURRENT" ? "active" : ""}`}
-          onClick={() => setTopTab("CURRENT")}
-        >
-          Current Order
-        </button>
-        <button
-          className={`top-tab ${topTab === "ONLINE" ? "active" : ""}`}
-          onClick={() => setTopTab("ONLINE")}
-        >
-          Online Order
-        </button>
-        <button
-          className={`top-tab ${topTab === "ADVANCE" ? "active" : ""}`}
-          onClick={() => setTopTab("ADVANCE")}
-        >
-          Advance Order
-        </button>
-      </div>
-
-      {/* Subheader Toolbar: Search + Status Pipeline Filters + Food Ready CTA */}
-      <div className="aggregator-subbar">
-        <div className="search-box">
-          <span>🔍</span>
-          <input
-            type="text"
-            placeholder="Search order ID, rider, or customer..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+    <div className="online-root">
+      <header className="online-head">
+        <div>
+          <h1 className="online-title">Online Orders Activity</h1>
+          <div className="channel-tabs" role="tablist" aria-label="Aggregator channels">
+            {(["ALL", "ZOMATO", "SWIGGY"] as ChannelTab[]).map((c) => (
+              <button
+                key={c}
+                type="button"
+                role="tab"
+                aria-selected={channelTab === c}
+                className={`channel-tab ${channelTab === c ? "is-active" : ""}`}
+                onClick={() => {
+                  setChannelTab(c);
+                  setPage(1);
+                }}
+              >
+                {c === "ALL" ? "All" : humanizeCode(c)}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* 6-Stage Filter Pipeline */}
-        <div className="status-pipeline-filters">
-          <button
-            className={`filter-chip ${statusFilter === "ALL" ? "active" : ""}`}
-            onClick={() => setStatusFilter("ALL")}
-          >
-            All ({orders.length})
-          </button>
-          <button
-            className={`filter-chip ${statusFilter === "PENDING" ? "active" : ""}`}
-            onClick={() => setStatusFilter("PENDING")}
-          >
-            ● Pending ({orders.filter((o) => o.status === "PENDING").length})
-          </button>
-          <button
-            className={`filter-chip ${statusFilter === "ACCEPTED" ? "active" : ""}`}
-            onClick={() => setStatusFilter("ACCEPTED")}
-          >
-            ● Accepted ({orders.filter((o) => o.status === "ACCEPTED").length})
-          </button>
-          <button
-            className={`filter-chip ${statusFilter === "FOOD_READY" ? "active" : ""}`}
-            onClick={() => setStatusFilter("FOOD_READY")}
-          >
-            ● Food Is Ready ({orders.filter((o) => o.status === "FOOD_READY").length})
-          </button>
-          <button
-            className={`filter-chip ${statusFilter === "DISPATCHED" ? "active" : ""}`}
-            onClick={() => setStatusFilter("DISPATCHED")}
-          >
-            ● Dispatched ({orders.filter((o) => o.status === "DISPATCHED").length})
-          </button>
-          <button
-            className={`filter-chip ${statusFilter === "DELIVERED" ? "active" : ""}`}
-            onClick={() => setStatusFilter("DELIVERED")}
-          >
-            ● Delivered / Handover ({orders.filter((o) => o.status === "DELIVERED").length})
-          </button>
-          <button
-            className={`filter-chip ${statusFilter === "CANCELLED" ? "active" : ""}`}
-            onClick={() => setStatusFilter("CANCELLED")}
-          >
-            ● Cancelled ({orders.filter((o) => o.status === "CANCELLED").length})
-          </button>
-        </div>
-
-        {/* Global Food Ready Button */}
         <button
           type="button"
-          className="btn-food-ready-header"
-          onClick={handleMarkAllFoodReady}
+          className="btn-secondary"
+          onClick={() => router.push("/integrations")}
         >
-          Food Ready
+          <IconHelp />
+          <span>Aggregator Help Center</span>
         </button>
-      </div>
+      </header>
 
-      {/* Orders List Table / Feed */}
-      <div className="orders-feed-scroll">
-        {loading && orders.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "48px", color: "#94a3b8" }}>
-            Connecting to Swiggy & Zomato aggregator feeds...
-          </div>
-        ) : filteredOrders.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "48px", color: "#94a3b8" }}>
-            No online orders found in this view.
-          </div>
-        ) : (
-          <div className="online-orders-table">
-            <div className="table-header-row">
-              <span>CHANNEL / ORDER ID</span>
-              <span>CUSTOMER / RIDER</span>
-              <span>TIME ELAPSED</span>
-              <span>AMOUNT</span>
-              <span>STATUS</span>
-              <span>ACTIONS</span>
-            </div>
+      <section className="filter-card">
+        <label className="field">
+          <span className="field-label">Record Type</span>
+          <select
+            className="field-input"
+            value={draftRecordType}
+            onChange={(e) => setDraftRecordType(e.target.value)}
+          >
+            <option value="">All Record Types</option>
+            {RECORD_TYPE_OPTIONS.map((t) => (
+              <option key={t} value={t}>
+                {humanizeCode(t)}
+              </option>
+            ))}
+          </select>
+        </label>
 
-            {filteredOrders.map((ord) => {
-              const elapsedMins = Math.max(1, Math.floor((Date.now() - new Date(ord.createdAt).getTime()) / 60000));
-              return (
-                <div key={ord.id} className="table-data-row">
-                  {/* Channel & ID */}
-                  <div className="col-channel">
-                    <span className={`channel-badge ${ord.channel.toLowerCase()}`}>
-                      {ord.channel === "SWIGGY" ? "Swiggy" : ord.channel === "ZOMATO" ? "Zomato" : "Direct"}
-                    </span>
-                    <div>
-                      <div className="order-id-text">#{ord.externalOrderId || ord.orderNumber}</div>
-                      <div className="item-count-sub">{ord.itemCount} items</div>
-                    </div>
-                  </div>
+        <label className="field">
+          <span className="field-label">Status</span>
+          <select
+            className="field-input"
+            value={draftStatus}
+            onChange={(e) => setDraftStatus(e.target.value)}
+          >
+            <option value="">All Status</option>
+            {STATUS_OPTIONS.map((s) => (
+              <option key={s} value={s}>
+                {humanizeCode(s)}
+              </option>
+            ))}
+          </select>
+        </label>
 
-                  {/* Customer / Rider */}
-                  <div className="col-cust-rider">
-                    <div className="cust-name">{ord.customerName}</div>
-                    <div className="rider-info">Rider: {ord.riderName}</div>
-                  </div>
+        <label className="field">
+          <span className="field-label">Order No.</span>
+          <input
+            type="text"
+            className="field-input"
+            placeholder="Order No."
+            value={draftOrderNo}
+            onChange={(e) => setDraftOrderNo(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") apply();
+            }}
+          />
+        </label>
 
-                  {/* Elapsed Time */}
-                  <div className="col-time">
-                    <span className="time-badge">{elapsedMins} min</span>
-                  </div>
+        <div className="filter-actions">
+          <button type="button" className="btn-primary" onClick={apply}>
+            Apply
+          </button>
+          <button type="button" className="btn-secondary" onClick={showAll}>
+            Show All
+          </button>
+          <button type="button" className="btn-secondary" onClick={exportReport}>
+            Export Report
+          </button>
+        </div>
+      </section>
 
-                  {/* Amount */}
-                  <div className="col-amount">
-                    ₹{(ord.grandTotalMinor / 100).toFixed(2)}
-                  </div>
+      {error && <div className="online-error">{error}</div>}
 
-                  {/* Status */}
-                  <div className="col-status">
-                    <span className={`status-tag status-${ord.status.toLowerCase()}`}>
-                      {ord.status.replace("_", " ")}
-                    </span>
-                  </div>
+      <section className="table-card">
+        <div className="table-scroll">
+          <table className="online-table">
+            <thead>
+              <tr>
+                <th scope="col">Order No.</th>
+                <th scope="col">Outlet Name / Order From</th>
+                <th scope="col">Order Type / Rider Details</th>
+                <th scope="col">Customer Details</th>
+                <th scope="col">OTP</th>
+                <th scope="col">Date Time</th>
+                <th scope="col" className="num">Total</th>
+                <th scope="col">Status</th>
+                <th scope="col">At</th>
+                <th scope="col" className="col-actions">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading && visibleOrders.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="state-cell">
+                    Loading aggregator orders…
+                  </td>
+                </tr>
+              ) : visibleOrders.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="state-cell">
+                    No online orders match these filters.
+                  </td>
+                </tr>
+              ) : (
+                visibleOrders.map((o) => (
+                  <tr key={o.id} className="data-row">
+                    <td>
+                      <button type="button" className="link-cell" onClick={() => openOrder(o.id)}>
+                        {o.orderNo}
+                      </button>
+                      {/* Aggregator orders are settled by the platform, so the
+                          tender is online-paid by definition. Shown only when
+                          the row really is an aggregator order. */}
+                      {o.channel && <span className="cell-sub">(Online Paid)</span>}
+                      {o.externalOrderId && (
+                        <span className="cell-sub">#{o.externalOrderId}</span>
+                      )}
+                    </td>
 
-                  {/* Actions */}
-                  <div className="col-actions">
-                    <button
-                      type="button"
-                      className="btn-action-view"
-                      onClick={() => router.push(`/pending-order-detail?orderId=${ord.id}`)}
-                    >
-                      View Details
-                    </button>
+                    <td>
+                      <span className="cell-title">{orDash(o.outletName)}</span>
+                      <span className="cell-sub">{orDash(o.channel && humanizeCode(o.channel))}</span>
+                    </td>
 
-                    {topTab === "ADVANCE" && ord.status === "PENDING" && (
+                    <td>
+                      <span className="cell-title">
+                        {humanizeCode(o.orderType)}
+                        {o.tableNumber ? ` (${o.tableNumber})` : ""}
+                      </span>
+                      <span className="cell-sub">
+                        {o.riderName || o.riderPhone
+                          ? `${o.riderName || "Rider"}${o.riderPhone ? ` · ${o.riderPhone}` : ""}`
+                          : "No rider assigned"}
+                      </span>
+                    </td>
+
+                    <td>
+                      <span className="cell-title">{orDash(o.customerName)}</span>
+                      {o.customerPhone ? (
+                        <a className="call-link" href={`tel:${o.customerPhone}`}>
+                          <IconPhone />
+                          <span>Call Customer</span>
+                        </a>
+                      ) : (
+                        <span className="cell-sub">No phone on file</span>
+                      )}
+                    </td>
+
+                    <td className="otp-cell">
+                      {o.otp ? <span className="otp-pill">{o.otp}</span> : <span className="cell-sub">—</span>}
+                    </td>
+
+                    <td className="datetime-cell">
+                      <span className="dt-line">
+                        <span className="dt-key">Created</span>
+                        <span className="dt-val">{orDash(formatDateTime(o.createdAt))}</span>
+                      </span>
+                      <span className="dt-line">
+                        <span className="dt-key">Received</span>
+                        <span className="dt-val">{orDash(formatDateTime(o.receivedAt))}</span>
+                      </span>
+                      <span className="dt-line">
+                        <span className="dt-key">Accepted</span>
+                        <span className="dt-val">{orDash(formatDateTime(o.acceptedAt))}</span>
+                      </span>
+                      <span className="dt-line">
+                        <span className="dt-key">Updated</span>
+                        <span className="dt-val">{orDash(formatDateTime(o.updatedAt))}</span>
+                      </span>
+                    </td>
+
+                    <td className="num total-cell">₹{formatMinor(o.grandTotalMinor)}</td>
+
+                    <td>
+                      <span className={`badge tone-${statusTone(o.status)}`}>
+                        {humanizeCode(o.status)}
+                      </span>
+                    </td>
+
+                    <td className="nowrap elapsed-cell">{o.elapsedMinutes} Min</td>
+
+                    <td className="col-actions">
                       <button
                         type="button"
-                        className="btn-action-ready"
-                        style={{ background: "#ea580c" }}
-                        disabled={updatingId === ord.id}
-                        onClick={() => handleFireAdvance(ord.id)}
+                        className="icon-btn"
+                        title="View order details"
+                        aria-label={`View online order ${o.orderNo}`}
+                        onClick={() => openOrder(o.id)}
                       >
-                        🔥 Fire to KDS
+                        <IconEye />
                       </button>
-                    )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
 
-                    {ord.status === "PENDING" && topTab !== "ADVANCE" && (
-                      <button
-                        type="button"
-                        className="btn-action-accept"
-                        disabled={updatingId === ord.id}
-                        onClick={() => handleUpdateStatus(ord.id, "ACCEPTED")}
-                      >
-                        Accept Order
-                      </button>
-                    )}
-
-                    {ord.status === "ACCEPTED" && (
-                      <button
-                        type="button"
-                        className="btn-action-ready"
-                        disabled={updatingId === ord.id}
-                        onClick={() => handleUpdateStatus(ord.id, "FOOD_READY")}
-                      >
-                        Mark Ready
-                      </button>
-                    )}
-
-                    {ord.status === "FOOD_READY" && (
-                      <button
-                        type="button"
-                        className="btn-action-dispatch"
-                        disabled={updatingId === ord.id}
-                        onClick={() => handleUpdateStatus(ord.id, "DISPATCHED")}
-                      >
-                        Dispatch / Handover
-                      </button>
-                    )}
-
-                    <button
-                      type="button"
-                      className="btn-action-chat"
-                      onClick={() => alert(`Connecting to ${ord.channel} merchant support chat...`)}
-                    >
-                      Chat Support
-                    </button>
-
-                    <button
-                      type="button"
-                      className="btn-action-call"
-                      onClick={() => alert(`Dialing customer ${ord.customerPhone}...`)}
-                    >
-                      Call Customer
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Order Detail Modal */}
-      {selectedOrder && (
-        <div className="detail-modal-backdrop" onClick={() => setSelectedOrder(null)}>
-          <div className="detail-modal-card" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <span className={`channel-badge ${selectedOrder.channel.toLowerCase()}`}>
-                  {selectedOrder.channel}
-                </span>
-                <h3 style={{ margin: 0 }}>Order #{selectedOrder.externalOrderId}</h3>
-              </div>
-              <button className="close-btn" onClick={() => setSelectedOrder(null)}>✕</button>
-            </div>
-
-            <div style={{ marginTop: "14px", fontSize: "0.875rem", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-              <div>Customer: <strong>{selectedOrder.customerName}</strong> ({selectedOrder.customerPhone})</div>
-              <div>Rider: <strong>{selectedOrder.riderName}</strong></div>
-              <div>Status: <strong>{selectedOrder.status}</strong></div>
-              <div>Time: <strong>{new Date(selectedOrder.createdAt).toLocaleTimeString()}</strong></div>
-            </div>
-
-            <div style={{ marginTop: "16px" }}>
-              <h4 style={{ margin: "0 0 8px 0", fontSize: "0.875rem" }}>Ordered Items:</h4>
-              <div style={{ border: "1px solid #e2e8f0", borderRadius: "6px", maxHeight: "180px", overflowY: "auto" }}>
-                {selectedOrder.items && selectedOrder.items.length > 0 ? (
-                  selectedOrder.items.map((it, idx) => (
-                    <div key={idx} style={{ display: "flex", justifyContent: "space-between", padding: "6px 12px", borderBottom: "1px solid #f1f5f9", fontSize: "0.8125rem" }}>
-                      <span>{it.quantity}x {it.name}</span>
-                      <span>₹{(it.priceMinor / 100).toFixed(2)}</span>
-                    </div>
-                  ))
-                ) : (
-                  <div style={{ padding: "12px", textAlign: "center", color: "#94a3b8" }}>Standard Online Meal Package</div>
-                )}
-              </div>
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "space-between", marginTop: "14px", fontWeight: 800 }}>
-              <span>Total Invoice Amount:</span>
-              <span style={{ color: "#16a34a", fontSize: "1.1rem" }}>
-                ₹{(selectedOrder.grandTotalMinor / 100).toFixed(2)}
-              </span>
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "20px" }}>
-              <button className="btn-close-modal" onClick={() => setSelectedOrder(null)}>Close</button>
-            </div>
+        <div className="pagination-bar">
+          <span className="record-count">
+            Showing {firstRecord} to {lastRecord} of {total} records
+          </span>
+          <div className="pager">
+            <button type="button" className="page-btn" disabled={page === 1} onClick={() => setPage(1)}>
+              First
+            </button>
+            <button
+              type="button"
+              className="page-btn"
+              disabled={page === 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              Prev
+            </button>
+            <span className="page-indicator">
+              Page {page} / {pageCount}
+            </span>
+            <button
+              type="button"
+              className="page-btn"
+              disabled={page >= pageCount}
+              onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+            >
+              Next
+            </button>
+            <button
+              type="button"
+              className="page-btn"
+              disabled={page >= pageCount}
+              onClick={() => setPage(pageCount)}
+            >
+              Last
+            </button>
           </div>
         </div>
-      )}
+      </section>
 
       <style jsx>{`
-        .aggregator-container {
-          display: flex;
-          flex-direction: column;
-          height: calc(100vh - 48px);
-          background: #f8fafc;
-          font-family: inherit;
-        }
-
-        .aggregator-top-tabs {
-          display: flex;
-          background: #ffffff;
-          border-bottom: 1px solid #e2e8f0;
-          padding: 0 16px;
-          gap: 8px;
-        }
-        .top-tab {
-          background: transparent;
-          border: none;
-          padding: 10px 16px;
-          font-size: 0.8125rem;
-          font-weight: 700;
-          color: #64748b;
-          cursor: pointer;
-        }
-        .top-tab.active {
-          color: #dc2626;
-          box-shadow: inset 0 -2px 0 #dc2626;
-        }
-
-        .aggregator-subbar {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 8px 16px;
-          background: #ffffff;
-          border-bottom: 1px solid #e2e8f0;
-          gap: 12px;
-          flex-wrap: wrap;
-        }
-        .search-box {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          background: #f1f5f9;
-          border: 1px solid #cbd5e1;
-          border-radius: 4px;
-          padding: 4px 10px;
-          min-width: 200px;
-        }
-        .search-box input {
-          border: none;
-          background: transparent;
-          outline: none;
-          font-size: 0.75rem;
-          width: 100%;
-        }
-
-        .status-pipeline-filters {
-          display: flex;
-          gap: 6px;
-          flex-wrap: wrap;
-        }
-        .filter-chip {
-          background: #f8fafc;
-          border: 1px solid #e2e8f0;
-          padding: 4px 8px;
-          border-radius: 4px;
-          font-size: 0.6875rem;
-          font-weight: 600;
-          color: #475569;
-          cursor: pointer;
-        }
-        .filter-chip.active {
-          background: #e2e8f0;
-          color: #0f172a;
-          font-weight: 700;
-        }
-
-        .btn-food-ready-header {
-          background: #e11d48;
-          color: #ffffff;
-          border: none;
-          padding: 6px 14px;
-          border-radius: 4px;
-          font-size: 0.75rem;
-          font-weight: 700;
-          cursor: pointer;
-        }
-
-        .orders-feed-scroll {
+        .online-root {
           flex: 1;
           overflow-y: auto;
           padding: 16px;
+          background: var(--bg-base);
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
         }
 
-        .online-orders-table {
-          background: #ffffff;
-          border: 1px solid #e2e8f0;
-          border-radius: 8px;
-          overflow: hidden;
+        .online-head {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 16px;
+          flex-wrap: wrap;
         }
-        .table-header-row {
-          display: grid;
-          grid-template-columns: 180px 180px 100px 100px 130px 1fr;
-          padding: 10px 14px;
-          background: #f1f5f9;
-          font-size: 0.6875rem;
+
+        .online-title {
+          margin: 0 0 10px 0;
+          font-size: 1.125rem;
           font-weight: 800;
-          color: #64748b;
-          border-bottom: 1px solid #e2e8f0;
+          letter-spacing: -0.02em;
+          color: var(--text-primary);
         }
-        .table-data-row {
-          display: grid;
-          grid-template-columns: 180px 180px 100px 100px 130px 1fr;
+
+        .channel-tabs {
+          display: inline-flex;
+          gap: 4px;
+          padding: 4px;
+          background: var(--bg-subtle);
+          border: 1px solid var(--border);
+          border-radius: var(--radius-pill);
+        }
+
+        .channel-tab {
+          min-height: 36px;
+          padding: 0 20px;
+          border: none;
+          border-radius: var(--radius-pill);
+          background: transparent;
+          font-size: 0.8125rem;
+          font-weight: 600;
+          color: var(--text-secondary);
+          cursor: pointer;
+          transition: background-color 0.15s ease, color 0.15s ease;
+        }
+        .channel-tab:hover {
+          color: var(--text-primary);
+        }
+        .channel-tab.is-active {
+          background: var(--bg-card);
+          color: var(--text-primary);
+          box-shadow: var(--shadow-sm);
+        }
+
+        .btn-primary,
+        .btn-secondary {
+          display: inline-flex;
           align-items: center;
-          padding: 12px 14px;
-          border-bottom: 1px solid #f1f5f9;
+          justify-content: center;
+          gap: 6px;
+          min-height: 38px;
+          padding: 0 16px;
+          border-radius: var(--radius-md);
+          font-size: 0.8125rem;
+          font-weight: 600;
+          cursor: pointer;
+          transition: background-color 0.15s ease, border-color 0.15s ease;
+        }
+        .btn-primary {
+          border: 1px solid var(--dark-btn);
+          background: var(--dark-btn);
+          color: var(--bg-card);
+        }
+        .btn-primary:hover {
+          background: var(--dark-btn-hover);
+        }
+        .btn-secondary {
+          border: 1px solid var(--border);
+          background: var(--bg-card);
+          color: var(--text-primary);
+        }
+        .btn-secondary:hover {
+          background: var(--bg-subtle);
+        }
+
+        .channel-tab:focus-visible,
+        .btn-primary:focus-visible,
+        .btn-secondary:focus-visible,
+        .field-input:focus-visible,
+        .page-btn:focus-visible,
+        .icon-btn:focus-visible,
+        .link-cell:focus-visible,
+        .call-link:focus-visible {
+          outline: 2px solid var(--accent);
+          outline-offset: 2px;
+        }
+
+        .filter-card,
+        .table-card {
+          background: var(--bg-card);
+          border: 1px solid var(--border);
+          border-radius: var(--radius-lg);
+          box-shadow: var(--shadow-card);
+          padding: 12px;
+        }
+
+        .filter-card {
+          display: flex;
+          align-items: flex-end;
+          gap: 10px;
+          flex-wrap: wrap;
+        }
+
+        .field {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+          min-width: 160px;
+        }
+        .field-label {
+          font-size: 0.6875rem;
+          font-weight: 700;
+          color: var(--text-secondary);
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+        }
+        .field-input {
+          min-height: 38px;
+          width: 100%;
+          padding: 0 10px;
+          border: 1px solid var(--border);
+          border-radius: var(--radius-md);
+          background: var(--bg-card);
+          color: var(--text-primary);
           font-size: 0.8125rem;
         }
-        .table-data-row:hover {
-          background: #f8fafc;
+        select.field-input {
+          cursor: pointer;
         }
 
-        .col-channel {
+        .filter-actions {
           display: flex;
           align-items: center;
           gap: 8px;
-        }
-        .channel-badge {
-          font-size: 0.625rem;
-          font-weight: 900;
-          padding: 2px 6px;
-          border-radius: 4px;
-          text-transform: uppercase;
-        }
-        .channel-badge.swiggy {
-          background: #fff4e8;
-          color: #fc8019;
-          border: 1px solid #fed7aa;
-        }
-        .channel-badge.zomato {
-          background: #fdeced;
-          color: #e23744;
-          border: 1px solid #fecaca;
-        }
-        .channel-badge.direct {
-          background: #eff6ff;
-          color: #2563eb;
-          border: 1px solid #bfdbfe;
+          margin-left: auto;
         }
 
-        .order-id-text {
-          font-weight: 700;
-          color: #0f172a;
-        }
-        .item-count-sub {
-          font-size: 0.6875rem;
-          color: #64748b;
-        }
-
-        .cust-name {
+        .online-error {
+          padding: 10px 14px;
+          border-radius: var(--radius-md);
+          background: var(--destructive-subtle);
+          color: var(--destructive-text);
+          font-size: 0.8125rem;
           font-weight: 600;
         }
-        .rider-info {
-          font-size: 0.6875rem;
-          color: #64748b;
+
+        .table-scroll {
+          overflow-x: auto;
         }
 
-        .time-badge {
-          font-size: 0.6875rem;
+        .online-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 0.8125rem;
+        }
+
+        .online-table th {
+          background: var(--bg-card);
+          padding: 10px 12px;
+          text-align: left;
+          font-size: 0.75rem;
+          font-weight: 700;
+          color: var(--text-primary);
+          white-space: nowrap;
+          border-bottom: 1px solid var(--border);
+        }
+
+        .online-table td {
+          padding: 10px 12px;
+          color: var(--text-primary);
+          border-bottom: 1px solid var(--border-subtle);
+          vertical-align: top;
+        }
+
+        .online-table .num {
+          text-align: right;
+          font-variant-numeric: tabular-nums;
+          white-space: nowrap;
+        }
+        .total-cell {
+          font-weight: 700;
+        }
+        .nowrap {
+          white-space: nowrap;
+        }
+        .elapsed-cell {
+          font-variant-numeric: tabular-nums;
+          color: var(--text-secondary);
           font-weight: 600;
-          background: #f1f5f9;
-          padding: 2px 6px;
-          border-radius: 4px;
         }
-        .col-amount {
-          font-weight: 700;
-          color: #16a34a;
-        }
-
-        .status-tag {
-          font-size: 0.6875rem;
-          font-weight: 700;
-          padding: 3px 8px;
-          border-radius: 4px;
-        }
-        .status-pending { background: #fef3c7; color: #92400e; }
-        .status-accepted { background: #dbeafe; color: #1e40af; }
-        .status-food_ready { background: #dcfce7; color: #166534; }
-        .status-dispatched { background: #f3e8ff; color: #6b21a8; }
-        .status-delivered { background: #e2e8f0; color: #334155; }
-        .status-cancelled { background: #fee2e2; color: #991b1b; }
-
         .col-actions {
+          text-align: right;
+          white-space: nowrap;
+        }
+
+        .data-row:hover td {
+          background: var(--bg-hover);
+        }
+
+        .link-cell {
+          border: 1px solid var(--border);
+          border-radius: var(--radius-pill);
+          background: var(--bg-card);
+          padding: 3px 10px;
+          font-size: 0.8125rem;
+          font-weight: 700;
+          color: var(--text-primary);
+          cursor: pointer;
+          transition: border-color 0.15s ease, color 0.15s ease;
+        }
+        .link-cell:hover {
+          border-color: var(--accent);
+          color: var(--accent-subtle-text);
+        }
+
+        .cell-title {
+          display: block;
+          font-weight: 600;
+        }
+        .cell-sub {
+          display: block;
+          font-size: 0.6875rem;
+          color: var(--text-muted);
+          margin-top: 2px;
+        }
+
+        .call-link {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          margin-top: 4px;
+          min-height: 28px;
+          padding: 2px 10px;
+          border-radius: var(--radius-pill);
+          background: var(--accent-subtle);
+          color: var(--accent-subtle-text);
+          font-size: 0.75rem;
+          font-weight: 700;
+          text-decoration: none;
+          cursor: pointer;
+          transition: background-color 0.15s ease;
+        }
+        .call-link:hover {
+          background: var(--bg-subtle);
+        }
+
+        .otp-cell {
+          white-space: nowrap;
+        }
+        .otp-pill {
+          display: inline-block;
+          padding: 4px 12px;
+          border-radius: var(--radius-sm);
+          background: var(--warning-subtle);
+          color: var(--warning-text);
+          font-size: 0.875rem;
+          font-weight: 800;
+          letter-spacing: 0.08em;
+          font-variant-numeric: tabular-nums;
+        }
+
+        .datetime-cell {
+          min-width: 220px;
+        }
+        .dt-line {
+          display: flex;
+          align-items: baseline;
+          gap: 8px;
+          font-size: 0.6875rem;
+          line-height: 1.6;
+        }
+        .dt-key {
+          width: 62px;
+          flex-shrink: 0;
+          color: var(--text-muted);
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.03em;
+        }
+        .dt-val {
+          color: var(--text-secondary);
+          font-variant-numeric: tabular-nums;
+        }
+
+        .badge {
+          display: inline-block;
+          padding: 3px 10px;
+          border-radius: var(--radius-pill);
+          font-size: 0.6875rem;
+          font-weight: 700;
+          white-space: nowrap;
+        }
+        .tone-neutral {
+          background: var(--bg-subtle);
+          color: var(--text-secondary);
+        }
+        .tone-accent {
+          background: var(--accent-subtle);
+          color: var(--accent-subtle-text);
+        }
+        .tone-warning {
+          background: var(--warning-subtle);
+          color: var(--warning-text);
+        }
+        .tone-danger {
+          background: var(--destructive-subtle);
+          color: var(--destructive-text);
+        }
+        .tone-info {
+          background: var(--blue-subtle);
+          color: var(--blue-text);
+        }
+        .tone-purple {
+          background: var(--purple-subtle);
+          color: var(--purple-text);
+        }
+
+        .icon-btn {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 32px;
+          height: 32px;
+          border: 1px solid var(--border);
+          border-radius: var(--radius-sm);
+          background: var(--bg-card);
+          color: var(--text-secondary);
+          cursor: pointer;
+          transition: background-color 0.15s ease, color 0.15s ease;
+        }
+        .icon-btn:hover {
+          background: var(--bg-subtle);
+          color: var(--text-primary);
+        }
+
+        .state-cell {
+          padding: 40px 12px;
+          text-align: center;
+          color: var(--text-muted);
+        }
+
+        .pagination-bar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          flex-wrap: wrap;
+          padding: 12px 4px 4px 4px;
+        }
+        .record-count {
+          font-size: 0.75rem;
+          color: var(--text-secondary);
+          font-variant-numeric: tabular-nums;
+        }
+        .pager {
           display: flex;
           align-items: center;
           gap: 6px;
           flex-wrap: wrap;
         }
-        .btn-action-view, .btn-action-chat, .btn-action-call {
-          background: #f1f5f9;
-          border: 1px solid #cbd5e1;
-          padding: 3px 6px;
-          border-radius: 4px;
-          font-size: 0.6875rem;
+        .page-indicator {
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: var(--text-secondary);
+          font-variant-numeric: tabular-nums;
+          padding: 0 6px;
+        }
+        .page-btn {
+          min-width: 34px;
+          min-height: 32px;
+          padding: 0 10px;
+          border: 1px solid var(--border);
+          border-radius: var(--radius-sm);
+          background: var(--bg-card);
+          color: var(--text-secondary);
+          font-size: 0.75rem;
           font-weight: 600;
           cursor: pointer;
+          transition: background-color 0.15s ease, color 0.15s ease;
         }
-        .btn-action-accept {
-          background: #2563eb;
-          color: #fff;
-          border: none;
-          padding: 3px 8px;
-          border-radius: 4px;
-          font-size: 0.6875rem;
-          font-weight: 700;
-          cursor: pointer;
+        .page-btn:hover:not(:disabled) {
+          background: var(--bg-subtle);
+          color: var(--text-primary);
         }
-        .btn-action-ready {
-          background: #16a34a;
-          color: #fff;
-          border: none;
-          padding: 3px 8px;
-          border-radius: 4px;
-          font-size: 0.6875rem;
-          font-weight: 700;
-          cursor: pointer;
-        }
-        .btn-action-dispatch {
-          background: #7e22ce;
-          color: #fff;
-          border: none;
-          padding: 3px 8px;
-          border-radius: 4px;
-          font-size: 0.6875rem;
-          font-weight: 700;
-          cursor: pointer;
+        .page-btn:disabled {
+          color: var(--text-muted);
+          cursor: not-allowed;
         }
 
-        /* Modal */
-        .detail-modal-backdrop {
-          position: fixed;
-          top: 0;
-          left: 0;
-          width: 100vw;
-          height: 100vh;
-          background: rgba(15, 23, 42, 0.5);
-          z-index: 200;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-        .detail-modal-card {
-          background: #ffffff;
-          padding: 24px;
-          border-radius: 12px;
-          width: 90%;
-          max-width: 520px;
-        }
-        .modal-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-        }
-        .close-btn {
-          background: transparent;
-          border: none;
-          font-size: 1.1rem;
-          cursor: pointer;
-        }
-        .btn-close-modal {
-          background: #f1f5f9;
-          border: 1px solid #cbd5e1;
-          padding: 8px 16px;
-          border-radius: 6px;
-          font-weight: 600;
-          cursor: pointer;
+        @media (prefers-reduced-motion: reduce) {
+          .channel-tab,
+          .btn-primary,
+          .btn-secondary,
+          .icon-btn,
+          .page-btn,
+          .link-cell,
+          .call-link {
+            transition: none;
+          }
         }
       `}</style>
     </div>

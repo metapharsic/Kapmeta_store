@@ -260,7 +260,7 @@ router.patch(["/channel-items/:mappingId/availability", "/integration/channel-it
 router.post(["/webhooks/:channel", "/webhooks/swiggy", "/webhooks/zomato"], async (req, res) => {
   try {
     const channelParam = (req.params.channel || (req.path.includes("swiggy") ? "SWIGGY" : "ZOMATO")).toUpperCase();
-    const { externalOrderId, externalEventId, customer, items } = req.body;
+    const { externalOrderId, externalEventId, customer, items, rider, otp } = req.body;
 
     if (!externalOrderId) {
       res.status(400).json({ error: "externalOrderId is required" });
@@ -339,28 +339,63 @@ router.post(["/webhooks/:channel", "/webhooks/swiggy", "/webhooks/zomato"], asyn
     today.setHours(0, 0, 0, 0);
 
     // 4. Create Order & OrderItems
-    const createdOrder = await prisma.order.create({
-      data: {
-        outletId,
-        orderNumber,
-        orderType: "DELIVERY",
-        status: "CONFIRMED",
-        business_date: today,
-        subtotal,
-        taxTotal: tax,
-        grandTotal,
-        orderItems: {
-          create: lines.map((l) => ({
-            outletId,
-            menuItemId: l.menuItemId,
-            item_name: l.name,
-            quantity: l.quantity,
-            unitPrice: BigInt(l.unitPriceMinor),
-            subtotal: BigInt(l.unitPriceMinor) * BigInt(l.quantity),
-          })),
-        },
+    //
+    // The aggregator identity (channel, external id, customer, rider, OTP,
+    // received/accepted times) is persisted on the order row itself, not only
+    // in the audit log - otherwise the Online Orders screen can only guess the
+    // channel from an orderNumber string prefix and has no customer or rider
+    // to show at all. The audit log write below is unchanged.
+    const receivedAt = new Date();
+    const acceptedAt = new Date();
+    const riderSource = rider || req.body.deliveryPartner || {};
+
+    const baseOrderData: any = {
+      outletId,
+      orderNumber,
+      orderType: "DELIVERY",
+      status: "CONFIRMED",
+      business_date: today,
+      subtotal,
+      taxTotal: tax,
+      grandTotal,
+      orderItems: {
+        create: lines.map((l) => ({
+          outletId,
+          menuItemId: l.menuItemId,
+          item_name: l.name,
+          quantity: l.quantity,
+          unitPrice: BigInt(l.unitPriceMinor),
+          subtotal: BigInt(l.unitPriceMinor) * BigInt(l.quantity),
+        })),
       },
-    });
+    };
+
+    const aggregatorOrderData: any = {
+      channel: channelParam,
+      externalOrderId: String(externalOrderId),
+      customerName: customer?.name ?? req.body.customerName ?? null,
+      customerPhone: customer?.phone ?? req.body.customerPhone ?? null,
+      riderName: riderSource?.name ?? req.body.riderName ?? null,
+      riderPhone: riderSource?.phone ?? req.body.riderPhone ?? null,
+      otp: otp ?? req.body.deliveryOtp ?? riderSource?.otp ?? null,
+      receivedAt,
+      acceptedAt,
+    };
+
+    let createdOrder: any;
+    try {
+      createdOrder = await (prisma.order as any).create({
+        data: { ...baseOrderData, ...aggregatorOrderData },
+      });
+    } catch {
+      // Generated Prisma client predates the aggregator columns: fall back to
+      // the base row, then best-effort stamp the identity fields on top so the
+      // order is still created rather than the webhook 500-ing.
+      createdOrder = await (prisma.order as any).create({ data: baseOrderData });
+      await (prisma.order as any)
+        .update({ where: { id: createdOrder.id }, data: aggregatorOrderData })
+        .catch(() => {});
+    }
 
     // 5. Generate Station KOTs & Order Status History
     await (prisma.orderStatusHistory as any).create({

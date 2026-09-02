@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-09-02T05:00:00Z",
+  "lastUpdated": "2026-09-02T07:00:00Z",
   "activeTasks": [
     {
       "taskId": "TSK-001",
@@ -374,6 +374,54 @@
       "status": "PENDING",
       "priority": "P1",
       "relatedGate": "CP-15"
+    },
+    {
+      "taskId": "TSK-016-A1",
+      "title": "DB: reconcile schema drift, migration 0039 (round-off, AC flag, aggregator/rider/OTP, KOT bill-print)",
+      "assignedTo": "database-agent",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "relatedGate": "CP-16"
+    },
+    {
+      "taskId": "TSK-016-A2",
+      "title": "Backend: un-null listOrders, order counts, live summary, online orders, KOT history, cumulative items, webhook persistence",
+      "assignedTo": "backend-agent",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "relatedGate": "CP-16"
+    },
+    {
+      "taskId": "TSK-016-A3",
+      "title": "Frontend: Running Orders, Running Tables, All Orders, Advance Order, Online Orders + SVG trend chart",
+      "assignedTo": "frontend-agent",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "relatedGate": "CP-16"
+    },
+    {
+      "taskId": "TSK-016-A4",
+      "title": "Frontend: KOT history table + unify both navs onto SIDEBAR_GROUPS",
+      "assignedTo": "frontend-agent",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "relatedGate": "CP-16"
+    },
+    {
+      "taskId": "TSK-016-A5",
+      "title": "Fix db-migrate.js recording failed migrations as applied; add npm run db:verify",
+      "assignedTo": "sre-agent",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "relatedGate": "CP-16"
+    },
+    {
+      "taskId": "TSK-016-U1",
+      "title": "USER ACTION: npm run db:verify, clear lying rows, npm run db:migrate, npx prisma generate, restart API",
+      "assignedTo": "user",
+      "status": "PENDING",
+      "priority": "P0",
+      "relatedGate": "CP-16"
     }
   ]
 }

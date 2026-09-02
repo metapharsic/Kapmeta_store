@@ -40,23 +40,62 @@ const NAV_LINKS: NavLinkDef[] = [
 
 export type NavVariant = "topbar" | "pill" | "sidebar";
 
-interface SidebarLinkDef {
+/* ------------------------------------------------------------------------ */
+/* SIDEBAR_GROUPS - the single source of truth for app navigation.           */
+/*                                                                          */
+/* Both nav surfaces render from this list:                                 */
+/*   - <Nav variant="sidebar" />         (the persistent sidebar)           */
+/*   - components/KapMetaHeader.tsx      (the POS hamburger drawer)         */
+/* A link added here therefore shows up in both. Do not hardcode a nav link */
+/* anywhere else - that is exactly what produced two divergent taxonomies   */
+/* and the "I can't find it" incidents recorded in                          */
+/* docs/03-design/artifact-03-design-contract.md section 6.                 */
+/*                                                                          */
+/* Structure/labels/order follow the reference design:                      */
+/*   Dashboard | Daily Operations | Menu | Inventory |                      */
+/*   Marketing Automation [New] | Finance [New] | Reports | Management |    */
+/*   CRM | Aggregator Center | Quick Links                                  */
+/* ------------------------------------------------------------------------ */
+
+export interface SidebarLinkDef {
   href: string;
+  // Permission required to see the link. Keep this equal to the permission
+  // the destination page guards with (useAuthGuard) - otherwise the link is
+  // either invisible to users who may use it, or visible to users the page
+  // immediately redirects away.
   permission: string;
   label: string;
+  // Escape hatch for links that must stay reachable from the POS terminal
+  // regardless of the cashier's permission set. The page's own useAuthGuard
+  // still decides whether they can actually open it.
+  alwaysVisible?: boolean;
+  // Drawer-only in-place action (opens a modal instead of navigating). The
+  // sidebar falls back to `href` for these.
+  action?: "item-toggle";
 }
 
-interface SidebarGroupDef {
+export interface SidebarGroupDef {
+  // Stable id - used as the React key, the drawer's expand/collapse state key
+  // and the drawer's icon lookup.
+  id: string;
   header: string | null; // null => single-link group, rendered directly (no header)
   badge?: string;
   links: SidebarLinkDef[];
 }
 
-const SIDEBAR_GROUPS: SidebarGroupDef[] = [
-  { header: null, links: [{ href: "/admin?tab=daily-ops", permission: "report.read", label: "Operations Dashboard" }] },
+export const SIDEBAR_GROUPS: SidebarGroupDef[] = [
   {
+    id: "dashboard",
+    header: null,
+    links: [{ href: "/admin?tab=daily-ops", permission: "report.read", label: "Dashboard" }],
+  },
+  {
+    id: "daily-operations",
     header: "Daily Operations",
     links: [
+      // POS Terminal and Waiter App are not in the reference sidebar, but they
+      // are this app's primary operating surfaces and dropping them would make
+      // the POS unreachable from the nav. They lead the group.
       { href: "/", permission: "order.create", label: "POS Terminal" },
       { href: "/waiter", permission: "order.create", label: "Waiter App" },
       { href: "/orders?tab=live", permission: "order.read", label: "Live Orders" },
@@ -66,38 +105,69 @@ const SIDEBAR_GROUPS: SidebarGroupDef[] = [
     ],
   },
   {
+    id: "menu",
     header: "Menu",
-    links: [{ href: "/menu", permission: "menu.category.manage", label: "Menu Management" }],
+    links: [
+      { href: "/menu", permission: "menu.category.manage", label: "Menu Management" },
+      {
+        href: "/inventory",
+        permission: "menu.86.toggle",
+        label: "Menu Item On/Off (86 Stock)",
+        action: "item-toggle",
+      },
+    ],
   },
-  { header: null, links: [{ href: "/inventory", permission: "inventory.read", label: "Inventory" }] },
   {
+    id: "inventory",
+    header: null,
+    // pages/inventory.tsx guards on menu.read
+    links: [{ href: "/inventory", permission: "menu.read", label: "Inventory" }],
+  },
+  {
+    id: "marketing",
     header: null,
     badge: "New",
     links: [{ href: "/marketing", permission: "crm.write", label: "Marketing Automation" }],
   },
   {
+    id: "finance",
     header: null,
     badge: "New",
     links: [{ href: "/finance", permission: "report.read", label: "Finance" }],
   },
   {
+    id: "reports",
     header: "Reports",
     links: [
       { href: "/admin?tab=analytics", permission: "report.read", label: "Sales Analytics" },
-      { href: "/waiter-monitor", permission: "report.read", label: "Waiter Floor Monitor" },
+      { href: "/finance", permission: "report.read", label: "Day-End Settlement / Z-Report" },
       { href: "/kitchen-analytics", permission: "report.read", label: "Kitchen Prep Times" },
+      { href: "/waiter-monitor", permission: "report.read", label: "Waiter Floor Monitor" },
+      { href: "/admin?tab=audit", permission: "report.read", label: "Audit Log" },
     ],
   },
   {
+    id: "management",
     header: "Management",
     links: [
-      { href: "/user-management", permission: "users.manage", label: "User & Role Management" },
-      { href: "/table-management", permission: "table.manage", label: "Table Management" },
-      { href: "/settings/company", permission: "settings.manage", label: "Company Details" },
+      // alwaysVisible: these two were the "I can't find it" incidents this
+      // session. They must stay reachable from the POS terminal drawer even
+      // for roles without users.manage / settings.manage.
+      { href: "/user-management", permission: "users.manage", label: "User & Role Management", alwaysVisible: true },
+      { href: "/settings/company", permission: "settings.manage", label: "Company Details", alwaysVisible: true },
+      // pages/table-management.tsx guards on menu.category.manage
+      { href: "/table-management", permission: "menu.category.manage", label: "Table Management" },
+      { href: "/admin", permission: "report.read", label: "Admin Overview Hub" },
+      { href: "/admin?tab=agents", permission: "report.read", label: "Multi-Agent & A2A Status" },
     ],
   },
-  { header: null, links: [{ href: "/crm", permission: "crm.read", label: "CRM" }] },
   {
+    id: "crm",
+    header: "CRM",
+    links: [{ href: "/crm", permission: "crm.read", label: "Customers & Loyalty" }],
+  },
+  {
+    id: "aggregator-center",
     header: "Aggregator Center",
     links: [
       { href: "/integrations", permission: "integration.manage", label: "Connect Delivery Apps" },
@@ -106,6 +176,29 @@ const SIDEBAR_GROUPS: SidebarGroupDef[] = [
   },
 ];
 
+// Mirrors the super-admin bypass in useAuthGuard (lib/auth.ts): these roles
+// can open every screen, so the nav must not hide anything from them.
+export function isSuperAdminRoles(roles: string[] | null | undefined): boolean {
+  if (!Array.isArray(roles)) return false;
+  return roles.includes("SUPER_ADMIN") || roles.includes("SUPERADMIN") || roles.includes("OWNER");
+}
+
+// Shared filter used by BOTH nav surfaces: drop the links whose permission the
+// user lacks, then drop any group left with no visible links.
+export function filterSidebarGroups(
+  permissions: string[] | null | undefined,
+  roles?: string[] | null
+): SidebarGroupDef[] {
+  const perms = Array.isArray(permissions) ? permissions : [];
+  const superAdmin = isSuperAdminRoles(roles);
+  return SIDEBAR_GROUPS.map((group) => ({
+    ...group,
+    links: group.links.filter(
+      (link) => superAdmin || link.alwaysVisible || perms.includes(link.permission)
+    ),
+  })).filter((group) => group.links.length > 0);
+}
+
 interface NavProps {
   variant?: NavVariant;
 }
@@ -113,6 +206,7 @@ interface NavProps {
 export default function Nav({ variant = "pill" }: NavProps): JSX.Element | null {
   const router = useRouter();
   const [permissions, setPermissions] = useState<string[] | null>(null);
+  const [roles, setRoles] = useState<string[]>([]);
   const [currentOutlet, setCurrentOutlet] = useState<MeOutlet | null>(null);
   const [myOutlets, setMyOutlets] = useState<OutletSummary[]>([]);
   const [switching, setSwitching] = useState(false);
@@ -122,6 +216,7 @@ export default function Nav({ variant = "pill" }: NavProps): JSX.Element | null 
     fetchMe().then((me) => {
       if (cancelled) return;
       setPermissions(me ? me.permissions : []);
+      setRoles(me && Array.isArray(me.roles) ? me.roles : []);
       setCurrentOutlet(me ? me.outlet : null);
     });
     fetchMyOutlets().then((outlets) => {
@@ -155,7 +250,7 @@ export default function Nav({ variant = "pill" }: NavProps): JSX.Element | null 
           cursor: switching ? "wait" : "pointer",
           background: "var(--bg-card, #fff)",
           border: "1px solid var(--border, #e2e8f0)",
-          color: "var(--text, #0f172a)",
+          color: "var(--text-primary)",
           fontWeight: 600,
           padding: "10px 12px",
           minHeight: "44px",
@@ -236,10 +331,7 @@ export default function Nav({ variant = "pill" }: NavProps): JSX.Element | null 
         {outletSwitcher && (
           <div style={{ padding: "0 16px 12px" }}>{outletSwitcher}</div>
         )}
-        {SIDEBAR_GROUPS.map((group, idx) => {
-          const visible = group.links.filter((l) => permissions.includes(l.permission));
-          if (visible.length === 0) return null;
-
+        {filterSidebarGroups(permissions, roles).map((group) => {
           const linkStyle = (active: boolean, bold: boolean): React.CSSProperties => ({
             display: "flex",
             alignItems: "center",
@@ -247,29 +339,29 @@ export default function Nav({ variant = "pill" }: NavProps): JSX.Element | null 
             gap: 8,
             padding: "10px 16px",
             margin: "2px 8px",
-            borderRadius: 10,
-            color: active ? "#065f46" : "#0f172a",
-            background: active ? "#ecfdf5" : "transparent",
+            borderRadius: "var(--radius-md)",
+            color: active ? "var(--accent-subtle-text)" : "var(--text-primary)",
+            background: active ? "var(--accent-subtle)" : "transparent",
             textDecoration: "none",
             fontSize: "0.88rem",
             fontWeight: bold ? 600 : 500,
           });
 
           if (group.header === null) {
-            const link = visible[0];
+            const link = group.links[0];
             const active = isActive(link.href);
             return (
-              <Link key={idx} href={link.href} style={linkStyle(active, true)}>
+              <Link key={group.id} href={link.href} style={linkStyle(active, true)}>
                 <span>{link.label}</span>
                 {group.badge && (
                   <span
                     style={{
-                      background: "#10b981",
-                      color: "#fff",
+                      background: "var(--accent)",
+                      color: "var(--bg-card)",
                       fontSize: "0.65rem",
                       fontWeight: 700,
                       padding: "2px 6px",
-                      borderRadius: 9999,
+                      borderRadius: "var(--radius-pill)",
                     }}
                   >
                     {group.badge}
@@ -280,10 +372,10 @@ export default function Nav({ variant = "pill" }: NavProps): JSX.Element | null 
           }
 
           return (
-            <div key={idx} className="sidebar-group">
+            <div key={group.id} className="sidebar-group">
               <div className="sidebar-group-header">{group.header}</div>
-              {visible.map((link) => (
-                <Link key={link.href} href={link.href} style={linkStyle(isActive(link.href), false)}>
+              {group.links.map((link) => (
+                <Link key={link.href + link.label} href={link.href} style={linkStyle(isActive(link.href), false)}>
                   {link.label}
                 </Link>
               ))}

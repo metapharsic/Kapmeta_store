@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from "react";
 import Head from "next/head";
+import { useRouter } from "next/router";
 import { authedFetch, useAuthGuard } from "../lib/auth";
 import { useKapmetaSocket } from "../lib/useKapmetaSocket";
 import KapMetaHeader from "../components/KapMetaHeader";
 import KapMetaKotView, { KotCardData } from "../components/KapMetaKotView";
+import KotHistoryView from "../components/KotHistoryView";
 
 interface KOTItem {
   id: string;
@@ -33,9 +35,17 @@ interface KOTTicket {
 }
 
 export default function KitchenMonitor() {
+  const router = useRouter();
   const { me, loading: authLoading } = useAuthGuard("kot.read");
   const [tickets, setTickets] = useState<KOTTicket[]>([]);
   const [now, setNow] = useState(Date.now());
+
+  // /kitchen           -> live KDS card board (real-time work surface)
+  // /kitchen?view=list -> historical KOT report table (KotHistoryView)
+  // The two are different products on the same data, so they get one route and
+  // a query param rather than one component doing both: the history screen is
+  // then deep-linkable/bookmarkable and Back moves between the two views.
+  const isHistoryView = router.query.view === "list";
 
   const outletName = me?.outlet?.name || "Hotel kapila";
   const outletCode = me?.outlet?.taxNumber ? `R${me.outlet.taxNumber.slice(0, 6)}` : "R327038";
@@ -59,21 +69,21 @@ export default function KitchenMonitor() {
   };
 
   useEffect(() => {
-    if (authLoading) return;
+    if (authLoading || isHistoryView) return;
     fetchTickets();
-  }, [authLoading]);
+  }, [authLoading, isHistoryView]);
 
   // Long-lived socket + backup poller + clock tick
   useKapmetaSocket(
     () => {
       fetchTickets();
     },
-    !authLoading,
+    !authLoading && !isHistoryView,
     "kitchen"
   );
 
   useEffect(() => {
-    if (authLoading) return;
+    if (authLoading || isHistoryView) return;
 
     const interval = setInterval(fetchTickets, 30000);
     const clock = setInterval(() => setNow(Date.now()), 1000);
@@ -82,7 +92,7 @@ export default function KitchenMonitor() {
       clearInterval(interval);
       clearInterval(clock);
     };
-  }, [authLoading]);
+  }, [authLoading, isHistoryView]);
 
   const handleUpdateStatus = async (ticketId: string, currentStatus: string) => {
     try {
@@ -143,16 +153,21 @@ export default function KitchenMonitor() {
         }}
       />
 
-      {/* Main KapMeta POS KOT View */}
-      <KapMetaKotView
-        initialTickets={mappedTickets}
-        onMarkFoodReady={(id) => {
-          handleUpdateStatus(id, "PREPARING");
-        }}
-        onBackToPos={() => {
-          window.location.href = "/";
-        }}
-      />
+      {/* Main body: live KDS board, or the historical KOT report table */}
+      {isHistoryView ? (
+        <KotHistoryView onBackToBoard={() => router.push("/kitchen")} />
+      ) : (
+        <KapMetaKotView
+          initialTickets={mappedTickets}
+          onMarkFoodReady={(id) => {
+            handleUpdateStatus(id, "PREPARING");
+          }}
+          onBackToPos={() => {
+            window.location.href = "/";
+          }}
+          onOpenKotList={() => router.push("/kitchen?view=list")}
+        />
+      )}
 
       <style jsx global>{`
         body {

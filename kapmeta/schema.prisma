@@ -194,6 +194,7 @@ model DiningTable {
   mergePrimaryTableId  String?  @map("merge_primary_table_id") @db.Uuid
   version              Int      @default(1)
   covers               Int?
+  isAirConditioned     Boolean? @map("is_air_conditioned")
   createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   orders               Order[]
@@ -389,6 +390,19 @@ model Order {
   covers              Int?
   splitMode           String?      @map("split_mode")
   mergedIntoOrderId   String?      @map("merged_into_order_id")
+  settledAt           DateTime?    @map("settled_at") @db.Timestamptz(6)
+  scheduledFireAt     DateTime?    @map("scheduled_fire_at") @db.Timestamptz(6)
+  promisedAt          DateTime?    @map("promised_at") @db.Timestamptz(6)
+  depositMinor        BigInt?      @default(0) @map("deposit_minor")
+  advanceStatus       String?      @map("advance_status") @db.VarChar(30)
+  roundOffMinor       BigInt       @default(0) @map("round_off_minor")
+  channel             String?      @map("channel")
+  externalOrderId     String?      @map("external_order_id")
+  riderName           String?      @map("rider_name")
+  riderPhone          String?      @map("rider_phone")
+  receivedAt          DateTime?    @map("received_at") @db.Timestamptz(6)
+  acceptedAt          DateTime?    @map("accepted_at") @db.Timestamptz(6)
+  customerOtp         String?      @map("customer_otp")
   createdAt           DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   diningTable         DiningTable? @relation(fields: [diningTableId], references: [id])
@@ -459,6 +473,40 @@ model OrderStatusHistory {
   @@map("order_status_history")
 }
 
+/// KOT ticket lifecycle.
+///
+/// `status` is an untyped String and stays that way: the underlying column is
+/// free-text, the KDS and the table-view aggregator both write it directly, and
+/// several legacy aliases are still tolerated on read (see below). Converting it
+/// to a Prisma enum would reject rows that already exist. This block is the
+/// canonical value set instead.
+///
+/// Canonical values written by this system:
+///
+///   QUEUED     ticket created, not yet picked up by the kitchen
+///   PREPARING  kitchen has started the ticket
+///   READY      food is up, not yet delivered
+///   SERVED     delivered to the table
+///   CANCELLED  ticket voided before completion
+///
+/// Aliases still accepted on read (apps/api/src/routes/tables.ts):
+///   QUEUED    <- KOT_CREATED, PENDING
+///   PREPARING <- IN_PREPARATION, COOKING
+///
+/// Mapping to the reference UI's KOT status labels:
+///
+///   Reference label   Canonical value
+///   ---------------   ---------------
+///   Not Prepared      QUEUED
+///   Preparing         PREPARING
+///   Active            READY
+///   Used In Bill      SERVED, with billPrintedAt non-null
+///   Cancelled         CANCELLED
+///
+/// "Used In Bill" is not a status of its own: it is SERVED plus the fact that a
+/// bill has been printed for the ticket. Those are two independent facts, which
+/// is why bill_printed_at is its own column (migration 0039) rather than another
+/// status value.
 model KOTTicket {
   id            String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   outletId      String             @map("outlet_id") @db.Uuid
@@ -469,6 +517,7 @@ model KOTTicket {
   createdAt     DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt     DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   servedAt      DateTime?          @map("served_at") @db.Timestamptz(6)
+  billPrintedAt DateTime?          @map("bill_printed_at") @db.Timestamptz(6)
   order         Order?             @relation(fields: [orderId], references: [id])
   station       Station?           @relation(fields: [stationId], references: [id])
   kotItems      KOTItem[]

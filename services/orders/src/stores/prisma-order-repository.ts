@@ -310,6 +310,99 @@ export class PrismaOrderRepository implements OrderRepository {
       .map(([date, grandTotalMinor]) => ({ date, grandTotalMinor: grandTotalMinor.toString() }));
   }
 
+  // --- Row enrichment helpers -------------------------------------------
+  // The orders table UI needs channel / external id / customer / waiter /
+  // payment method, none of which live on the orders row alone. Each helper
+  // is catch-guarded so a column that has not landed in the generated Prisma
+  // client yet degrades that one field to null instead of failing the list.
+
+  private async loadAggregatorColumns(
+    orderIds: string[]
+  ): Promise<Map<string, { channel: string | null; externalOrderId: string | null; customerName: string | null; customerPhone: string | null }>> {
+    const map = new Map<string, any>();
+    if (orderIds.length === 0) return map;
+    try {
+      const rows: any[] = await (this.prisma.order as any).findMany({
+        where: { id: { in: orderIds } },
+        select: {
+          id: true,
+          channel: true,
+          externalOrderId: true,
+          customerName: true,
+          customerPhone: true,
+        },
+      });
+      for (const r of rows) {
+        map.set(r.id, {
+          channel: r.channel ?? null,
+          externalOrderId: r.externalOrderId ?? null,
+          customerName: r.customerName ?? null,
+          customerPhone: r.customerPhone ?? null,
+        });
+      }
+    } catch {
+      // Columns not present in the generated client yet.
+    }
+    return map;
+  }
+
+  private async loadWaiterNames(waiterIds: (string | null)[]): Promise<Map<string, string>> {
+    const map = new Map<string, string>();
+    const ids = Array.from(new Set(waiterIds.filter((id): id is string => Boolean(id))));
+    if (ids.length === 0) return map;
+    try {
+      const users = await this.prisma.user.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, firstName: true, lastName: true, email: true },
+      });
+      for (const u of users) {
+        const name = [u.firstName, u.lastName].filter(Boolean).join(" ").trim() || u.email || null;
+        if (name) map.set(u.id, name);
+      }
+    } catch {}
+    return map;
+  }
+
+  private async loadCustomerNames(
+    customerIds: (string | null)[]
+  ): Promise<Map<string, { name: string | null; phone: string | null }>> {
+    const map = new Map<string, { name: string | null; phone: string | null }>();
+    const ids = Array.from(new Set(customerIds.filter((id): id is string => Boolean(id))));
+    if (ids.length === 0) return map;
+    try {
+      const rows: any[] = await (this.prisma.customer as any).findMany({
+        where: { id: { in: ids } },
+        select: { id: true, name: true, firstName: true, lastName: true, phone: true },
+      });
+      for (const c of rows) {
+        const name =
+          c.name || [c.firstName, c.lastName].filter(Boolean).join(" ").trim() || null;
+        map.set(c.id, { name, phone: c.phone ?? null });
+      }
+    } catch {}
+    return map;
+  }
+
+  // Latest captured payment wins; a failed/void attempt should not decide the
+  // method shown on the bill row.
+  private async loadPaymentMethods(outletId: string, orderIds: string[]): Promise<Map<string, string>> {
+    const map = new Map<string, string>();
+    if (orderIds.length === 0) return map;
+    try {
+      const payments = await this.prisma.payment.findMany({
+        where: { outletId, orderId: { in: orderIds } },
+        select: { orderId: true, method: true, status: true, createdAt: true },
+        orderBy: { createdAt: "asc" },
+      });
+      for (const p of payments) {
+        if (!p.method) continue;
+        if (String(p.status).toUpperCase() === "FAILED" || String(p.status).toUpperCase() === "VOIDED") continue;
+        map.set(p.orderId, p.method);
+      }
+    } catch {}
+    return map;
+  }
+
   async listOrders(outletId: string, filter: ListOrdersFilter): Promise<OrderSummary[]> {
     const where = this.buildOrdersWhere(outletId, filter);
 
@@ -328,28 +421,44 @@ export class PrismaOrderRepository implements OrderRepository {
         discountTotal: true,
         createdAt: true,
         diningTableId: true,
+        waiterId: true,
+        customerId: true,
         _count: { select: { orderItems: true } },
       },
     });
 
-    return rows.map((row) => ({
-      id: row.id,
-      orderNumber: row.orderNumber,
-      orderType: row.orderType,
-      status: row.status as OrderStatus,
-      grandTotalMinor: row.grandTotal,
-      taxTotalMinor: row.taxTotal ?? 0n,
-      discountTotalMinor: row.discountTotal ?? 0n,
-      createdAt: row.createdAt,
-      itemCount: row._count.orderItems,
-      diningTableId: row.diningTableId,
-      channel: null,
-      externalOrderId: null,
-      priceMismatch: false,
-      customerName: null,
-      waiterName: null,
-      paymentMethod: null,
-    }));
+    const orderIds = rows.map((r) => r.id);
+    const [aggregator, waiterNames, customers, paymentMethods] = await Promise.all([
+      this.loadAggregatorColumns(orderIds),
+      this.loadWaiterNames(rows.map((r) => (r as any).waiterId ?? null)),
+      this.loadCustomerNames(rows.map((r) => r.customerId ?? null)),
+      this.loadPaymentMethods(outletId, orderIds),
+    ]);
+
+    return rows.map((row) => {
+      const extra = aggregator.get(row.id);
+      const customer = row.customerId ? customers.get(row.customerId) : undefined;
+      const waiterId = (row as any).waiterId as string | null | undefined;
+
+      return {
+        id: row.id,
+        orderNumber: row.orderNumber,
+        orderType: row.orderType,
+        status: row.status as OrderStatus,
+        grandTotalMinor: row.grandTotal,
+        taxTotalMinor: row.taxTotal ?? 0n,
+        discountTotalMinor: row.discountTotal ?? 0n,
+        createdAt: row.createdAt,
+        itemCount: row._count.orderItems,
+        diningTableId: row.diningTableId,
+        channel: extra?.channel ?? null,
+        externalOrderId: extra?.externalOrderId ?? null,
+        priceMismatch: false,
+        customerName: extra?.customerName ?? customer?.name ?? null,
+        waiterName: waiterId ? waiterNames.get(waiterId) ?? null : null,
+        paymentMethod: paymentMethods.get(row.id) ?? null,
+      };
+    });
   }
 
   async getOrderDetail(outletId: string, orderId: string): Promise<OrderDetail | null> {
@@ -374,13 +483,24 @@ export class PrismaOrderRepository implements OrderRepository {
       return null;
     }
 
+    // Same enrichment the list rows get, so a detail view never shows blanks
+    // where the table showed a value.
+    const waiterId = (row as any).waiterId as string | null | undefined;
+    const [aggregator, waiterNames, customers] = await Promise.all([
+      this.loadAggregatorColumns([row.id]),
+      this.loadWaiterNames([waiterId ?? null]),
+      this.loadCustomerNames([row.customerId ?? null]),
+    ]);
+    const extra = aggregator.get(row.id);
+    const customer = row.customerId ? customers.get(row.customerId) : undefined;
+
     return {
       id: row.id,
       orderNumber: row.orderNumber,
       orderType: row.orderType,
       status: row.status as OrderStatus,
-      channel: null,
-      externalOrderId: null,
+      channel: extra?.channel ?? null,
+      externalOrderId: extra?.externalOrderId ?? null,
       priceMismatch: false,
       grandTotalMinor: row.grandTotal,
       subtotalMinor: row.subtotal,
@@ -389,9 +509,9 @@ export class PrismaOrderRepository implements OrderRepository {
       terminalNumber: "POS-01",
       diningTableId: row.diningTableId,
       customerId: row.customerId,
-      customerName: null,
-      waiterName: null,
-      paymentMethod: payments.length > 0 ? payments[0].method : null,
+      customerName: extra?.customerName ?? customer?.name ?? null,
+      waiterName: waiterId ? waiterNames.get(waiterId) ?? null : null,
+      paymentMethod: payments.length > 0 ? payments[payments.length - 1].method : null,
       createdAt: row.createdAt,
       itemCount: row.orderItems.length,
       items: row.orderItems.map((item) => ({

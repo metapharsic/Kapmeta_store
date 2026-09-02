@@ -26,6 +26,10 @@ export interface KapMetaKotViewProps {
   initialTickets?: KotCardData[];
   onMarkFoodReady?: (kotId: string) => void;
   onBackToPos?: () => void;
+  // Switches to the historical KOT report table (/kitchen?view=list,
+  // rendered by components/KotHistoryView.tsx). This board stays the live
+  // KDS work surface; the list is a separate, filterable history screen.
+  onOpenKotList?: () => void;
 }
 
 // Clean empty reference set - live tickets are provisioned from PostgreSQL kot_tickets
@@ -59,6 +63,7 @@ export default function KapMetaKotView({
   initialTickets = [],
   onMarkFoodReady,
   onBackToPos,
+  onOpenKotList,
 }: KapMetaKotViewProps) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"ORDER_VIEW" | "KOT_VIEW">("KOT_VIEW");
@@ -235,6 +240,20 @@ export default function KapMetaKotView({
           >
             <span className="tab-icon kot-icon">🧾</span>
             <span className="tab-label">Kot View</span>
+          </button>
+
+          {/* Historical KOT report table - /kitchen?view=list */}
+          <button
+            type="button"
+            className="view-tab-btn"
+            onClick={() => {
+              if (onOpenKotList) onOpenKotList();
+              else router.push("/kitchen?view=list");
+            }}
+            title="Open the KOT history report"
+          >
+            <span className="tab-icon">📑</span>
+            <span className="tab-label">Kot List</span>
           </button>
         </div>
 

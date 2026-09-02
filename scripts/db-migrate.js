@@ -78,9 +78,23 @@ async function main() {
         ranCount += 1;
       } catch (err) {
         await client.query('ROLLBACK').catch(() => {});
-        // If the database already has the tables (e.g. created via Prisma or initial baseline)
-        console.log(`[db:migrate] ${file}: schema objects already present. Recorded migration state.`);
-        await client.query('INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT DO NOTHING', [file]);
+        // Only "the object is already there" is a safe no-op. Every other failure means the
+        // migration genuinely did NOT apply, and recording it as applied is how this database
+        // ended up half-built: migration 0022 rolled back on a missing table, was marked done,
+        // and outbox_events / inventory_consumption_log have been throwing ever since.
+        // 42P07 duplicate_table, 42710 duplicate_object, 42701 duplicate_column,
+        // 42P06 duplicate_schema, 42723 duplicate_function
+        const ALREADY_PRESENT = ['42P07', '42710', '42701', '42P06', '42723'];
+        if (ALREADY_PRESENT.includes(err && err.code)) {
+          console.log(`[db:migrate] ${file}: schema objects already present (${err.code}). Recorded migration state.`);
+          await client.query('INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT DO NOTHING', [file]);
+        } else {
+          console.error(`[db:migrate] ${file} FAILED and was NOT recorded as applied.`);
+          console.error(`[db:migrate]   ${err && err.code ? err.code + ': ' : ''}${err && err.message}`);
+          if (err && err.detail) console.error(`[db:migrate]   detail: ${err.detail}`);
+          if (err && err.hint) console.error(`[db:migrate]   hint: ${err.hint}`);
+          throw err;
+        }
       }
     }
 

@@ -64,15 +64,27 @@ function deriveFloorStatus(activeOrder: any): "RUNNING" | "RUNNING_KOT" | "PRINT
   return "RUNNING";
 }
 
+// Minutes a table session has been open - the Running Tables card shows this
+// as the "since" timer, so it is computed server-side against one clock rather
+// than each browser's.
+function elapsedMinutesSince(value: any): number | null {
+  if (!value) return null;
+  const started = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(started.getTime())) return null;
+  return Math.max(0, Math.floor((Date.now() - started.getTime()) / 60000));
+}
+
 function serializeCurrentOrder(activeOrder: any) {
   return {
     id: activeOrder.id,
     orderNumber: activeOrder.orderNumber,
     status: activeOrder.status,
     grandTotalPaise: Number(activeOrder.grandTotal || (activeOrder as any).grandTotalMinor || 0),
+    grandTotalMinor: String(activeOrder.grandTotal ?? (activeOrder as any).grandTotalMinor ?? 0),
     totalAmount: Number(activeOrder.grandTotal || (activeOrder as any).grandTotalMinor || 0) / 100,
     guestCount: (activeOrder as any).guestCount || null,
     createdAt: activeOrder.createdAt,
+    elapsedMinutes: elapsedMinutesSince(activeOrder.createdAt),
     kots: (activeOrder.kotTickets || []).map((k: any) => ({
       id: k.id,
       ticketNumber: k.ticketNumber,
@@ -304,6 +316,8 @@ tablesRouter.get("/tables", requireAuth, async (req: AuthedRequest, res) => {
           activeOrderId: null,
           active_order_id: null,
           currentOrder: null,
+          elapsedMinutes: null,
+          currentOrderAmountMinor: null,
           ...extra,
         };
       }
@@ -324,6 +338,8 @@ tablesRouter.get("/tables", requireAuth, async (req: AuthedRequest, res) => {
         activeOrderId: activeOrder.id,
         active_order_id: activeOrder.id,
         currentOrder: serializeCurrentOrder(activeOrder),
+        elapsedMinutes: elapsedMinutesSince(activeOrder.createdAt),
+        currentOrderAmountMinor: String(activeOrder.grandTotal ?? 0),
         ...extra,
       };
     });
@@ -529,7 +545,14 @@ tablesRouter.get("/tables/occupancy", requireAuth, async (req: AuthedRequest, re
       vacantTables: number;
       totalCapacity: number;
       occupiedCapacity: number;
+      estimatedRevenueMinor: bigint;
     }>();
+
+    // Money still sitting on the floor: grand totals of the open orders on
+    // occupied tables. Counted once per order id so a merge group whose member
+    // tables all resolve to the same anchor order is not double-counted.
+    let estimatedRevenueMinor = 0n;
+    const countedOrderIds = new Set<string>();
 
     for (const t of tables) {
       const isOccupied =
@@ -537,9 +560,18 @@ tablesRouter.get("/tables/occupancy", requireAuth, async (req: AuthedRequest, re
       const cap = t.capacity || 4;
       totalCapacity += cap;
 
+      let tableRevenueMinor = 0n;
       if (isOccupied) {
         occupiedTables += 1;
         occupiedCapacity += cap;
+        for (const ord of t.orders as any[]) {
+          if (!isLiveFloorSession(ord)) continue;
+          if (countedOrderIds.has(ord.id)) continue;
+          countedOrderIds.add(ord.id);
+          const amount = BigInt(ord.grandTotal ?? 0);
+          tableRevenueMinor += amount;
+          estimatedRevenueMinor += amount;
+        }
       }
 
       const secName = t.section || "Main Floor";
@@ -551,12 +583,14 @@ tablesRouter.get("/tables/occupancy", requireAuth, async (req: AuthedRequest, re
           vacantTables: 0,
           totalCapacity: 0,
           occupiedCapacity: 0,
+          estimatedRevenueMinor: 0n,
         });
       }
 
       const sec = sectionMap.get(secName)!;
       sec.totalTables += 1;
       sec.totalCapacity += cap;
+      sec.estimatedRevenueMinor += tableRevenueMinor;
       if (isOccupied) {
         sec.occupiedTables += 1;
         sec.occupiedCapacity += cap;
@@ -571,6 +605,7 @@ tablesRouter.get("/tables/occupancy", requireAuth, async (req: AuthedRequest, re
 
     const sections = Array.from(sectionMap.values()).map((s) => ({
       ...s,
+      estimatedRevenueMinor: s.estimatedRevenueMinor.toString(),
       occupancyRatePercent: s.totalTables > 0 ? Number(((s.occupiedTables / s.totalTables) * 100).toFixed(1)) : 0,
     }));
 
@@ -583,6 +618,7 @@ tablesRouter.get("/tables/occupancy", requireAuth, async (req: AuthedRequest, re
       totalCapacity,
       occupiedCapacity,
       capacityUtilizationPercent: Number(capacityUtilizationPercent.toFixed(1)),
+      estimatedRevenueMinor: estimatedRevenueMinor.toString(),
       sections,
     });
   } catch (err) {
