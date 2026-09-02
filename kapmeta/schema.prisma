@@ -1221,6 +1221,9 @@ model ingredients {
   updated_by           String?                @db.Uuid
   purchase_order_items purchase_order_items[]
   recipe_ingredients   recipe_ingredients[]
+  dailyStockClosingItems DailyStockClosingItem[]
+  stockPurchaseItems     StockPurchaseItem[]
+  stockConsumptionItems  StockConsumptionItem[]
 
   @@index([outlet_id], map: "idx_ingredients_outlet")
 }
@@ -1276,6 +1279,7 @@ model purchase_orders {
   updated_by           String?                @db.Uuid
   purchase_order_items purchase_order_items[]
   vendors              vendors                @relation(fields: [vendor_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  stockPurchases       StockPurchase[]
 
   @@unique([outlet_id, po_number])
   @@index([outlet_id], map: "idx_purchase_orders_outlet")
@@ -1328,6 +1332,7 @@ model vendors {
   created_by      String?           @db.Uuid
   updated_by      String?           @db.Uuid
   purchase_orders purchase_orders[]
+  stockPurchases  StockPurchase[]
 
   @@index([outlet_id], map: "idx_vendors_outlet")
 }
@@ -1494,4 +1499,135 @@ model ItemChannelPrice {
   @@index([outletId], map: "idx_item_channel_prices_outlet")
   @@index([itemId], map: "idx_item_channel_prices_item")
   @@map("item_channel_prices")
+}
+
+/// Backs the "Daily Stock Closing Tracker" screen -- one row per outlet per
+/// calendar day a closing was recorded (UNIQUE(outletId, closingDate)).
+/// verifiedByUserId is a plain scalar FK (not a Prisma relation) to stay
+/// consistent with the created_by/updated_by columns on ingredients/vendors
+/// elsewhere in this schema -- the users table is owned by the auth domain.
+/// See db/migrations/0042_inventory_stock_and_closing.sql for the source of
+/// truth on columns/constraints.
+model DailyStockClosing {
+  id                 String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  outletId           String                  @map("outlet_id") @db.Uuid
+  closingDate        DateTime                @map("closing_date") @db.Date
+  status             String                  @default("UPDATED") @map("status")
+  totalItemsChecked  Int                     @default(0) @map("total_items_checked")
+  totalVarianceMinor BigInt                  @default(0) @map("total_variance_minor")
+  notes              String?
+  verifiedByUserId   String?                 @map("verified_by") @db.Uuid
+  createdAt          DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  items              DailyStockClosingItem[]
+
+  @@unique([outletId, closingDate], map: "daily_stock_closings_outlet_id_closing_date_key")
+  @@index([outletId, closingDate], map: "idx_daily_stock_closings_outlet_date")
+  @@map("daily_stock_closings")
+}
+
+/// Per-ingredient line of a DailyStockClosing: opening/received/consumed vs.
+/// actual counted quantity, and the resulting variance valued at unitCostMinor.
+model DailyStockClosingItem {
+  id                 String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  closingId          String            @map("closing_id") @db.Uuid
+  ingredientId       String            @map("ingredient_id") @db.Uuid
+  openingQty         Decimal           @default(0) @map("opening_qty") @db.Decimal(12, 3)
+  receivedQty        Decimal           @default(0) @map("received_qty") @db.Decimal(12, 3)
+  consumedQty        Decimal           @default(0) @map("consumed_qty") @db.Decimal(12, 3)
+  expectedQty        Decimal           @default(0) @map("expected_qty") @db.Decimal(12, 3)
+  actualClosingQty   Decimal           @default(0) @map("actual_closing_qty") @db.Decimal(12, 3)
+  varianceQty        Decimal           @default(0) @map("variance_qty") @db.Decimal(12, 3)
+  unitCostMinor      BigInt            @default(0) @map("unit_cost_minor")
+  varianceCostMinor  BigInt            @default(0) @map("variance_cost_minor")
+  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  closing            DailyStockClosing @relation(fields: [closingId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  ingredient         ingredients       @relation(fields: [ingredientId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([closingId], map: "idx_daily_stock_closing_items_closing")
+  @@map("daily_stock_closing_items")
+}
+
+/// Backs the "Stock Purchase" list/detail screens -- one row per vendor
+/// invoice (UNIQUE(outletId, vendorId, invoiceNumber)). createdByUserId is a
+/// plain scalar FK for the same cross-domain reason as DailyStockClosing.verifiedByUserId.
+model StockPurchase {
+  id                    String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  outletId              String              @map("outlet_id") @db.Uuid
+  vendorId              String              @map("vendor_id") @db.Uuid
+  invoiceNumber         String              @map("invoice_number")
+  invoiceDate           DateTime            @default(now()) @map("invoice_date") @db.Date
+  totalAmountMinor      BigInt              @default(0) @map("total_amount_minor")
+  taxAmountMinor        BigInt              @default(0) @map("tax_amount_minor")
+  discountAmountMinor   BigInt              @default(0) @map("discount_amount_minor")
+  netAmountMinor        BigInt              @default(0) @map("net_amount_minor")
+  paymentStatus         String              @default("PAID") @map("payment_status")
+  paidAmountMinor       BigInt              @default(0) @map("paid_amount_minor")
+  paymentMode           String?             @default("BANK_TRANSFER") @map("payment_mode")
+  purchaseOrderId       String?             @map("purchase_order_id") @db.Uuid
+  notes                 String?
+  createdByUserId       String?             @map("created_by") @db.Uuid
+  createdAt             DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  vendor                vendors             @relation(fields: [vendorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  purchaseOrder         purchase_orders?    @relation(fields: [purchaseOrderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  items                 StockPurchaseItem[]
+
+  @@unique([outletId, vendorId, invoiceNumber], map: "stock_purchases_outlet_id_vendor_id_invoice_number_key")
+  @@index([outletId, invoiceDate], map: "idx_stock_purchases_outlet_date")
+  @@index([vendorId], map: "idx_stock_purchases_vendor")
+  @@map("stock_purchases")
+}
+
+/// Per-ingredient line of a StockPurchase invoice.
+model StockPurchaseItem {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  purchaseId      String        @map("purchase_id") @db.Uuid
+  ingredientId    String        @map("ingredient_id") @db.Uuid
+  quantity        Decimal       @db.Decimal(12, 3)
+  unitCostMinor   BigInt        @map("unit_cost_minor")
+  taxPercent      Decimal       @default(0) @map("tax_percent") @db.Decimal(5, 2)
+  totalMinor      BigInt        @map("total_minor")
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  purchase        StockPurchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  ingredient      ingredients   @relation(fields: [ingredientId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([purchaseId], map: "idx_stock_purchase_items_purchase")
+  @@map("stock_purchase_items")
+}
+
+/// Backs Consumption tracking (Sales, Transfer, Wastage, Adjustment) -- one
+/// row per consumption event, e.g. one per order's ingredient deduction batch
+/// or one per manual wastage/transfer entry. referenceId is a free-form
+/// pointer to the originating record (e.g. an order id) and is intentionally
+/// untyped since the source varies by type.
+model StockConsumption {
+  id               String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  outletId         String                 @map("outlet_id") @db.Uuid
+  type             String
+  referenceId      String?                @map("reference_id")
+  totalCostMinor   BigInt                 @default(0) @map("total_cost_minor")
+  notes            String?
+  createdByUserId  String?                @map("created_by") @db.Uuid
+  createdAt        DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  items            StockConsumptionItem[]
+
+  @@index([outletId, type], map: "idx_stock_consumptions_outlet")
+  @@map("stock_consumptions")
+}
+
+/// Per-ingredient line of a StockConsumption event.
+model StockConsumptionItem {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  consumptionId  String           @map("consumption_id") @db.Uuid
+  ingredientId   String           @map("ingredient_id") @db.Uuid
+  quantity       Decimal          @db.Decimal(12, 3)
+  costMinor      BigInt           @default(0) @map("cost_minor")
+  reason         String?
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  consumption    StockConsumption @relation(fields: [consumptionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  ingredient     ingredients      @relation(fields: [ingredientId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([consumptionId], map: "idx_stock_consumption_items_consumption")
+  @@map("stock_consumption_items")
 }

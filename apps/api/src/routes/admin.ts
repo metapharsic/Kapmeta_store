@@ -68,7 +68,7 @@ adminRouter.get(
   }
 );
 
-// GET /admin/agents/status — Live telemetry for all 8 agents queried from PostgreSQL agent_telemetry table
+// GET /admin/agents/status — Live telemetry for all agents queried from PostgreSQL agent_telemetry table (roster size is derived from the table, not hardcoded)
 adminRouter.get(
   "/agents/status",
   requireAuth,
@@ -126,7 +126,7 @@ adminRouter.get(
           metrics = { ...metrics, tablesActive: tableCount, menuItems: itemCount, registeredUsers: userCount };
         } else if (agent.id === "agent-backend" || agent.id === "agent-a2a") {
           latency = Math.max(1, Date.now() - startTime);
-        } else if (agent.id === "agent-sre") {
+        } else if (agent.id === "agent-qa-sre") {
           metrics = { ...metrics, memoryUsageMb: Math.round(process.memoryUsage().rss / 1024 / 1024), auditLogsTotal: auditCount };
         }
 
@@ -233,6 +233,7 @@ adminRouter.get(
         preparingKots,
         readyKots,
         servedKots,
+        agentRosterRows,
       ] = await Promise.all([
         prisma.diningTable.count({ where: { outletId, isActive: true } }),
         prisma.diningTable.count({ where: { outletId, isActive: true, status: "OCCUPIED" } }),
@@ -256,7 +257,18 @@ adminRouter.get(
         prisma.kOTTicket.count({ where: { outletId, status: "PREPARING" } }),
         prisma.kOTTicket.count({ where: { outletId, status: "READY" } }),
         prisma.kOTTicket.count({ where: { outletId, status: "SERVED" } }),
+        // Roster size is derived from the live agent_telemetry table, never hardcoded —
+        // falls back to an empty roster (0/0) if the table is unavailable.
+        prisma
+          .$queryRawUnsafe<any[]>(`SELECT status FROM agent_telemetry`)
+          .catch((err) => {
+            console.warn("Could not query agent_telemetry for daily-operations agent counts:", err);
+            return [] as any[];
+          }),
       ]);
+
+      const agentTotalCount = agentRosterRows.length;
+      const agentOnlineCount = agentRosterRows.filter((a: any) => a.status === "ONLINE").length;
 
       const liveSalesPaise = activeOrders.reduce((acc, o) => acc + BigInt(o.grandTotal || 0), BigInt(0));
       const settledTodayOrders = allTodayOrders.filter((o) => o.status === "PAID" || o.status === "SETTLED" || o.status === "COMPLETED");
@@ -294,8 +306,8 @@ adminRouter.get(
           avgSlaSeconds: 210,
         },
         agents: {
-          total: 8,
-          online: 8,
+          total: agentTotalCount,
+          online: agentOnlineCount,
           status: "OPERATIONAL",
           protocol: "A2A v2.0",
         },

@@ -27,6 +27,16 @@ export async function provisionAgentTelemetry() {
   `);
   console.log("notifications table verified with updated_at.");
 
+  // NOTE: The roster was previously 8 rows, with QA (agent-qa) and SRE (agent-sre)
+  // seeded as two separate agents. They are now consolidated into a single
+  // "QA & SRE Agent" row (id: agent-qa-sre) covering both verification/testing
+  // and logging/health/diagnostics. Drop any legacy rows left over from a prior
+  // run of this script so re-running it against an already-provisioned database
+  // converges on the current 7-agent roster instead of leaving stale 8th/9th rows.
+  await prisma.$executeRawUnsafe(
+    `DELETE FROM agent_telemetry WHERE id IN ('agent-qa', 'agent-sre')`
+  );
+
   const agents = [
     {
       id: "agent-orchestrator",
@@ -51,7 +61,7 @@ export async function provisionAgentTelemetry() {
       latencyMs: 2,
       health: "Passing",
       currentTask: "Routing inter-agent WebSocket topics and aggregating live telemetry",
-      metrics: { activeAgents: 8, protocolVersion: "2.0", syncChannels: ["HTTP", "WS", "REGISTRY"] },
+      metrics: { activeAgents: 7, protocolVersion: "2.0", syncChannels: ["HTTP", "WS", "REGISTRY"] },
       assignedFiles: ["agents/a2a-agent.md", "agents/AGENT_REGISTRY.json", "agents/task-board.json", "apps/api/src/routes/admin.ts", "apps/pos-web/pages/admin.tsx"],
     },
     {
@@ -107,30 +117,17 @@ export async function provisionAgentTelemetry() {
       assignedFiles: ["services/integration-hub/*", "services/integration/*"],
     },
     {
-      id: "agent-qa",
-      name: "QA & Verification Agent",
-      role: "TEST_ENGINEER",
+      id: "agent-qa-sre",
+      name: "QA & SRE Agent",
+      role: "QA_SRE_ENGINEER",
       status: "ONLINE",
-      domain: "Unit Tests, Contract Validation & E2E Simulation",
+      domain: "Verification & Testing (Unit/Contract/E2E) plus Logging, Process Monitoring & Diagnostics",
       port: 4001,
       latencyMs: 5,
       health: "Passing",
-      currentTask: "Running vitest suites, type validation, and pilot simulation drills",
-      metrics: { testsPassing: 55, pilotDrills: "ENABLED", e2eValidation: true },
-      assignedFiles: ["tests/*", "scripts/pilot-e2e-simulation.ts", "vitest.config.ts"],
-    },
-    {
-      id: "agent-sre",
-      name: "SRE & Diagnostics Agent",
-      role: "SRE_ENGINEER",
-      status: "ONLINE",
-      domain: "Log Management, Process Monitoring & Diagnostics",
-      port: 4001,
-      latencyMs: 2,
-      health: "Passing",
-      currentTask: "Monitoring logs/ directory, service heartbeats, and error traces",
-      metrics: { logScanner: "active", healthChecksPassing: true },
-      assignedFiles: ["logs/*", "scripts/status.ts"],
+      currentTask: "Running vitest suites, type validation & pilot simulation drills while monitoring logs/ directory, service heartbeats and error traces",
+      metrics: { testsPassing: 55, pilotDrills: "ENABLED", e2eValidation: true, logScanner: "active", healthChecksPassing: true },
+      assignedFiles: ["tests/*", "scripts/pilot-e2e-simulation.ts", "vitest.config.ts", "logs/*", "scripts/status.ts"],
     },
   ];
 

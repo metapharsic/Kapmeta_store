@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from "react";
 import Head from "next/head";
 import Link from "next/link";
 import { authedFetch, useAuthGuard } from "../lib/auth";
-import Nav from "../components/Nav";
+import InventoryHeader from "../components/inventory/InventoryHeader";
+import InventorySidebar from "../components/inventory/InventorySidebar";
 
 interface ItemAvailability {
   id: string; // menuItemId, used as the row key and for PATCH calls
@@ -121,11 +122,132 @@ function mapApiRow(row: AvailabilityApiRow): ItemAvailability {
   };
 }
 
-type TabType = "AVAILABILITY" | "INGREDIENTS" | "RECIPES" | "PROCUREMENT";
+type TabType = "DASHBOARD" | "AVAILABILITY" | "INGREDIENTS" | "RECIPES" | "PROCUREMENT";
+
+// Real response shape of GET /inventory/dashboard/summary
+// (apps/api/src/routes/inventory.ts). Every field here is a genuine
+// aggregate from PostgreSQL for the requested month/year — no fabricated
+// fallbacks; nullable fields (highestProfitItem/leastProfitItem) stay null
+// when there isn't enough real data to compute them.
+interface DashboardDayProgress {
+  day: number;
+  status: "UPDATED" | "MISSED" | "TODAY" | "UPCOMING";
+}
+
+interface DashboardSummary {
+  dailyStockClosingTracker: {
+    updateAccuracyPercent: number;
+    isUpToDate: boolean;
+    daysUpdatedCount: number;
+    daysMissedCount: number;
+    monthName: string;
+    year: number;
+    totalDaysInMonth: number;
+    dayProgress: DashboardDayProgress[];
+  };
+  inventoryOverview: {
+    rawMaterialsCount: number;
+    recipesCount: number;
+    readyToAddCount: number;
+    readyToAddRecipesCount: number;
+  };
+  currentInventory: {
+    totalStockWorthMinor: string;
+    totalStockWorthFormatted: string;
+    lowStockPercent: number;
+    lowStockAlerts: {
+      id: string;
+      name: string;
+      currentStock: number;
+      unit: string;
+      reorderLevel: number;
+      daysRemaining: number;
+      category: string;
+    }[];
+    categoryDistribution: { category: string; count: number; valueFormatted: string }[];
+  };
+  cogsBreakdown: {
+    totalCogsMinor: string;
+    totalCogsFormatted: string;
+    highestProfitItem: { name: string; description: string } | null;
+    leastProfitItem: { name: string; description: string } | null;
+    ingredientCogs: { name: string; costMinor: string; costFormatted: string }[];
+  };
+  purchaseInsights: {
+    totalPurchaseMinor: string;
+    totalPurchaseFormatted: string;
+    pendingPaymentMinor: string;
+    pendingPaymentFormatted: string;
+    priceTrends: { name: string; prices: number[] }[];
+    supplierWise: {
+      id: string;
+      name: string;
+      currentPurchaseFormatted: string;
+      pendingPaymentFormatted: string;
+    }[];
+  };
+  pendingTasks: {
+    totalCount: number;
+    orders: {
+      id: string;
+      poNumber: string;
+      vendorName: string;
+      amountFormatted: string;
+      status: string;
+      createdAt: string;
+    }[];
+  };
+}
+
+const DASHBOARD_DAY_STATUS_COLOR: Record<DashboardDayProgress["status"], string> = {
+  UPDATED: "var(--accent)",
+  MISSED: "var(--destructive)",
+  TODAY: "var(--warning)",
+  UPCOMING: "var(--border)",
+};
+
+/** Dependency-free inline-SVG sparkline for a small series of prices (major
+ * units). Colours the line by direction: a rising cost is flagged with
+ * `--destructive`, a falling/stable one with `--accent` — no chart library
+ * is available to this app (external CDNs are blocked). */
+function PriceSparkline({ values }: { values: number[] }) {
+  const w = 100;
+  const h = 28;
+  const pad = 3;
+  if (!values || values.length === 0) {
+    return <span style={{ fontSize: "0.6875rem", color: "var(--text-secondary)" }}>No data</span>;
+  }
+  if (values.length === 1) {
+    return <span style={{ fontSize: "0.6875rem", color: "var(--text-secondary)" }}>Flat</span>;
+  }
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const stepX = (w - pad * 2) / (values.length - 1);
+  const points = values.map((v, i) => {
+    const x = pad + i * stepX;
+    const y = pad + (h - pad * 2) * (1 - (v - min) / range);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const rising = values[values.length - 1] > values[0];
+  const stroke = rising ? "var(--destructive)" : "var(--accent)";
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} role="img" aria-label="Unit cost trend">
+      <polyline
+        points={points.join(" ")}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={1.75}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
 
 export default function InventoryDashboard() {
   const { me, loading: authLoading } = useAuthGuard("menu.read");
-  const [activeTab, setActiveTab] = useState<TabType>("AVAILABILITY");
+  const [activeTab, setActiveTab] = useState<TabType>("DASHBOARD");
 
   // Availability State
   const [items, setItems] = useState<ItemAvailability[]>([]);
@@ -192,6 +314,22 @@ export default function InventoryDashboard() {
   const [editPoLines, setEditPoLines] = useState<{ ingredientId: string; quantity: number; unitPrice: number }[]>([]);
   const [savingPoEdit, setSavingPoEdit] = useState(false);
   const [cancellingPoId, setCancellingPoId] = useState<string | null>(null);
+
+  // Dashboard tab state
+  const [dashboardData, setDashboardData] = useState<DashboardSummary | null>(null);
+  const [dashboardLoading, setDashboardLoading] = useState(true);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
+  const now = useMemo(() => new Date(), []);
+  const [dashMonth, setDashMonth] = useState<number>(now.getMonth() + 1);
+  const [dashYear, setDashYear] = useState<number>(now.getFullYear());
+
+  // Daily closing modal state (POST /inventory/closing-tracker). Line items
+  // reuse the same `ingredients` list already fetched for the INGREDIENTS
+  // tab rather than a second fetch.
+  const [showClosingModal, setShowClosingModal] = useState(false);
+  const [closingQtyById, setClosingQtyById] = useState<Record<string, string>>({});
+  const [submittingClosing, setSubmittingClosing] = useState(false);
+  const [actionNotice, setActionNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   const fetchAvailability = () => {
     setLoading(true);
@@ -265,10 +403,99 @@ export default function InventoryDashboard() {
     fetchVendorsAndPOs();
   }, [authLoading]);
 
+  const fetchDashboardSummary = async (month: number, year: number) => {
+    setDashboardLoading(true);
+    setDashboardError(null);
+    try {
+      const res = await authedFetch(`/inventory/dashboard/summary?month=${month}&year=${year}`);
+      if (res.ok) {
+        setDashboardData(await res.json());
+      } else {
+        setDashboardError("Failed to load the inventory dashboard summary.");
+      }
+    } catch (e) {
+      console.error("Error fetching dashboard summary:", e);
+      setDashboardError("Network error loading the inventory dashboard summary.");
+    } finally {
+      setDashboardLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (authLoading) return;
+    fetchDashboardSummary(dashMonth, dashYear);
+  }, [authLoading, dashMonth, dashYear]);
+
+  const openClosingModal = () => {
+    // Pre-fill every raw ingredient's closing qty with its current stock —
+    // an untouched row submits as "no variance" rather than being silently
+    // dropped from the closing.
+    const prefill: Record<string, string> = {};
+    for (const ing of ingredients) {
+      prefill[ing.id] = String(ing.currentStock);
+    }
+    setClosingQtyById(prefill);
+    setActionNotice(null);
+    setShowClosingModal(true);
+  };
+
+  const handleSubmitClosing = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmittingClosing(true);
+    try {
+      const items = ingredients.map((ing) => ({
+        ingredientId: ing.id,
+        openingQty: ing.currentStock,
+        actualClosingQty: parseFloat(closingQtyById[ing.id] ?? String(ing.currentStock)) || 0,
+        unitCostMinor: Math.round((ing.unitCost || 0) * 100),
+      }));
+      const res = await authedFetch("/inventory/closing-tracker", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items }),
+      });
+      if (res.ok) {
+        setShowClosingModal(false);
+        setActionNotice({ type: "success", message: "Today's stock closing was submitted successfully." });
+        await Promise.all([fetchDashboardSummary(dashMonth, dashYear), fetchIngredients()]);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setActionNotice({ type: "error", message: err.error || "Failed to submit today's closing." });
+      }
+    } catch (e) {
+      setActionNotice({ type: "error", message: "Network error submitting today's closing." });
+    } finally {
+      setSubmittingClosing(false);
+    }
+  };
+
+  const goToPrevMonth = () => {
+    if (dashMonth === 1) {
+      setDashMonth(12);
+      setDashYear((y) => y - 1);
+    } else {
+      setDashMonth((m) => m - 1);
+    }
+  };
+
+  const goToNextMonth = () => {
+    if (dashMonth === 12) {
+      setDashMonth(1);
+      setDashYear((y) => y + 1);
+    } else {
+      setDashMonth((m) => m + 1);
+    }
+  };
+
   const categories = useMemo(() => {
     const set = new Set(items.map((i) => i.category));
     return ["All", ...Array.from(set)];
   }, [items]);
+
+  const categoryMax = useMemo(() => {
+    if (!dashboardData) return 1;
+    return Math.max(1, ...dashboardData.currentInventory.categoryDistribution.map((c) => c.count));
+  }, [dashboardData]);
 
   const patchAvailability = async (id: string, isStocked: boolean, stockQty: number, expectedVersion: number) => {
     // Optimistically update local state immediately
@@ -695,9 +922,11 @@ export default function InventoryDashboard() {
       <Head>
         <title>Inventory & Supply Chain - KapMeta POS</title>
       </Head>
-      <Nav variant="sidebar" />
+      <InventorySidebar currentOutletName={me?.outlet?.name || (authLoading ? "Loading..." : "")} />
 
       <div className="flex-1 flex flex-col min-w-0 p-6 overflow-y-auto">
+        <InventoryHeader />
+
         {/* Top Header */}
         <div className="flex flex-wrap items-center justify-between gap-4 mb-6 border-b border-slate-800 pb-4">
           <div>
@@ -709,6 +938,14 @@ export default function InventoryDashboard() {
 
           {/* Navigation Tabs */}
           <div className="flex items-center bg-slate-900 border border-slate-800 p-1 rounded-xl">
+            <button
+              onClick={() => setActiveTab("DASHBOARD")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                activeTab === "DASHBOARD" ? "bg-indigo-600 text-white shadow" : "text-slate-400 hover:text-white"
+              }`}
+            >
+              📊 Dashboard
+            </button>
             <button
               onClick={() => setActiveTab("AVAILABILITY")}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
@@ -743,6 +980,788 @@ export default function InventoryDashboard() {
             </button>
           </div>
         </div>
+
+        {/* TAB 0: DASHBOARD — GET /inventory/dashboard/summary. Every figure
+            rendered here is a real aggregate from the backend; nullable
+            fields (highestProfitItem/leastProfitItem) get an honest
+            "not enough data" state instead of being hidden or zeroed. */}
+        {activeTab === "DASHBOARD" && (
+          <div className="dashboard-tab-root">
+            {actionNotice && (
+              <div className={`dash-notice ${actionNotice.type}`}>
+                <span>{actionNotice.message}</span>
+                <button type="button" onClick={() => setActionNotice(null)} aria-label="Dismiss">✕</button>
+              </div>
+            )}
+
+            {dashboardLoading && !dashboardData ? (
+              <div className="dash-loading-state">Loading inventory dashboard…</div>
+            ) : dashboardError && !dashboardData ? (
+              <div className="dash-loading-state">{dashboardError}</div>
+            ) : dashboardData ? (
+              <div className="dash-grid">
+                {/* A. Daily Stock Closing Tracker */}
+                <section className="dash-card dash-card-wide">
+                  <div className="dash-card-header">
+                    <h2>Daily Stock Closing Tracker</h2>
+                    <div className="dash-month-nav">
+                      <button type="button" onClick={goToPrevMonth} aria-label="Previous month">‹</button>
+                      <span>
+                        {dashboardData.dailyStockClosingTracker.monthName} {dashboardData.dailyStockClosingTracker.year}
+                      </span>
+                      <button type="button" onClick={goToNextMonth} aria-label="Next month">›</button>
+                    </div>
+                  </div>
+
+                  <div className="dash-calendar-grid">
+                    {dashboardData.dailyStockClosingTracker.dayProgress.map((d) => (
+                      <span
+                        key={d.day}
+                        className="dash-day-dot"
+                        title={`Day ${d.day}: ${d.status}`}
+                        style={{ background: DASHBOARD_DAY_STATUS_COLOR[d.status] }}
+                      >
+                        {d.day}
+                      </span>
+                    ))}
+                  </div>
+
+                  <div className="dash-legend">
+                    <span><i style={{ background: "var(--accent)" }} /> Updated</span>
+                    <span><i style={{ background: "var(--destructive)" }} /> Missed</span>
+                    <span><i style={{ background: "var(--warning)" }} /> Today</span>
+                    <span><i style={{ background: "var(--border)" }} /> Upcoming</span>
+                  </div>
+
+                  <div className="dash-progress-row">
+                    <div className="dash-progress-track">
+                      <div
+                        className="dash-progress-fill"
+                        style={{ width: `${dashboardData.dailyStockClosingTracker.updateAccuracyPercent}%` }}
+                      />
+                    </div>
+                    <span className="dash-progress-label">
+                      {dashboardData.dailyStockClosingTracker.updateAccuracyPercent}% on-time
+                    </span>
+                  </div>
+                  <p className="dash-subtext">
+                    {dashboardData.dailyStockClosingTracker.daysUpdatedCount} updated ·{" "}
+                    {dashboardData.dailyStockClosingTracker.daysMissedCount} missed of{" "}
+                    {dashboardData.dailyStockClosingTracker.totalDaysInMonth} days this month
+                  </p>
+
+                  <button
+                    type="button"
+                    className="dash-primary-btn"
+                    onClick={openClosingModal}
+                    disabled={ingredients.length === 0}
+                  >
+                    Update Today's Closing
+                  </button>
+                  {ingredients.length === 0 && (
+                    <p className="dash-hint">Add raw ingredients first to record a closing.</p>
+                  )}
+                </section>
+
+                {/* B. Inventory Overview */}
+                <section className="dash-card">
+                  <h2>Inventory Overview</h2>
+                  <div className="dash-stat-row">
+                    <div className="dash-stat">
+                      <span className="dash-stat-value">{dashboardData.inventoryOverview.rawMaterialsCount}</span>
+                      <span className="dash-stat-label">Raw Materials</span>
+                    </div>
+                    <div className="dash-stat">
+                      <span className="dash-stat-value">{dashboardData.inventoryOverview.recipesCount}</span>
+                      <span className="dash-stat-label">Recipes</span>
+                    </div>
+                    <div className="dash-stat">
+                      <span className="dash-stat-value">{dashboardData.inventoryOverview.readyToAddRecipesCount}</span>
+                      <span className="dash-stat-label">Ready to Add Recipes</span>
+                    </div>
+                  </div>
+                </section>
+
+                {/* C. Current Inventory */}
+                <section className="dash-card">
+                  <h2>Current Inventory</h2>
+                  <div className="dash-stat-row">
+                    <div className="dash-stat">
+                      <span className="dash-stat-value">{dashboardData.currentInventory.totalStockWorthFormatted}</span>
+                      <span className="dash-stat-label">Total Stock Worth</span>
+                    </div>
+                    <div className="dash-stat">
+                      <span className="dash-stat-value">{dashboardData.currentInventory.lowStockPercent}%</span>
+                      <span className="dash-stat-label">Low Stock</span>
+                    </div>
+                  </div>
+
+                  {dashboardData.currentInventory.lowStockAlerts.length > 0 ? (
+                    <ul className="dash-list">
+                      {dashboardData.currentInventory.lowStockAlerts.map((a) => (
+                        <li key={a.id} className="dash-list-row">
+                          <span>{a.name}</span>
+                          <span className="dash-list-meta">
+                            {a.currentStock} {a.unit} · ~{a.daysRemaining}d left
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="dash-empty-text">No ingredients below reorder level.</p>
+                  )}
+
+                  {dashboardData.currentInventory.categoryDistribution.length > 0 && (
+                    <div className="dash-bar-list">
+                      {dashboardData.currentInventory.categoryDistribution.map((c) => (
+                        <div key={c.category} className="dash-bar-row">
+                          <span className="dash-bar-label">{c.category} ({c.count})</span>
+                          <div className="dash-bar-track">
+                            <div
+                              className="dash-bar-fill"
+                              style={{ width: `${(c.count / categoryMax) * 100}%` }}
+                            />
+                          </div>
+                          <span className="dash-bar-value">{c.valueFormatted}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                {/* D. COGS Breakdown */}
+                <section className="dash-card">
+                  <h2>COGS Breakdown</h2>
+                  <div className="dash-stat-row">
+                    <div className="dash-stat">
+                      <span className="dash-stat-value">{dashboardData.cogsBreakdown.totalCogsFormatted}</span>
+                      <span className="dash-stat-label">Total COGS</span>
+                    </div>
+                  </div>
+
+                  <div className="dash-profit-row">
+                    <div className="dash-profit-card">
+                      <span className="dash-profit-title">Highest Profit Item</span>
+                      {dashboardData.cogsBreakdown.highestProfitItem ? (
+                        <span className="dash-profit-name">{dashboardData.cogsBreakdown.highestProfitItem.name}</span>
+                      ) : (
+                        <span className="dash-empty-text">Not enough recipe data yet to compute margins.</span>
+                      )}
+                    </div>
+                    <div className="dash-profit-card">
+                      <span className="dash-profit-title">Least Profit Item</span>
+                      {dashboardData.cogsBreakdown.leastProfitItem ? (
+                        <span className="dash-profit-name">{dashboardData.cogsBreakdown.leastProfitItem.name}</span>
+                      ) : (
+                        <span className="dash-empty-text">Not enough recipe data yet to compute margins.</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {dashboardData.cogsBreakdown.ingredientCogs.length > 0 ? (
+                    <ul className="dash-list">
+                      {dashboardData.cogsBreakdown.ingredientCogs.map((c) => (
+                        <li key={c.name} className="dash-list-row">
+                          <span>{c.name}</span>
+                          <span className="dash-list-meta">{c.costFormatted}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="dash-empty-text">No ingredient consumption recorded yet.</p>
+                  )}
+                </section>
+
+                {/* E. Purchase Insights */}
+                <section className="dash-card dash-card-wide">
+                  <h2>Purchase Insights</h2>
+                  <div className="dash-stat-row">
+                    <div className="dash-stat">
+                      <span className="dash-stat-value">{dashboardData.purchaseInsights.totalPurchaseFormatted}</span>
+                      <span className="dash-stat-label">Total Purchases</span>
+                    </div>
+                    <div className="dash-stat">
+                      <span className="dash-stat-value">{dashboardData.purchaseInsights.pendingPaymentFormatted}</span>
+                      <span className="dash-stat-label">Pending Payment</span>
+                    </div>
+                  </div>
+
+                  {dashboardData.purchaseInsights.priceTrends.length > 0 && (
+                    <div className="dash-trend-list">
+                      {dashboardData.purchaseInsights.priceTrends.map((t) => (
+                        <div key={t.name} className="dash-trend-row">
+                          <span className="dash-trend-name">{t.name}</span>
+                          <PriceSparkline values={t.prices} />
+                          <span className="dash-trend-value">₹{t.prices[t.prices.length - 1]}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {dashboardData.purchaseInsights.supplierWise.length > 0 ? (
+                    <ul className="dash-list">
+                      {dashboardData.purchaseInsights.supplierWise.map((s) => (
+                        <li key={s.id} className="dash-list-row">
+                          <span>{s.name}</span>
+                          <span className="dash-list-meta">
+                            {s.currentPurchaseFormatted} · Pending {s.pendingPaymentFormatted}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="dash-empty-text">No vendor purchase history yet.</p>
+                  )}
+                </section>
+
+                {/* F. Pending Tasks */}
+                <section className="dash-card">
+                  <h2>Pending Tasks</h2>
+                  {dashboardData.pendingTasks.totalCount === 0 ? (
+                    <p className="dash-empty-text">No pending purchase orders.</p>
+                  ) : dashboardData.pendingTasks.orders.length === 0 ? (
+                    <p className="dash-empty-text">
+                      {dashboardData.pendingTasks.totalCount} pending order(s), but details could not be loaded.
+                    </p>
+                  ) : (
+                    <ul className="dash-list">
+                      {dashboardData.pendingTasks.orders.map((o) => (
+                        <li key={o.id} className="dash-list-row">
+                          <span>{o.poNumber} · {o.vendorName}</span>
+                          <span className="dash-list-meta">{o.amountFormatted} · {o.status}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              </div>
+            ) : (
+              <div className="dash-loading-state">No dashboard data available.</div>
+            )}
+
+            <style jsx>{`
+              .dashboard-tab-root {
+                background: var(--bg-base);
+                border: 1px solid var(--border);
+                border-radius: var(--radius-lg);
+                padding: 20px;
+              }
+              .dash-notice {
+                padding: 10px 14px;
+                border-radius: var(--radius-md);
+                font-size: 0.8125rem;
+                font-weight: 600;
+                margin-bottom: 14px;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 10px;
+              }
+              .dash-notice.success {
+                background: var(--accent-subtle);
+                color: var(--accent-subtle-text);
+              }
+              .dash-notice.error {
+                background: var(--destructive-subtle);
+                color: var(--destructive-text);
+              }
+              .dash-notice button {
+                background: none;
+                border: none;
+                cursor: pointer;
+                color: inherit;
+                font-weight: 700;
+                font-size: 0.875rem;
+              }
+              .dash-loading-state {
+                padding: 40px;
+                text-align: center;
+                color: var(--text-secondary);
+                font-size: 0.875rem;
+              }
+              .dash-grid {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 16px;
+              }
+              .dash-card-wide {
+                grid-column: 1 / -1;
+              }
+              .dash-card {
+                background: var(--bg-card);
+                border: 1px solid var(--border);
+                border-radius: var(--radius-md);
+                padding: 16px;
+                box-shadow: var(--shadow-card);
+              }
+              .dash-card h2 {
+                margin: 0 0 12px;
+                font-size: 0.9375rem;
+                font-weight: 800;
+                color: var(--text-primary);
+              }
+              .dash-card-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                flex-wrap: wrap;
+                gap: 10px;
+                margin-bottom: 12px;
+              }
+              .dash-card-header h2 {
+                margin: 0;
+              }
+              .dash-month-nav {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                font-size: 0.8125rem;
+                font-weight: 700;
+                color: var(--text-secondary);
+              }
+              .dash-month-nav button {
+                width: 24px;
+                height: 24px;
+                border-radius: var(--radius-sm);
+                border: 1px solid var(--border);
+                background: var(--bg-subtle);
+                cursor: pointer;
+                font-weight: 700;
+                color: var(--text-primary);
+                transition: background 0.15s ease;
+              }
+              .dash-month-nav button:hover {
+                background: var(--bg-hover);
+              }
+              .dash-month-nav button:focus-visible {
+                outline: 2px solid var(--accent);
+                outline-offset: 1px;
+              }
+              .dash-calendar-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(26px, 1fr));
+                gap: 4px;
+                margin-bottom: 10px;
+              }
+              .dash-day-dot {
+                aspect-ratio: 1;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: var(--radius-sm);
+                font-size: 0.625rem;
+                font-weight: 700;
+                color: #ffffff;
+                cursor: default;
+              }
+              .dash-legend {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 12px;
+                font-size: 0.6875rem;
+                color: var(--text-secondary);
+                margin-bottom: 14px;
+              }
+              .dash-legend span {
+                display: flex;
+                align-items: center;
+                gap: 5px;
+              }
+              .dash-legend i {
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                display: inline-block;
+              }
+              .dash-progress-row {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                margin-bottom: 4px;
+              }
+              .dash-progress-track {
+                flex: 1;
+                height: 8px;
+                border-radius: var(--radius-pill);
+                background: var(--bg-subtle);
+                overflow: hidden;
+              }
+              .dash-progress-fill {
+                height: 100%;
+                background: var(--accent);
+                border-radius: var(--radius-pill);
+                transition: width 0.3s ease;
+              }
+              .dash-progress-label {
+                font-size: 0.75rem;
+                font-weight: 700;
+                color: var(--text-primary);
+                white-space: nowrap;
+              }
+              .dash-subtext {
+                font-size: 0.75rem;
+                color: var(--text-secondary);
+                margin: 4px 0 14px;
+              }
+              .dash-hint {
+                font-size: 0.75rem;
+                color: var(--text-secondary);
+                margin-top: 6px;
+              }
+              .dash-primary-btn {
+                background: var(--dark-btn);
+                color: #ffffff;
+                border: none;
+                padding: 10px 18px;
+                border-radius: var(--radius-md);
+                font-size: 0.8125rem;
+                font-weight: 700;
+                cursor: pointer;
+                transition: background 0.15s ease;
+              }
+              .dash-primary-btn:hover:not(:disabled) {
+                background: var(--dark-btn-hover);
+              }
+              .dash-primary-btn:focus-visible {
+                outline: 2px solid var(--accent);
+                outline-offset: 2px;
+              }
+              .dash-primary-btn:disabled {
+                opacity: 0.5;
+                cursor: not-allowed;
+              }
+              .dash-stat-row {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 16px;
+                margin-bottom: 14px;
+              }
+              .dash-stat {
+                display: flex;
+                flex-direction: column;
+                gap: 2px;
+              }
+              .dash-stat-value {
+                font-size: 1.25rem;
+                font-weight: 800;
+                color: var(--text-primary);
+              }
+              .dash-stat-label {
+                font-size: 0.6875rem;
+                font-weight: 600;
+                color: var(--text-secondary);
+                text-transform: uppercase;
+                letter-spacing: 0.03em;
+              }
+              .dash-list {
+                list-style: none;
+                margin: 0;
+                padding: 0;
+                display: flex;
+                flex-direction: column;
+              }
+              .dash-list-row {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 10px;
+                min-height: 36px;
+                padding: 6px 0;
+                border-top: 1px solid var(--border-subtle);
+                font-size: 0.8125rem;
+                color: var(--text-primary);
+              }
+              .dash-list-row:first-child {
+                border-top: none;
+              }
+              .dash-list-meta {
+                font-size: 0.75rem;
+                color: var(--text-secondary);
+                white-space: nowrap;
+              }
+              .dash-empty-text {
+                font-size: 0.8125rem;
+                color: var(--text-secondary);
+                padding: 10px 0;
+              }
+              .dash-bar-list {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                margin-top: 14px;
+              }
+              .dash-bar-row {
+                display: grid;
+                grid-template-columns: 1fr 2fr auto;
+                align-items: center;
+                gap: 8px;
+              }
+              .dash-bar-label {
+                font-size: 0.75rem;
+                color: var(--text-primary);
+                font-weight: 600;
+              }
+              .dash-bar-track {
+                height: 8px;
+                border-radius: var(--radius-pill);
+                background: var(--bg-subtle);
+                overflow: hidden;
+              }
+              .dash-bar-fill {
+                height: 100%;
+                background: var(--blue-text);
+                border-radius: var(--radius-pill);
+              }
+              .dash-bar-value {
+                font-size: 0.75rem;
+                color: var(--text-secondary);
+                white-space: nowrap;
+              }
+              .dash-profit-row {
+                display: flex;
+                gap: 12px;
+                margin-bottom: 14px;
+                flex-wrap: wrap;
+              }
+              .dash-profit-card {
+                flex: 1;
+                min-width: 160px;
+                background: var(--bg-subtle);
+                border-radius: var(--radius-md);
+                padding: 10px 12px;
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+              }
+              .dash-profit-title {
+                font-size: 0.6875rem;
+                font-weight: 700;
+                color: var(--text-secondary);
+                text-transform: uppercase;
+                letter-spacing: 0.03em;
+              }
+              .dash-profit-name {
+                font-size: 0.875rem;
+                font-weight: 800;
+                color: var(--accent-subtle-text);
+              }
+              .dash-trend-list {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                margin-bottom: 14px;
+              }
+              .dash-trend-row {
+                display: grid;
+                grid-template-columns: 1fr auto auto;
+                align-items: center;
+                gap: 10px;
+                min-height: 36px;
+                border-top: 1px solid var(--border-subtle);
+                padding: 4px 0;
+              }
+              .dash-trend-row:first-child {
+                border-top: none;
+              }
+              .dash-trend-name {
+                font-size: 0.8125rem;
+                color: var(--text-primary);
+                font-weight: 600;
+              }
+              .dash-trend-value {
+                font-size: 0.75rem;
+                color: var(--text-secondary);
+                font-weight: 700;
+                white-space: nowrap;
+              }
+              @media (max-width: 900px) {
+                .dash-grid {
+                  grid-template-columns: 1fr;
+                }
+              }
+              @media (prefers-reduced-motion: reduce) {
+                .dash-progress-fill,
+                .dash-primary-btn,
+                .dash-month-nav button {
+                  transition: none;
+                }
+              }
+            `}</style>
+          </div>
+        )}
+
+        {/* Update Today's Closing modal — POST /inventory/closing-tracker.
+            A standalone sibling (not nested in the DASHBOARD conditional) so
+            it keeps its own scoped styles regardless of which tab is active
+            while it's open. */}
+        {showClosingModal && (
+          <div className="dash-modal-backdrop" onClick={() => setShowClosingModal(false)}>
+            <div className="dash-modal-card" onClick={(e) => e.stopPropagation()}>
+              <div className="dash-modal-header">
+                <h3>Update Today's Closing</h3>
+                <button type="button" onClick={() => setShowClosingModal(false)} aria-label="Close">✕</button>
+              </div>
+              <form onSubmit={handleSubmitClosing}>
+                <div className="dash-modal-body">
+                  {ingredients.length === 0 ? (
+                    <p className="dash-empty-text">No raw ingredients to close. Add ingredients first.</p>
+                  ) : (
+                    <table className="dash-closing-table">
+                      <thead>
+                        <tr>
+                          <th>Ingredient</th>
+                          <th>Opening (current)</th>
+                          <th>Actual Closing Qty</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ingredients.map((ing) => (
+                          <tr key={ing.id}>
+                            <td>
+                              {ing.name} <span className="dash-list-meta">({ing.unitOfMeasure})</span>
+                            </td>
+                            <td>{ing.currentStock}</td>
+                            <td>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={closingQtyById[ing.id] ?? ""}
+                                onChange={(e) =>
+                                  setClosingQtyById((prev) => ({ ...prev, [ing.id]: e.target.value }))
+                                }
+                                className="dash-closing-input"
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+                <div className="dash-modal-footer">
+                  <button type="button" onClick={() => setShowClosingModal(false)} className="dash-secondary-btn">
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submittingClosing || ingredients.length === 0}
+                    className="dash-primary-btn"
+                  >
+                    {submittingClosing ? "Submitting..." : "Submit Closing"}
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <style jsx>{`
+              .dash-modal-backdrop {
+                position: fixed;
+                inset: 0;
+                background: rgba(15, 23, 42, 0.6);
+                z-index: 1000;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 20px;
+              }
+              .dash-modal-card {
+                background: var(--bg-card);
+                border-radius: var(--radius-lg);
+                box-shadow: var(--shadow-modal);
+                width: 560px;
+                max-width: 100%;
+                max-height: 85vh;
+                display: flex;
+                flex-direction: column;
+              }
+              .dash-modal-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 16px 20px;
+                border-bottom: 1px solid var(--border);
+              }
+              .dash-modal-header h3 {
+                margin: 0;
+                font-size: 1rem;
+                font-weight: 800;
+                color: var(--text-primary);
+              }
+              .dash-modal-header button {
+                background: var(--bg-subtle);
+                border: none;
+                width: 28px;
+                height: 28px;
+                border-radius: var(--radius-sm);
+                cursor: pointer;
+                color: var(--text-secondary);
+                font-weight: 700;
+              }
+              .dash-modal-body {
+                padding: 16px 20px;
+                overflow-y: auto;
+                flex: 1;
+              }
+              .dash-closing-table {
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 0.8125rem;
+              }
+              .dash-closing-table th {
+                text-align: left;
+                font-size: 0.6875rem;
+                font-weight: 700;
+                color: var(--text-secondary);
+                text-transform: uppercase;
+                letter-spacing: 0.03em;
+                padding: 0 8px 8px 0;
+                position: sticky;
+                top: 0;
+                background: var(--bg-card);
+              }
+              .dash-closing-table td {
+                padding: 8px 8px 8px 0;
+                border-top: 1px solid var(--border-subtle);
+                color: var(--text-primary);
+                height: 36px;
+              }
+              .dash-closing-input {
+                width: 100px;
+                padding: 6px 8px;
+                border-radius: var(--radius-sm);
+                border: 1px solid var(--border);
+                font-size: 0.8125rem;
+                background: var(--bg-base);
+                color: var(--text-primary);
+              }
+              .dash-closing-input:focus-visible {
+                outline: 2px solid var(--accent);
+                outline-offset: 1px;
+              }
+              .dash-modal-footer {
+                display: flex;
+                justify-content: flex-end;
+                gap: 10px;
+                padding: 14px 20px;
+                border-top: 1px solid var(--border);
+              }
+              .dash-secondary-btn {
+                background: var(--bg-subtle);
+                color: var(--text-primary);
+                border: 1px solid var(--border);
+                padding: 10px 16px;
+                border-radius: var(--radius-md);
+                font-size: 0.8125rem;
+                font-weight: 700;
+                cursor: pointer;
+                transition: background 0.15s ease;
+              }
+              .dash-secondary-btn:hover {
+                background: var(--bg-hover);
+              }
+            `}</style>
+          </div>
+        )}
 
         {/* TAB 1: AVAILABILITY & 86 LIST */}
         {activeTab === "AVAILABILITY" && (

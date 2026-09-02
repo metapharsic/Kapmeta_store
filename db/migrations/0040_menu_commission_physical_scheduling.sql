@@ -67,16 +67,18 @@ CREATE INDEX IF NOT EXISTS idx_addon_commissions_outlet
 CREATE INDEX IF NOT EXISTS idx_addon_commissions_addon_item
     ON addon_commissions (addon_item_id);
 
--- Menu Scheduling: top up the existing, previously-unreferenced
--- availability_schedules table rather than creating a new one.
---
--- is_active lets a schedule be toggled off without deleting it (the audited
--- screen implies a per-schedule enable/disable, and the table had no such
--- flag). category_id is a nullable, optional scope alongside the existing
--- required item_id: item-level scheduling keeps working unchanged, and a
--- future category-wide schedule can set category_id without a corresponding
--- item_id meaning anything for that row. Deliberately not touching item_id's
--- NOT NULL / FK -- that is out of scope for this minimal top-up.
+CREATE TABLE IF NOT EXISTS availability_schedules (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    outlet_id    UUID NOT NULL REFERENCES outlets (id),
+    item_id      UUID REFERENCES menu_items (id),
+    category_id  UUID REFERENCES menu_categories (id),
+    day_of_week  SMALLINT,
+    start_time   TIME,
+    end_time     TIME,
+    is_active    BOOLEAN NOT NULL DEFAULT true,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 ALTER TABLE availability_schedules ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
 ALTER TABLE availability_schedules ADD COLUMN IF NOT EXISTS category_id UUID REFERENCES menu_categories (id);
 

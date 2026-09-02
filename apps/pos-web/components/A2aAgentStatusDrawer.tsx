@@ -21,6 +21,34 @@ interface A2aAgentStatusDrawerProps {
   onClose: () => void;
 }
 
+// Real shape of GET /admin/audit-logs — apps/api/src/routes/admin.ts serialising
+// the AuditLog Prisma model. The Live Event feed is sourced from this: the
+// outlet's real recent write activity, not a fabricated A2A message bus.
+interface AuditLogEvent {
+  id: string;
+  userId: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  createdAt: string;
+}
+
+const EVENTS_POLL_MS = 15000;
+
+function formatRelativeTime(iso?: string): string {
+  if (!iso) return "";
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const diffSec = Math.max(0, Math.floor((Date.now() - then) / 1000));
+  if (diffSec < 5) return "Just now";
+  if (diffSec < 60) return `${diffSec}s ago`;
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  return `${Math.floor(diffHr / 24)}d ago`;
+}
+
 export default function A2aAgentStatusDrawer({ isOpen, onClose }: A2aAgentStatusDrawerProps) {
   const [agents, setAgents] = useState<AgentStatusItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -29,17 +57,13 @@ export default function A2aAgentStatusDrawer({ isOpen, onClose }: A2aAgentStatus
   const [pingStatus, setPingStatus] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"AGENTS" | "TOPOLOGY" | "EVENTS">("AGENTS");
 
-  const [recentEvents, setRecentEvents] = useState<Array<{
-    id: string;
-    topic: string;
-    source: string;
-    time: string;
-  }>>([
-    { id: "ev-1", topic: "order.created", source: "agent-backend", time: "Just now" },
-    { id: "ev-2", topic: "table.status_updated", source: "agent-frontend", time: "1m ago" },
-    { id: "ev-3", topic: "kot.status_updated", source: "agent-qa", time: "3m ago" },
-    { id: "ev-4", topic: "payment.settled", source: "agent-backend", time: "5m ago" },
-  ]);
+  // Live Event feed: real audit-log rows (GET /admin/audit-logs), not fake
+  // static data. eventsError distinguishes "nothing happened yet" from "this
+  // user can't see the audit trail" (admin.audit.view is not granted to every
+  // role) so the empty state stays honest either way.
+  const [recentEvents, setRecentEvents] = useState<AuditLogEvent[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [eventsError, setEventsError] = useState<string | null>(null);
 
   const fetchAgentsStatus = async () => {
     setLoading(true);
@@ -66,6 +90,37 @@ export default function A2aAgentStatusDrawer({ isOpen, onClose }: A2aAgentStatus
     }
   }, [isOpen]);
 
+  const fetchRecentEvents = async () => {
+    setEventsLoading(true);
+    try {
+      const res = await authedFetch("/admin/audit-logs?limit=8");
+      if (res.ok) {
+        const data = await res.json();
+        setRecentEvents(Array.isArray(data) ? data : []);
+        setEventsError(null);
+      } else if (res.status === 403) {
+        setEventsError("Your role doesn't have audit-log access (admin.audit.view) to view live activity.");
+      } else {
+        setEventsError("Could not load recent activity.");
+      }
+    } catch (e) {
+      console.error("Failed to fetch recent activity:", e);
+      setEventsError("Could not load recent activity.");
+    } finally {
+      setEventsLoading(false);
+    }
+  };
+
+  // Poll the real audit trail while the Live Event tab is open, same idea as
+  // the AGENTS tab's data but sourced from GET /admin/audit-logs instead of a
+  // fabricated in-memory list.
+  useEffect(() => {
+    if (!isOpen || activeTab !== "EVENTS") return;
+    fetchRecentEvents();
+    const interval = setInterval(fetchRecentEvents, EVENTS_POLL_MS);
+    return () => clearInterval(interval);
+  }, [isOpen, activeTab]);
+
   const handlePingHeartbeat = async () => {
     setPingStatus("Pinging...");
     try {
@@ -81,15 +136,6 @@ export default function A2aAgentStatusDrawer({ isOpen, onClose }: A2aAgentStatus
       if (res.ok) {
         setPingStatus("Heartbeat Acknowledged ✅");
         fetchAgentsStatus();
-        setRecentEvents((prev) => [
-          {
-            id: `ev-${Date.now()}`,
-            topic: "agent.heartbeat",
-            source: "agent-frontend",
-            time: "Just now",
-          },
-          ...prev.slice(0, 7),
-        ]);
         setTimeout(() => setPingStatus(null), 3000);
       } else {
         setPingStatus("Ping Failed ❌");
@@ -116,7 +162,7 @@ export default function A2aAgentStatusDrawer({ isOpen, onClose }: A2aAgentStatus
                 <span className="badge-db-source">💾 {storageSource}</span>
               </div>
               <p className="drawer-subtext">
-                {onlineCount} of {agents.length || 8} specialized subagents synchronized with PostgreSQL ACID boundaries.
+                {onlineCount} of {agents.length || "…"} specialized subagents synchronized with PostgreSQL ACID boundaries.
               </p>
             </div>
           </div>
@@ -141,7 +187,7 @@ export default function A2aAgentStatusDrawer({ isOpen, onClose }: A2aAgentStatus
             className={`a2a-tab-btn ${activeTab === "AGENTS" ? "active" : ""}`}
             onClick={() => setActiveTab("AGENTS")}
           >
-            Subagents ({agents.length || 8})
+            Subagents ({agents.length || "…"})
           </button>
           <button
             type="button"
@@ -200,57 +246,72 @@ export default function A2aAgentStatusDrawer({ isOpen, onClose }: A2aAgentStatus
                 <p>WebSocket topic routing engine enforcing domain boundaries and event fan-out.</p>
               </div>
 
-              <div className="topology-nodes-grid">
-                <div className="node-item">
-                  <span className="node-dot" />
-                  <strong>agent-orchestrator</strong>
-                  <span>Port 4001 • Process Gates</span>
+              {/* Derived from the same live `agents` state as the AGENTS tab
+                  (GET /admin/agents/status) — never a separately hardcoded
+                  roster, so this can't drift from the real agent_telemetry
+                  table again. */}
+              {loading && agents.length === 0 ? (
+                <div className="loading-state">Querying PostgreSQL agent_telemetry...</div>
+              ) : agents.length === 0 ? (
+                <div className="loading-state">No agents registered in agent_telemetry.</div>
+              ) : (
+                <div className="topology-nodes-grid">
+                  {agents.map((a) => {
+                    const dotColor =
+                      a.status === "ONLINE" || a.status === "READY"
+                        ? "#10b981"
+                        : a.status === "DEGRADED" || a.status === "BUSY"
+                        ? "#f59e0b"
+                        : "#ef4444";
+                    const subtitle = [
+                      a.domain || a.role,
+                      a.port ? `Port ${a.port}` : a.health || a.status,
+                    ]
+                      .filter(Boolean)
+                      .join(" • ");
+                    return (
+                      <div key={a.id} className="node-item">
+                        <span className="node-dot" style={{ background: dotColor }} />
+                        <strong>{a.name || a.id}</strong>
+                        <span>{subtitle}</span>
+                      </div>
+                    );
+                  })}
                 </div>
-                <div className="node-item">
-                  <span className="node-dot" />
-                  <strong>agent-database</strong>
-                  <span>Port 5432 • ACID PostgreSQL</span>
-                </div>
-                <div className="node-item">
-                  <span className="node-dot" />
-                  <strong>agent-backend</strong>
-                  <span>Port 4001 • REST Gateway</span>
-                </div>
-                <div className="node-item">
-                  <span className="node-dot" />
-                  <strong>agent-frontend</strong>
-                  <span>Port 4444 • Next.js POS Floor</span>
-                </div>
-                <div className="node-item">
-                  <span className="node-dot" />
-                  <strong>agent-integration</strong>
-                  <span>Port 4001 • Swiggy/Zomato</span>
-                </div>
-                <div className="node-item">
-                  <span className="node-dot" />
-                  <strong>agent-qa</strong>
-                  <span>Port 4001 • 55 Vitest Specs</span>
-                </div>
-              </div>
+              )}
             </div>
           </div>
         )}
 
-        {/* Tab 3: Recent Events Feed */}
+        {/* Tab 3: Recent Events Feed — real recent activity from the outlet's
+            audit trail (GET /admin/audit-logs), polled every 15s. This is not
+            a literal A2A pub/sub bus (no such feed exists in this backend),
+            so it's an honest "recent activity" view rather than fabricated
+            agent messages. */}
         {activeTab === "EVENTS" && (
           <div className="a2a-events-feed">
-            {recentEvents.map((ev) => (
-              <div key={ev.id} className="event-stream-row">
-                <div className="event-left">
-                  <span className="event-pulse" />
-                  <div>
-                    <span className="event-topic">{ev.topic}</span>
-                    <span className="event-source">via {ev.source}</span>
+            {eventsLoading && recentEvents.length === 0 ? (
+              <div className="loading-state">Querying audit_logs...</div>
+            ) : eventsError ? (
+              <div className="loading-state">{eventsError}</div>
+            ) : recentEvents.length === 0 ? (
+              <div className="loading-state">No recent activity recorded yet.</div>
+            ) : (
+              recentEvents.map((ev) => (
+                <div key={ev.id} className="event-stream-row">
+                  <div className="event-left">
+                    <span className="event-pulse" />
+                    <div>
+                      <span className="event-topic">
+                        {ev.entityType?.toLowerCase()}.{ev.action?.toLowerCase()}
+                      </span>
+                      <span className="event-source">by user {ev.userId ? ev.userId.slice(0, 8) : "unknown"}</span>
+                    </div>
                   </div>
+                  <span className="event-time">{formatRelativeTime(ev.createdAt)}</span>
                 </div>
-                <span className="event-time">{ev.time}</span>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         )}
 
