@@ -172,3 +172,20 @@ Real report inventory confirmed while doing this (differs from what the earlier 
 tsc: 0 errors, pos-web baseline held.
 
 Standing architectural debt, still unfixed: the two-nav-system split (Nav.tsx sidebar vs KapMetaHeader drawer) is what made both this and the User Management miss possible. Every new page must currently be wired into both or it silently disappears for half the app's pages.
+
+## 2026-09-02 — CP-15 Design pass using vendored ui-ux-pro-max skill
+
+Installed nextlevelbuilder/ui-ux-pro-max-skill (123k stars, MIT) into .claude/skills — 7 skills, 10MB, mostly data catalogs. Note: the user asked for an "MCP"; the real project is a SKILL. An MCP wrapper of it exists (rofuniki-coder/ui-ux-pro-max-mcp) but has 1 star and no license — rejected on supply-chain grounds.
+
+Judgment call worth recording: the skill's top recommendation for this app was Glassmorphism + a marketing "Operations Landing" pattern. Rejected — this is a touch-operated POS used on cheap screens in bright rooms for long shifts, and the skill's own data marks glassmorphism risk:conditional for contrast. Took its *guideline* data (contrast, touch targets, density profile) as authoritative instead of its style pick, and kept the app's existing token system, which is sound.
+
+Wrote docs/03-design/artifact-03-design-contract.md as the shared contract all agents built against.
+
+Measured (not eyeballed) WCAG audit found 3 real failures, all fixed:
+- --text-muted #94a3b8 scored 2.56:1 on card / 2.45:1 on base. Now #6b7481 → 4.73 / 4.52. Notable: there is almost no headroom between muted and secondary at this bar (1.4% luminance gap), so the two are now separated by chroma rather than lightness.
+- --accent #10b981 as text on light = 2.54:1. 12 sites moved to --accent-subtle-text (7.68:1). All ~36 fill usages left alone. Three ambiguous sites left and documented.
+- Reports tab: sticky table headers (biggest single win on a 15-panel page), 36px rows, 12px padding, 122 numeric cells given tabular figures + right alignment, row hover, focus-visible outlines, prefers-reduced-motion block, print-safe overrides.
+
+Both agents wrote admin.tsx concurrently and both flagged it. Verified after: all markers from both changesets present (10 contrast fixes, 38 analytics-surface refs, 122 num cells), tsc 0, no line-ending churn on any of the 16 touched files.
+
+Two follow-ups queued, both real: TSK-015e (56 raw #94a3b8 literals still render at 2.56:1 — the token fix only reaches 47 of 134 muted-text sites) and TSK-015d (waiter.tsx + inventory.tsx are a *dark* Tailwind theme inside a light-token app, 840 bypasses — needs a dark-surface token set designed first, not a find-and-replace). Also found 6 phantom token names referenced but never defined, silently falling through to hardcoded fallbacks.

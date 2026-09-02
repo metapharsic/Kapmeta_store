@@ -101,7 +101,7 @@ export default function PendingOrderDetailPage() {
       {/* Main Pending Order Detail View */}
       {loading ? (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "calc(100vh - 42px)" }}>
-          <p style={{ fontWeight: 600, color: "#64748b" }}>Loading order details...</p>
+          <p style={{ fontWeight: 600, color: "var(--text-secondary)" }}>Loading order details...</p>
         </div>
       ) : (
         <PendingOrderDetailView
@@ -115,7 +115,7 @@ export default function PendingOrderDetailPage() {
           margin: 0;
           padding: 0;
           font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          background: #f8fafc;
+          background: var(--bg-base);
           overflow: hidden;
         }
         * {

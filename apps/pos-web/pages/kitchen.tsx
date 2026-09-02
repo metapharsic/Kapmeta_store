@@ -159,7 +159,7 @@ export default function KitchenMonitor() {
           margin: 0;
           padding: 0;
           font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          background: #f1f5f9;
+          background: var(--bg-subtle);
           overflow: hidden;
         }
         * {

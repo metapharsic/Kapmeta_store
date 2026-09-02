@@ -180,6 +180,7 @@ export default function GlobalAlertModal() {
   const theme = {
     success: {
       accent: "#10b981",
+      accentText: "var(--accent-subtle-text, #065f46)",
       accentBg: "#ecfdf5",
       icon: "✓",
       border: "#a7f3d0",
@@ -188,6 +189,7 @@ export default function GlobalAlertModal() {
     },
     warning: {
       accent: "#f59e0b",
+      accentText: "#f59e0b",
       accentBg: "#fffbeb",
       icon: "⚠️",
       border: "#fde68a",
@@ -196,6 +198,7 @@ export default function GlobalAlertModal() {
     },
     error: {
       accent: "#ef4444",
+      accentText: "#ef4444",
       accentBg: "#fef2f2",
       icon: "✕",
       border: "#fecaca",
@@ -204,6 +207,7 @@ export default function GlobalAlertModal() {
     },
     confirm: {
       accent: "#6366f1",
+      accentText: "#6366f1",
       accentBg: "#eef2ff",
       icon: "❓",
       border: "#c7d2fe",
@@ -212,6 +216,7 @@ export default function GlobalAlertModal() {
     },
     info: {
       accent: "#0284c7",
+      accentText: "#0284c7",
       accentBg: "#f0f9ff",
       icon: "ℹ️",
       border: "#bae6fd",
@@ -271,7 +276,7 @@ export default function GlobalAlertModal() {
                   <p
                     key={idx}
                     className={`pos-alert-text-line ${isHeading ? "is-heading" : ""}`}
-                    style={{ color: isHeading ? theme.accent : "#334155" }}
+                    style={{ color: isHeading ? theme.accentText : "#334155" }}
                   >
                     {line}
                   </p>

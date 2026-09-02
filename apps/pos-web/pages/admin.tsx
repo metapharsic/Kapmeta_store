@@ -1319,7 +1319,7 @@ export default function AdminDashboard() {
                   <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "var(--radius-md)", padding: "18px 20px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
                       <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)", fontWeight: 600 }}>⚡ Live Orders Pipeline</span>
-                      <span style={{ fontSize: "0.72rem", background: "rgba(16, 185, 129, 0.1)", color: "#10b981", padding: "2px 8px", borderRadius: "999px", fontWeight: 700 }}>
+                      <span style={{ fontSize: "0.72rem", background: "rgba(16, 185, 129, 0.1)", color: "var(--accent-subtle-text)", padding: "2px 8px", borderRadius: "999px", fontWeight: 700 }}>
                         Running
                       </span>
                     </div>
@@ -1372,7 +1372,7 @@ export default function AdminDashboard() {
                       Click any operational station below to navigate directly or monitor real-time node state.
                     </p>
                   </div>
-                  <span style={{ fontSize: "0.78rem", color: "#10b981", fontWeight: 700 }}>
+                  <span style={{ fontSize: "0.78rem", color: "var(--accent-subtle-text)", fontWeight: 700 }}>
                     ● 6 / 6 Operational Stations Synced
                   </span>
                 </div>
@@ -1891,7 +1891,7 @@ export default function AdminDashboard() {
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "24px" }}>
                   <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: "16px 20px" }}>
                     <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase" }}>A2A Framework State</div>
-                    <div style={{ fontSize: "1.4rem", fontWeight: 800, color: "#10b981", marginTop: "4px", display: "flex", alignItems: "center", gap: "8px" }}>
+                    <div style={{ fontSize: "1.4rem", fontWeight: 800, color: "var(--accent-subtle-text)", marginTop: "4px", display: "flex", alignItems: "center", gap: "8px" }}>
                       <span style={{ width: "10px", height: "10px", borderRadius: "50%", background: "#10b981", display: "inline-block" }}></span>
                       {agentTelemetry?.systemStatus || "OPERATIONAL"}
                     </div>
@@ -2036,7 +2036,7 @@ export default function AdminDashboard() {
 
                         {/* Card Footer: Latency & Spec Link */}
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid var(--border-subtle)", paddingTop: "12px", marginTop: "8px" }}>
-                          <span style={{ fontSize: "0.75rem", color: "#10b981", fontWeight: 700 }}>
+                          <span style={{ fontSize: "0.75rem", color: "var(--accent-subtle-text)", fontWeight: 700 }}>
                             ⚡ Latency: {agent.latencyMs}ms
                           </span>
                           <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", fontWeight: 600 }}>
@@ -2061,22 +2061,22 @@ export default function AdminDashboard() {
                   </h4>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "12px" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "0.82rem", color: "var(--text-secondary)" }}>
-                      <span style={{ color: "#10b981", fontWeight: 800 }}>✓</span> Zero Hardcoded Business Data Ingestion
+                      <span style={{ color: "var(--accent-subtle-text)", fontWeight: 800 }}>✓</span> Zero Hardcoded Business Data Ingestion
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "0.82rem", color: "var(--text-secondary)" }}>
-                      <span style={{ color: "#10b981", fontWeight: 800 }}>✓</span> Integer Minor Units (`BIGINT` paise standard)
+                      <span style={{ color: "var(--accent-subtle-text)", fontWeight: 800 }}>✓</span> Integer Minor Units (`BIGINT` paise standard)
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "0.82rem", color: "var(--text-secondary)" }}>
-                      <span style={{ color: "#10b981", fontWeight: 800 }}>✓</span> Multi-Tenant Boundary (`outlet_id NOT NULL`)
+                      <span style={{ color: "var(--accent-subtle-text)", fontWeight: 800 }}>✓</span> Multi-Tenant Boundary (`outlet_id NOT NULL`)
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "0.82rem", color: "var(--text-secondary)" }}>
-                      <span style={{ color: "#10b981", fontWeight: 800 }}>✓</span> UUIDv7 Primary Key Generator Standard
+                      <span style={{ color: "var(--accent-subtle-text)", fontWeight: 800 }}>✓</span> UUIDv7 Primary Key Generator Standard
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "0.82rem", color: "var(--text-secondary)" }}>
-                      <span style={{ color: "#10b981", fontWeight: 800 }}>✓</span> Immutable Append-Only Audit Logging
+                      <span style={{ color: "var(--accent-subtle-text)", fontWeight: 800 }}>✓</span> Immutable Append-Only Audit Logging
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "0.82rem", color: "var(--text-secondary)" }}>
-                      <span style={{ color: "#10b981", fontWeight: 800 }}>✓</span> Domain-Isolated Database Schemas
+                      <span style={{ color: "var(--accent-subtle-text)", fontWeight: 800 }}>✓</span> Domain-Isolated Database Schemas
                     </div>
                   </div>
                 </div>
@@ -2288,7 +2288,7 @@ export default function AdminDashboard() {
 
             {/* TAB 4: EXECUTIVE SALES ANALYTICS */}
             {activeTab === "analytics" && (
-              <>
+              <div className="analytics-surface">
                 {/* Header Greeting & Controls */}
             <section className="dashboard-greeting-row">
               <div>
@@ -2358,7 +2358,7 @@ export default function AdminDashboard() {
             )}
 
             {/* Reports Generator & ERP Export Console */}
-            <section className="panel-card" style={{ marginBottom: "24px", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: "24px" }}>
+            <section className="panel-card" style={{ marginBottom: 0, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "var(--radius-md)", padding: "var(--card-padding)" }}>
               <div className="panel-header" style={{ marginBottom: "20px" }}>
                 <div>
                   <h3 style={{ fontSize: "1.25rem", fontWeight: 800, color: "var(--text-primary)" }}>📊 Enterprise Reports Generator</h3>
@@ -2624,9 +2624,9 @@ export default function AdminDashboard() {
                           <thead>
                             <tr>
                               <th>Method</th>
-                              <th>Payments</th>
-                              <th>Amount</th>
-                              <th>Share</th>
+                              <th className="num">Payments</th>
+                              <th className="num">Amount</th>
+                              <th className="num">Share</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -2637,9 +2637,9 @@ export default function AdminDashboard() {
                                   <td>
                                     <strong>{m.method}</strong>
                                   </td>
-                                  <td>{m.count}</td>
-                                  <td className="amount-cell">{formatMoney(m.amountMinor)}</td>
-                                  <td>{m.percentage.toFixed(1)}%</td>
+                                  <td className="num">{m.count}</td>
+                                  <td className="amount-cell num">{formatMoney(m.amountMinor)}</td>
+                                  <td className="num">{m.percentage.toFixed(1)}%</td>
                                 </tr>
                               ))}
                           </tbody>
@@ -2667,10 +2667,10 @@ export default function AdminDashboard() {
                           <thead>
                             <tr>
                               <th>Component</th>
-                              <th>Rate</th>
-                              <th>Taxable Basis</th>
-                              <th>Tax Collected</th>
-                              <th>Share</th>
+                              <th className="num">Rate</th>
+                              <th className="num">Taxable Basis</th>
+                              <th className="num">Tax Collected</th>
+                              <th className="num">Share</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -2679,10 +2679,10 @@ export default function AdminDashboard() {
                                 <td>
                                   <strong>{c.componentName}</strong>
                                 </td>
-                                <td>{c.ratePercent}%</td>
-                                <td className="amount-cell">{formatMoney(c.taxableAmountMinor)}</td>
-                                <td className="amount-cell">{formatMoney(c.taxCollectedMinor)}</td>
-                                <td>{c.percentageShare.toFixed(1)}%</td>
+                                <td className="num">{c.ratePercent}%</td>
+                                <td className="amount-cell num">{formatMoney(c.taxableAmountMinor)}</td>
+                                <td className="amount-cell num">{formatMoney(c.taxCollectedMinor)}</td>
+                                <td className="num">{c.percentageShare.toFixed(1)}%</td>
                               </tr>
                             ))}
                           </tbody>
@@ -2718,8 +2718,8 @@ export default function AdminDashboard() {
                         <thead>
                           <tr>
                             <th>Dish / Menu Item</th>
-                            <th>Quantity Sold</th>
-                            <th>Net Sales</th>
+                            <th className="num">Quantity Sold</th>
+                            <th className="num">Net Sales</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -2728,8 +2728,8 @@ export default function AdminDashboard() {
                               <td>
                                 <strong>{it.menuItemName || it.name || it.menuItemId}</strong>
                               </td>
-                              <td>{it.quantitySold}</td>
-                              <td className="amount-cell">{formatMoney(it.netSalesMinor)}</td>
+                              <td className="num">{it.quantitySold}</td>
+                              <td className="amount-cell num">{formatMoney(it.netSalesMinor)}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -2762,11 +2762,11 @@ export default function AdminDashboard() {
                         <thead>
                           <tr>
                             <th>Dish / Menu Item</th>
-                            <th>Quantity Sold</th>
-                            <th>Net Sales</th>
-                            <th>Food Cost</th>
-                            <th>Margin</th>
-                            <th>Margin %</th>
+                            <th className="num">Quantity Sold</th>
+                            <th className="num">Net Sales</th>
+                            <th className="num">Food Cost</th>
+                            <th className="num">Margin</th>
+                            <th className="num">Margin %</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -2790,11 +2790,11 @@ export default function AdminDashboard() {
                                   </span>
                                 )}
                               </td>
-                              <td>{it.quantitySold}</td>
-                              <td className="amount-cell">{formatMoney(it.netSalesMinor)}</td>
-                              <td className="amount-cell">{it.hasRecipe ? formatMoney(it.foodCostMinor) : "—"}</td>
-                              <td className="amount-cell">{it.hasRecipe ? formatMoney(it.marginMinor) : "—"}</td>
-                              <td>{it.hasRecipe && it.marginPercent !== null ? `${it.marginPercent.toFixed(1)}%` : "—"}</td>
+                              <td className="num">{it.quantitySold}</td>
+                              <td className="amount-cell num">{formatMoney(it.netSalesMinor)}</td>
+                              <td className="amount-cell num">{it.hasRecipe ? formatMoney(it.foodCostMinor) : "—"}</td>
+                              <td className="amount-cell num">{it.hasRecipe ? formatMoney(it.marginMinor) : "—"}</td>
+                              <td className="num">{it.hasRecipe && it.marginPercent !== null ? `${it.marginPercent.toFixed(1)}%` : "—"}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -2825,11 +2825,11 @@ export default function AdminDashboard() {
                         <thead>
                           <tr>
                             <th>Ingredient</th>
-                            <th>Consumed</th>
-                            <th>Shortage</th>
-                            <th>Purchased</th>
-                            <th>Purchase Cost</th>
-                            <th>Variance</th>
+                            <th className="num">Consumed</th>
+                            <th className="num">Shortage</th>
+                            <th className="num">Purchased</th>
+                            <th className="num">Purchase Cost</th>
+                            <th className="num">Variance</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -2839,11 +2839,11 @@ export default function AdminDashboard() {
                                 <strong>{row.ingredientName || row.ingredientId}</strong>
                                 {row.unitOfMeasure ? ` (${row.unitOfMeasure})` : ""}
                               </td>
-                              <td>{row.consumedQty.toFixed(2)}</td>
-                              <td>{row.shortageQty > 0 ? <strong style={{ color: "#dc2626" }}>{row.shortageQty.toFixed(2)}</strong> : "0"}</td>
-                              <td>{row.purchasedQty.toFixed(2)}</td>
-                              <td className="amount-cell">{formatMoney(row.purchasedCostMinor)}</td>
-                              <td style={row.varianceQty < 0 ? { color: "#dc2626" } : undefined}>{row.varianceQty.toFixed(2)}</td>
+                              <td className="num">{row.consumedQty.toFixed(2)}</td>
+                              <td className="num">{row.shortageQty > 0 ? <strong style={{ color: "#dc2626" }}>{row.shortageQty.toFixed(2)}</strong> : "0"}</td>
+                              <td className="num">{row.purchasedQty.toFixed(2)}</td>
+                              <td className="amount-cell num">{formatMoney(row.purchasedCostMinor)}</td>
+                              <td className="num" style={row.varianceQty < 0 ? { color: "#dc2626" } : undefined}>{row.varianceQty.toFixed(2)}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -2874,14 +2874,14 @@ export default function AdminDashboard() {
                         <thead>
                           <tr>
                             <th>Waiter</th>
-                            <th>Orders</th>
-                            <th>Net Sales</th>
-                            <th>Avg Order Value</th>
-                            <th>Covers</th>
-                            <th>Cash Tips</th>
-                            <th>Digital Tips</th>
-                            <th>Service Charge</th>
-                            <th>Cash Variance</th>
+                            <th className="num">Orders</th>
+                            <th className="num">Net Sales</th>
+                            <th className="num">Avg Order Value</th>
+                            <th className="num">Covers</th>
+                            <th className="num">Cash Tips</th>
+                            <th className="num">Digital Tips</th>
+                            <th className="num">Service Charge</th>
+                            <th className="num">Cash Variance</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -2890,15 +2890,15 @@ export default function AdminDashboard() {
                               <td>
                                 <strong>{s.waiterName}</strong>
                               </td>
-                              <td>{s.orderCount}</td>
-                              <td className="amount-cell">{formatMoney(s.netSalesMinor)}</td>
-                              <td className="amount-cell">{formatMoney(s.averageOrderValueMinor)}</td>
-                              <td>{s.coversServed}</td>
-                              <td className="amount-cell">{formatMoney(s.cashTipMinor)}</td>
-                              <td className="amount-cell">{formatMoney(s.digitalTipMinor)}</td>
-                              <td className="amount-cell">{formatMoney(s.serviceChargeMinor)}</td>
+                              <td className="num">{s.orderCount}</td>
+                              <td className="amount-cell num">{formatMoney(s.netSalesMinor)}</td>
+                              <td className="amount-cell num">{formatMoney(s.averageOrderValueMinor)}</td>
+                              <td className="num">{s.coversServed}</td>
+                              <td className="amount-cell num">{formatMoney(s.cashTipMinor)}</td>
+                              <td className="amount-cell num">{formatMoney(s.digitalTipMinor)}</td>
+                              <td className="amount-cell num">{formatMoney(s.serviceChargeMinor)}</td>
                               <td
-                                className="amount-cell"
+                                className="amount-cell num"
                                 style={Number(s.cashVarianceMinor) < 0 ? { color: "#dc2626" } : undefined}
                               >
                                 {formatMoney(s.cashVarianceMinor)}
@@ -2927,12 +2927,12 @@ export default function AdminDashboard() {
                         <thead>
                           <tr>
                             <th>Section</th>
-                            <th>Tables</th>
-                            <th>Orders</th>
-                            <th>Covers</th>
-                            <th>Revenue</th>
-                            <th>Avg Turn</th>
-                            <th>Occupancy %</th>
+                            <th className="num">Tables</th>
+                            <th className="num">Orders</th>
+                            <th className="num">Covers</th>
+                            <th className="num">Revenue</th>
+                            <th className="num">Avg Turn</th>
+                            <th className="num">Occupancy %</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -2941,12 +2941,12 @@ export default function AdminDashboard() {
                               <td>
                                 <strong>{s.section}</strong>
                               </td>
-                              <td>{s.tableCount}</td>
-                              <td>{s.orderCount}</td>
-                              <td>{s.totalCovers}</td>
-                              <td className="amount-cell">{formatMoney(s.totalRevenueMinor)}</td>
-                              <td>{s.averageTurnMinutes.toFixed(1)} min</td>
-                              <td>{s.occupancyRatePercent.toFixed(1)}%</td>
+                              <td className="num">{s.tableCount}</td>
+                              <td className="num">{s.orderCount}</td>
+                              <td className="num">{s.totalCovers}</td>
+                              <td className="amount-cell num">{formatMoney(s.totalRevenueMinor)}</td>
+                              <td className="num">{s.averageTurnMinutes.toFixed(1)} min</td>
+                              <td className="num">{s.occupancyRatePercent.toFixed(1)}%</td>
                             </tr>
                           ))}
                         </tbody>
@@ -2967,11 +2967,11 @@ export default function AdminDashboard() {
                           <tr>
                             <th>Table</th>
                             <th>Section</th>
-                            <th>Orders</th>
-                            <th>Covers</th>
-                            <th>Revenue</th>
-                            <th>Avg Turn</th>
-                            <th>Occupancy %</th>
+                            <th className="num">Orders</th>
+                            <th className="num">Covers</th>
+                            <th className="num">Revenue</th>
+                            <th className="num">Avg Turn</th>
+                            <th className="num">Occupancy %</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -2981,11 +2981,11 @@ export default function AdminDashboard() {
                                 <strong>{t.tableNumber}</strong>
                               </td>
                               <td>{t.section}</td>
-                              <td>{t.orderCount}</td>
-                              <td>{t.totalCovers}</td>
-                              <td className="amount-cell">{formatMoney(t.totalRevenueMinor)}</td>
-                              <td>{t.averageTurnMinutes.toFixed(1)} min</td>
-                              <td>{t.occupancyRatePercent.toFixed(1)}%</td>
+                              <td className="num">{t.orderCount}</td>
+                              <td className="num">{t.totalCovers}</td>
+                              <td className="amount-cell num">{formatMoney(t.totalRevenueMinor)}</td>
+                              <td className="num">{t.averageTurnMinutes.toFixed(1)} min</td>
+                              <td className="num">{t.occupancyRatePercent.toFixed(1)}%</td>
                             </tr>
                           ))}
                         </tbody>
@@ -3026,10 +3026,10 @@ export default function AdminDashboard() {
                         <thead>
                           <tr>
                             <th>Channel</th>
-                            <th>Total Orders</th>
-                            <th>Successful</th>
-                            <th>Cancelled</th>
-                            <th>Net Sales</th>
+                            <th className="num">Total Orders</th>
+                            <th className="num">Successful</th>
+                            <th className="num">Cancelled</th>
+                            <th className="num">Net Sales</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -3040,10 +3040,10 @@ export default function AdminDashboard() {
                                 <td>
                                   <strong>{c.orderType}</strong>
                                 </td>
-                                <td>{c.orderCount}</td>
-                                <td>{c.successfulOrderCount}</td>
-                                <td>{c.cancelledOrderCount}</td>
-                                <td className="amount-cell">{formatMoney(c.netSalesMinor)}</td>
+                                <td className="num">{c.orderCount}</td>
+                                <td className="num">{c.successfulOrderCount}</td>
+                                <td className="num">{c.cancelledOrderCount}</td>
+                                <td className="amount-cell num">{formatMoney(c.netSalesMinor)}</td>
                               </tr>
                             ))}
                         </tbody>
@@ -3129,40 +3129,40 @@ export default function AdminDashboard() {
                           <thead>
                             <tr>
                               <th>Metric</th>
-                              <th>Count</th>
-                              <th>Amount</th>
+                              <th className="num">Count</th>
+                              <th className="num">Amount</th>
                             </tr>
                           </thead>
                           <tbody>
                             <tr>
                               <td><strong>KOT Cancelled</strong></td>
-                              <td>{leakageReport.cancelledCount}</td>
-                              <td className="amount-cell">—</td>
+                              <td className="num">{leakageReport.cancelledCount}</td>
+                              <td className="amount-cell num">—</td>
                             </tr>
                             <tr>
                               <td><strong>KOT Modified</strong></td>
-                              <td>{leakageReport.modifiedCount}</td>
-                              <td className="amount-cell">—</td>
+                              <td className="num">{leakageReport.modifiedCount}</td>
+                              <td className="amount-cell num">—</td>
                             </tr>
                             <tr>
                               <td><strong>KOT Shifted</strong></td>
-                              <td>{leakageReport.shiftedCount}</td>
-                              <td className="amount-cell">—</td>
+                              <td className="num">{leakageReport.shiftedCount}</td>
+                              <td className="amount-cell num">—</td>
                             </tr>
                             <tr>
                               <td><strong>Invoices Reprinted</strong></td>
-                              <td>{leakageReport.invoiceReprintCount}</td>
-                              <td className="amount-cell">{leakageReport.totalReprints} total reprints</td>
+                              <td className="num">{leakageReport.invoiceReprintCount}</td>
+                              <td className="amount-cell num">{leakageReport.totalReprints} total reprints</td>
                             </tr>
                             <tr>
                               <td><strong>Invoices Waived Off</strong></td>
-                              <td>{leakageReport.invoiceWaivedOffCount}</td>
-                              <td className="amount-cell">{formatMoney(leakageReport.totalWaivedOffMinor)}</td>
+                              <td className="num">{leakageReport.invoiceWaivedOffCount}</td>
+                              <td className="amount-cell num">{formatMoney(leakageReport.totalWaivedOffMinor)}</td>
                             </tr>
                             <tr>
                               <td><strong>KOTs Not Billed</strong></td>
-                              <td>{leakageReport.kotsNotBilledCount}</td>
-                              <td className="amount-cell">{formatMoney(leakageReport.estimatedRevenueAtRiskMinor)}</td>
+                              <td className="num">{leakageReport.kotsNotBilledCount}</td>
+                              <td className="amount-cell num">{formatMoney(leakageReport.estimatedRevenueAtRiskMinor)}</td>
                             </tr>
                           </tbody>
                         </table>
@@ -3232,8 +3232,8 @@ export default function AdminDashboard() {
                           <thead>
                             <tr>
                               <th>Category</th>
-                              <th>Quantity Sold</th>
-                              <th>Revenue</th>
+                              <th className="num">Quantity Sold</th>
+                              <th className="num">Revenue</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -3242,8 +3242,8 @@ export default function AdminDashboard() {
                               .map(([cat, data]) => (
                                 <tr key={cat}>
                                   <td><strong>{cat}</strong></td>
-                                  <td>{data.quantity}</td>
-                                  <td className="amount-cell">{formatMoney(data.revenue)}</td>
+                                  <td className="num">{data.quantity}</td>
+                                  <td className="amount-cell num">{formatMoney(data.revenue)}</td>
                                 </tr>
                               ))}
                           </tbody>
@@ -3324,8 +3324,8 @@ export default function AdminDashboard() {
                               <tr>
                                 <th>Customer</th>
                                 <th>Phone</th>
-                                <th>Orders</th>
-                                <th>Total Spend</th>
+                                <th className="num">Orders</th>
+                                <th className="num">Total Spend</th>
                                 <th>Last Visit</th>
                               </tr>
                             </thead>
@@ -3334,8 +3334,8 @@ export default function AdminDashboard() {
                                 <tr key={c.customerId}>
                                   <td><strong>{c.name || "Unknown"}</strong></td>
                                   <td>{c.phone || "—"}</td>
-                                  <td>{c.orderCount}</td>
-                                  <td className="amount-cell">{formatMoney(c.totalSpendMinor)}</td>
+                                  <td className="num">{c.orderCount}</td>
+                                  <td className="amount-cell num">{formatMoney(c.totalSpendMinor)}</td>
                                   <td style={{ fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
                                     {new Date(c.lastVisitAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
                                   </td>
@@ -3429,13 +3429,13 @@ export default function AdminDashboard() {
                           ) : (
                             <div className="table-responsive">
                               <table className="clean-table">
-                                <thead><tr><th>Reason</th><th>Count</th><th>Value</th></tr></thead>
+                                <thead><tr><th>Reason</th><th className="num">Count</th><th className="num">Value</th></tr></thead>
                                 <tbody>
                                   {discountVoidAnalysis.voids.byReason.map((r) => (
                                     <tr key={r.reason}>
                                       <td><strong>{r.reason}</strong></td>
-                                      <td>{r.count}</td>
-                                      <td className="amount-cell">{formatMoney(r.valueMinor)}</td>
+                                      <td className="num">{r.count}</td>
+                                      <td className="amount-cell num">{formatMoney(r.valueMinor)}</td>
                                     </tr>
                                   ))}
                                 </tbody>
@@ -3450,13 +3450,13 @@ export default function AdminDashboard() {
                           ) : (
                             <div className="table-responsive">
                               <table className="clean-table">
-                                <thead><tr><th>Voided By</th><th>Count</th><th>Value</th></tr></thead>
+                                <thead><tr><th>Voided By</th><th className="num">Count</th><th className="num">Value</th></tr></thead>
                                 <tbody>
                                   {discountVoidAnalysis.voids.byStaff.map((r) => (
                                     <tr key={r.voidedBy}>
                                       <td><strong>{r.voidedBy}</strong></td>
-                                      <td>{r.count}</td>
-                                      <td className="amount-cell">{formatMoney(r.valueMinor)}</td>
+                                      <td className="num">{r.count}</td>
+                                      <td className="amount-cell num">{formatMoney(r.valueMinor)}</td>
                                     </tr>
                                   ))}
                                 </tbody>
@@ -3492,10 +3492,10 @@ export default function AdminDashboard() {
                           <tr>
                             <th>Invoice / Order #</th>
                             <th>Channel / Table</th>
-                            <th>Items</th>
-                            <th>Subtotal</th>
-                            <th>GST Tax</th>
-                            <th>Grand Total</th>
+                            <th className="num">Items</th>
+                            <th className="num">Subtotal</th>
+                            <th className="num">GST Tax</th>
+                            <th className="num">Grand Total</th>
                             <th>Payment</th>
                             <th>Settled At</th>
                             <th>Receipt</th>
@@ -3515,10 +3515,10 @@ export default function AdminDashboard() {
                                   {inv.orderType.toLowerCase()} {inv.tableNumber ? `(${inv.tableNumber})` : ""}
                                 </span>
                               </td>
-                              <td>{inv.itemCount} items</td>
-                              <td className="amount-cell">{formatMoney(inv.subtotalMinor)}</td>
-                              <td className="amount-cell">{formatMoney(inv.taxTotalMinor)}</td>
-                              <td className="amount-cell"><strong>{formatMoney(inv.grandTotalMinor)}</strong></td>
+                              <td className="num">{inv.itemCount} items</td>
+                              <td className="amount-cell num">{formatMoney(inv.subtotalMinor)}</td>
+                              <td className="amount-cell num">{formatMoney(inv.taxTotalMinor)}</td>
+                              <td className="amount-cell num"><strong>{formatMoney(inv.grandTotalMinor)}</strong></td>
                               <td>
                                 <span className="pill-status success" style={{ fontWeight: 700 }}>
                                   {inv.paymentMethod}
@@ -3562,7 +3562,7 @@ export default function AdminDashboard() {
                 </section>
               </>
             )}
-              </>
+              </div>
             )}
           </>
         )}
@@ -4152,6 +4152,175 @@ export default function AdminDashboard() {
         /* Offset for the 64px sticky topbar when jumping to a report */
         .report-anchor {
           scroll-margin-top: 88px;
+        }
+
+        /* ================================================================
+           ANALYTICS / REPORTS SURFACE — data-dense profile
+           Source: ui-ux-pro-max style "data-dense-dashboard"
+           (--grid-gap 8px, --card-padding 12px, --table-row-height 36px,
+            small text 12-14px, sticky headers, overflow:auto tables).
+           Design contract section 4. Scoped to .analytics-surface only, so the
+           POS terminal and the other admin tabs keep their touch-first
+           sizing (contract section 3) and the global tokens are untouched.
+           ================================================================ */
+        .analytics-surface {
+          --grid-gap: 8px;
+          --card-padding: 12px;
+          --font-size-small: 12px;
+          --table-row-height: 36px;
+          --table-cell-pad-x: 12px;
+
+          display: flex;
+          flex-direction: column;
+          /* 2x the grid gap between top-level report panels: at 8px a stack of
+             15 cards stops reading as discrete panels. */
+          gap: calc(var(--grid-gap) * 2);
+        }
+
+        .analytics-surface .panel-card,
+        .analytics-surface .kpi-card {
+          padding: var(--card-padding);
+          gap: var(--card-padding);
+          border-radius: var(--radius-md);
+        }
+
+        .analytics-surface .two-col-grid,
+        .analytics-surface .kpi-cards-grid,
+        .analytics-surface .report-index-grid {
+          gap: var(--grid-gap);
+        }
+
+        .analytics-surface .panel-header h3 {
+          font-size: 0.9375rem;
+        }
+
+        .analytics-surface .kpi-number {
+          font-variant-numeric: tabular-nums;
+          font-feature-settings: "tnum" 1;
+        }
+
+        /* --- Data tables ----------------------------------------------- */
+
+        /* Scroll container. overflow-x keeps wide tables from breaking the
+           layout; the height cap keeps one long result set from pushing the
+           other 14 reports off screen, and is what the sticky header sticks
+           to. Tables shorter than the cap are unaffected. */
+        .analytics-surface .table-responsive {
+          overflow: auto;
+          max-height: 60vh;
+          border-radius: var(--radius-sm);
+        }
+
+        /* border-collapse: collapse drops a sticky header's border, so the
+           report tables use separate borders and an inset shadow instead. */
+        .analytics-surface .clean-table {
+          border-collapse: separate;
+          border-spacing: 0;
+        }
+
+        .analytics-surface .clean-table th {
+          position: sticky;
+          top: 0;
+          z-index: 2;
+          height: var(--table-row-height);
+          padding: 0 var(--table-cell-pad-x);
+          font-size: 0.75rem;
+          /* --text-muted measures 2.56:1 on --bg-card (contract section 2);
+             --text-secondary passes at 4.76:1. */
+          color: var(--text-secondary);
+          background: var(--bg-card);
+          border-bottom: none;
+          box-shadow: inset 0 -1px 0 var(--border);
+          white-space: nowrap;
+        }
+
+        .analytics-surface .clean-table td {
+          height: var(--table-row-height);
+          padding: 4px var(--table-cell-pad-x);
+          font-size: 0.8125rem;
+          line-height: 1.35;
+          border-bottom: 1px solid var(--border-subtle);
+        }
+
+        /* Row hover (not zebra) for horizontal tracking across wide rows —
+           zebra fights the card backgrounds on the nested two-column panels. */
+        .analytics-surface .clean-table tbody tr td {
+          transition: background-color 0.15s ease;
+        }
+
+        .analytics-surface .clean-table tbody tr:hover td {
+          background: var(--bg-subtle);
+        }
+
+        /* Money / quantity columns: right-aligned tabular figures so digits
+           line up vertically down the column. */
+        .analytics-surface .clean-table th.num,
+        .analytics-surface .clean-table td.num {
+          text-align: right;
+          font-variant-numeric: tabular-nums;
+          font-feature-settings: "tnum" 1;
+        }
+
+        .analytics-surface .clean-table td.num {
+          white-space: nowrap;
+        }
+
+        /* --- Controls: pointer, focus, motion (contract section 5) ------ */
+        .analytics-surface .clean-table button,
+        .analytics-surface .report-index-item,
+        .analytics-surface .tf-btn,
+        .analytics-surface .export-btn {
+          cursor: pointer;
+          transition: background-color 0.15s ease, color 0.15s ease,
+                      border-color 0.15s ease, box-shadow 0.15s ease,
+                      transform 0.15s ease;
+        }
+
+        .analytics-surface .clean-table button:hover {
+          border-color: var(--accent);
+          background: var(--bg-subtle);
+        }
+
+        .analytics-surface .tf-btn:hover,
+        .analytics-surface .export-btn:hover {
+          box-shadow: var(--shadow-sm);
+        }
+
+        .analytics-surface a:focus-visible,
+        .analytics-surface button:focus-visible,
+        .analytics-surface select:focus-visible,
+        .analytics-surface input:focus-visible,
+        .analytics-surface .table-responsive:focus-visible {
+          outline: 2px solid var(--accent-subtle-text);
+          outline-offset: 2px;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .analytics-surface *,
+          .analytics-surface *::before,
+          .analytics-surface *::after {
+            transition-duration: 0.01ms !important;
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+          }
+
+          .analytics-surface .kpi-card:hover,
+          .analytics-surface .report-index-item:hover {
+            transform: none;
+          }
+        }
+
+        /* "Export Report" is window.print(): un-cap the tables and unstick the
+           headers so nothing is clipped on paper. */
+        @media print {
+          .analytics-surface .table-responsive {
+            overflow: visible;
+            max-height: none;
+          }
+
+          .analytics-surface .clean-table th {
+            position: static;
+          }
         }
       ` }} />
       </div>

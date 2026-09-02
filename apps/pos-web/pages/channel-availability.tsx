@@ -560,7 +560,7 @@ export default function ChannelAvailabilityPage() {
         }
         .kpi-icon-square.green {
           background: #ecfdf5;
-          color: #10b981;
+          color: var(--accent-subtle-text);
         }
         .kpi-icon-square.blue {
           background: #eff6ff;

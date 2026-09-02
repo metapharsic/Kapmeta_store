@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-09-01T20:35:00Z",
+  "lastUpdated": "2026-09-02T05:00:00Z",
   "activeTasks": [
     {
       "taskId": "TSK-001",
@@ -334,6 +334,46 @@
       "status": "COMPLETED",
       "priority": "P0",
       "relatedGate": "CP-14"
+    },
+    {
+      "taskId": "TSK-015a",
+      "title": "Vendor ui-ux-pro-max skill (MIT) into .claude/skills, write design contract from measured WCAG audit",
+      "assignedTo": "orchestrator",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "relatedGate": "CP-15"
+    },
+    {
+      "taskId": "TSK-015b",
+      "title": "Fix 3 measured contrast failures: --text-muted token + 12 accent-as-text sites; rank 2935 token bypasses",
+      "assignedTo": "frontend-agent",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "relatedGate": "CP-15"
+    },
+    {
+      "taskId": "TSK-015c",
+      "title": "Reports tab data-dense treatment: sticky headers, 36px rows, 122 tabular-num cells, row hover, focus states, reduced-motion",
+      "assignedTo": "frontend-agent",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "relatedGate": "CP-15"
+    },
+    {
+      "taskId": "TSK-015d",
+      "title": "Re-tokenise waiter.tsx + inventory.tsx (432+408 Tailwind dark-slate bypasses) - needs a dark-surface token set first",
+      "assignedTo": "frontend-agent",
+      "status": "PENDING",
+      "priority": "P2",
+      "relatedGate": "CP-15"
+    },
+    {
+      "taskId": "TSK-015e",
+      "title": "Sweep 56 raw color:#94a3b8 literals to var(--text-muted) - contrast fix only reaches 47 of 134 sites without it",
+      "assignedTo": "frontend-agent",
+      "status": "PENDING",
+      "priority": "P1",
+      "relatedGate": "CP-15"
     }
   ]
 }

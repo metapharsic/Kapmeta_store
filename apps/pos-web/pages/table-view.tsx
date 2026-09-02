@@ -55,7 +55,7 @@ export default function TableViewPage() {
           margin: 0;
           padding: 0;
           font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          background: #ffffff;
+          background: var(--bg-card);
           overflow: hidden;
         }
         * {

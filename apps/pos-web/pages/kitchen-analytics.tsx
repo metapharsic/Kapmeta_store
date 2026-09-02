@@ -270,7 +270,7 @@ export default function KitchenAnalytics() {
               borderRadius: 10,
               marginBottom: 16,
               background: comparison.deltaPercent <= 0 ? "var(--accent-soft, #ecfdf5)" : "var(--warning-soft, #fffbeb)",
-              color: comparison.deltaPercent <= 0 ? "var(--accent, #10b981)" : "var(--warning, #f59e0b)",
+              color: comparison.deltaPercent <= 0 ? "var(--accent-subtle-text, #065f46)" : "var(--warning, #f59e0b)",
             }}
           >
             {comparison.deltaPercent <= 0 ? "▼" : "▲"} {Math.abs(comparison.deltaPercent)}% vs previous {RANGE_LABEL[range].toLowerCase()}

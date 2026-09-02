@@ -198,7 +198,7 @@ export default function CompanyDetailsPanel(): JSX.Element {
               disabled={saving}
               style={{
                 cursor: saving ? "wait" : "pointer",
-                background: "var(--primary, #10b981)",
+                background: "var(--accent)",
                 border: "none",
                 color: "#fff",
                 fontWeight: 600,

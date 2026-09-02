@@ -48,8 +48,8 @@ export default function POSIndexPage() {
 
   if (authLoading) {
     return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f8fafc" }}>
-        <div style={{ textAlign: "center", color: "#64748b" }}>
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-base)" }}>
+        <div style={{ textAlign: "center", color: "var(--text-secondary)" }}>
           <div style={{ fontSize: "2rem", marginBottom: "8px" }}>⏳</div>
           <div>Loading kapMeta POS Register...</div>
         </div>
@@ -101,7 +101,7 @@ export default function POSIndexPage() {
           margin: 0;
           padding: 0;
           font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          background: #f8fafc;
+          background: var(--bg-base);
           overflow-x: hidden;
         }
         * {

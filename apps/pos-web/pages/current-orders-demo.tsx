@@ -32,7 +32,7 @@ export default function CurrentOrdersDemoPage() {
           margin: 0;
           padding: 0;
           font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          background: #f8fafc;
+          background: var(--bg-base);
           overflow: hidden;
         }
         * {

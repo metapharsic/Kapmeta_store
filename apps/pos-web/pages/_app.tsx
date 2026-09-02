@@ -20,7 +20,7 @@ function MyApp({ Component, pageProps }: AppProps) {
           
           --text-primary: #0f172a;
           --text-secondary: #64748b;
-          --text-muted: #94a3b8;
+          --text-muted: #6b7481;
           
           --border: #e2e8f0;
           --border-subtle: #f1f5f9;
