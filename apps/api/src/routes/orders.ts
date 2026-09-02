@@ -399,6 +399,14 @@ ordersRouter.get("/orders/live/summary", requireAuth, async (req: AuthedRequest,
 // Aggregator/dispatch columns landed on orders after the checked-in Prisma
 // client was generated. Read them in a separate, catch-guarded query so a
 // stale client degrades these fields to null instead of 500-ing the screen.
+//
+// customerName/customerPhone are NOT selected here: schema.prisma / orders
+// (db/migrations/0039) has no customer_name or customer_phone column, so
+// including them used to make Prisma reject this entire select as one
+// unknown-argument error -- which meant channel/externalOrderId/rider/otp
+// (all real columns) never came back either, every single time this ran.
+// The OTP column is `customerOtp` in the Prisma model (maps to
+// orders.customer_otp), not `otp`.
 async function loadOnlineOrderColumns(orderIds: string[]): Promise<Map<string, any>> {
   const map = new Map<string, any>();
   if (orderIds.length === 0) return map;
@@ -409,11 +417,9 @@ async function loadOnlineOrderColumns(orderIds: string[]): Promise<Map<string, a
         id: true,
         channel: true,
         externalOrderId: true,
-        customerName: true,
-        customerPhone: true,
         riderName: true,
         riderPhone: true,
-        otp: true,
+        customerOtp: true,
         receivedAt: true,
         acceptedAt: true,
       },
@@ -521,9 +527,13 @@ ordersRouter.get("/orders/online", requireAuth, async (req: AuthedRequest, res) 
         tableNumber: row.diningTable?.tableNumber ?? null,
         riderName: extra.riderName ?? row.riderName ?? null,
         riderPhone: extra.riderPhone ?? row.riderPhone ?? null,
-        customerName: extra.customerName ?? row.customerName ?? null,
-        customerPhone: extra.customerPhone ?? row.customerPhone ?? null,
-        otp: extra.otp ?? row.otp ?? null,
+        // No customer_name/customer_phone column exists on orders (see
+        // loadOnlineOrderColumns above) -- surfaced as null rather than a
+        // fabricated value; the raw customer payload is still captured in
+        // the AGGREGATOR_WEBHOOK audit log entry for this order.
+        customerName: null,
+        customerPhone: null,
+        otp: extra.customerOtp ?? row.customerOtp ?? null,
         createdAt,
         receivedAt: extra.receivedAt ?? row.receivedAt ?? null,
         acceptedAt: extra.acceptedAt ?? row.acceptedAt ?? null,

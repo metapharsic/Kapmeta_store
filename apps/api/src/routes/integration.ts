@@ -15,13 +15,20 @@ router.post(["/channels", "/integrations/channels", "/integration/channels", "/i
   try {
     const { channel, externalOutletId, credentialsRef } = req.body;
 
+    // ChannelAccount (schema.prisma / db/migrations/0007_integration.sql) has
+    // no `channel` column — only `credentialsRef`, which is how the PUT
+    // .../:channel/connect handler below already records which aggregator an
+    // account is for. A literal `channel` key here used to make Prisma
+    // reject the entire create as an unknown argument, so this endpoint
+    // 500'd on every call; store the channel code in credentialsRef instead
+    // so GET /channels (below) can read it back the same way it reads
+    // connect-created accounts.
     const account = await prisma.channelAccount.create({
       data: {
         outletId: req.auth!.outletId,
         integration_id: req.auth!.outletId,
-        channel,
         externalOutletId,
-        credentialsRef,
+        credentialsRef: credentialsRef || channel,
         is_active: true,
       } as any
     });
@@ -41,8 +48,12 @@ router.get(["/channels", "/integrations/channels", "/integration/channels", "/in
     res.status(200).json(
       accounts.map((a: any) => ({
         id: a.id,
-        channel: a.channel || a.credentialsRef || "SWIGGY",
-        externalOutletId: a.externalOutletId || "EXT-001",
+        // credentialsRef is the only column that carries the channel code
+        // (ChannelAccount has no `channel` field) — no "SWIGGY" default:
+        // faking a channel for an account whose code genuinely isn't set
+        // would misreport a Zomato connection as Swiggy (No Hardcoding Rule).
+        channel: a.credentialsRef || null,
+        externalOutletId: a.externalOutletId || null,
         status: a.is_active ? "ACTIVE" : "PAUSED",
         connectedAt: a.createdAt,
         hasCredentials: true,
@@ -126,6 +137,11 @@ router.post("/integrations/mappings", requireAuth, requirePermission("integratio
         } else {
           return await (prisma as any).channelItemMapping.create({
             data: {
+              // outlet_id (schema.prisma) is NOT NULL with no default — a
+              // create() omitting it fails Prisma's required-argument check
+              // on every new mapping, so every /integrations/mappings call
+              // that didn't already have a matching row 500'd.
+              outlet_id: req.auth!.outletId,
               channelAccountId,
               item_id: m.menuItemId || m.item_id,
               externalItemId: m.externalItemId,
@@ -335,8 +351,6 @@ router.post(["/webhooks/:channel", "/webhooks/swiggy", "/webhooks/zomato"], asyn
     const subtotal = lines.reduce((s, l) => s + BigInt(l.unitPriceMinor) * BigInt(l.quantity), 0n);
     const tax = (subtotal * 5n) / 100n;
     const grandTotal = subtotal + tax;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
 
     // 4. Create Order & OrderItems
     //
@@ -349,20 +363,33 @@ router.post(["/webhooks/:channel", "/webhooks/swiggy", "/webhooks/zomato"], asyn
     const acceptedAt = new Date();
     const riderSource = rider || req.body.deliveryPartner || {};
 
+    // Order (schema.prisma) has no business_date field at all -- that column
+    // only exists on the *_summary reporting tables and
+    // waiter_shift_handovers, never on orders itself. Including it here made
+    // Prisma reject this create as an unknown argument -- on BOTH the
+    // combined create below and its own fallback-to-baseOrderData branch, so
+    // every single aggregator webhook call failed before ever reaching the
+    // audit log or KOT steps.
     const baseOrderData: any = {
       outletId,
       orderNumber,
       orderType: "DELIVERY",
       status: "CONFIRMED",
-      business_date: today,
       subtotal,
       taxTotal: tax,
       grandTotal,
       orderItems: {
+        // NOTE: OrderItem (schema.prisma) has no item_name field — quantity/
+        // unitPrice/subtotal are the only per-line columns it defines, so the
+        // display name is not snapshotted here. A `item_name` key on this
+        // create() used to make Prisma reject the whole insert (unknown
+        // argument), which meant this route 500'd on every single webhook
+        // call, aggregator or fallback path alike. See the read side
+        // (orders.ts) for the equally-defensive `it.item_name || ... ||
+        // "Dish"` fallback this already accounted for on the way out.
         create: lines.map((l) => ({
           outletId,
           menuItemId: l.menuItemId,
-          item_name: l.name,
           quantity: l.quantity,
           unitPrice: BigInt(l.unitPriceMinor),
           subtotal: BigInt(l.unitPriceMinor) * BigInt(l.quantity),
@@ -370,14 +397,20 @@ router.post(["/webhooks/:channel", "/webhooks/swiggy", "/webhooks/zomato"], asyn
       },
     };
 
+    // customerName/customerPhone are deliberately NOT written to the order row:
+    // orders (schema.prisma / db/migrations/0039) has no customer_name or
+    // customer_phone column — 0039 explicitly considered and rejected reusing
+    // 0009's draft orders table for this. Bundling them into aggregatorOrderData
+    // used to make Prisma reject the *entire* create/update as one unknown-
+    // argument error, silently discarding channel/externalOrderId/rider/otp too
+    // (all of which ARE real columns) on every webhook call. The audit log
+    // write below still records the raw customer object for reference.
     const aggregatorOrderData: any = {
       channel: channelParam,
       externalOrderId: String(externalOrderId),
-      customerName: customer?.name ?? req.body.customerName ?? null,
-      customerPhone: customer?.phone ?? req.body.customerPhone ?? null,
       riderName: riderSource?.name ?? req.body.riderName ?? null,
       riderPhone: riderSource?.phone ?? req.body.riderPhone ?? null,
-      otp: otp ?? req.body.deliveryOtp ?? riderSource?.otp ?? null,
+      customerOtp: otp ?? req.body.deliveryOtp ?? riderSource?.otp ?? null,
       receivedAt,
       acceptedAt,
     };
@@ -398,10 +431,17 @@ router.post(["/webhooks/:channel", "/webhooks/swiggy", "/webhooks/zomato"], asyn
     }
 
     // 5. Generate Station KOTs & Order Status History
-    await (prisma.orderStatusHistory as any).create({
+    //
+    // OrderStatusHistory (schema.prisma) has `status`, not `to_status`, and
+    // `outletId` is required with no default — both were wrong/missing here,
+    // so this insert failed silently (via the .catch below) on every
+    // webhook call and no history row was ever recorded for an aggregator
+    // order.
+    await prisma.orderStatusHistory.create({
       data: {
+        outletId,
         orderId: createdOrder.id,
-        to_status: "CONFIRMED",
+        status: "CONFIRMED",
       },
     }).catch(() => {});
 
@@ -409,10 +449,20 @@ router.post(["/webhooks/:channel", "/webhooks/swiggy", "/webhooks/zomato"], asyn
     await onOrderConfirmed(createdOrder.id, prisma).catch(() => {});
 
     // 6. Record Immutable Webhook Audit Log
+    //
+    // AuditLog (schema.prisma) has `userId` (required, no default), not
+    // `actor_id` -- that field name doesn't exist on the model at all. This
+    // call was unguarded (no .catch, unlike the status-history write above),
+    // so every webhook that got this far still 500'd back to the aggregator
+    // even though the order had already been created and confirmed --
+    // exactly the kind of "looks like it failed but didn't" response that
+    // makes an aggregator's retry/alerting logic misfire. Inbound webhooks
+    // carry no authenticated user (no requireAuth on this route), so
+    // outletId is used as the actor id, same as this line already intended.
     await prisma.auditLog.create({
       data: {
         outletId,
-        actor_id: outletId,
+        userId: outletId,
         action: "CREATE",
         entityType: "AGGREGATOR_WEBHOOK",
         entityId: createdOrder.id,

@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-09-02T18:03:16Z",
+  "lastUpdated": "2026-09-02T18:44:36Z",
   "activeTasks": [
     {
       "taskId": "TSK-001",
@@ -622,6 +622,62 @@
       "status": "COMPLETED",
       "priority": "P0",
       "relatedGate": "CP-19"
+    },
+    {
+      "taskId": "TSK-021",
+      "title": "DB: repair 0007_integration.sql (channel_accounts.integration_id missing live) - migration 0044, root cause of aggregator order feed failure",
+      "assignedTo": "database-agent",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "relatedGate": "CP-20"
+    },
+    {
+      "taskId": "TSK-022",
+      "title": "DB: repair 0002_catalog.sql (item_availability table missing live) - migration 0045",
+      "assignedTo": "database-agent",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "relatedGate": "CP-20"
+    },
+    {
+      "taskId": "TSK-023",
+      "title": "Backend: fix aggregator webhook + channels + orders/online routes writing/selecting non-existent Prisma fields (business_date, item_name, customerName/Phone, otp, to_status, actor_id, missing outlet_id) - integration.ts, orders.ts",
+      "assignedTo": "backend-agent",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "relatedGate": "CP-20"
+    },
+    {
+      "taskId": "TSK-024",
+      "title": "Backend: removed hardcoded SWIGGY/EXT-001 fallback literals in GET /channels (AGENTS.md Rule 1)",
+      "assignedTo": "backend-agent",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "relatedGate": "CP-20"
+    },
+    {
+      "taskId": "TSK-025",
+      "title": "availability_schedules table also missing live (same 0002_catalog.sql cause as item_availability) - backs commission.ts/menu-scheduling.ts, out of aggregator-feed scope, needs its own repair migration",
+      "assignedTo": "database-agent",
+      "status": "PENDING",
+      "priority": "P2",
+      "relatedGate": "CP-20"
+    },
+    {
+      "taskId": "TSK-026",
+      "title": "user_quick_links.updated_at missing live column (P2022 in logs, GET /quick-links) - unrelated to aggregator feed, spotted not fixed",
+      "assignedTo": "database-agent",
+      "status": "PENDING",
+      "priority": "P2",
+      "relatedGate": "CP-20"
+    },
+    {
+      "taskId": "TSK-020-U1",
+      "title": "USER ACTION: npm run db:migrate (picks up 0043+0044+0045), npx prisma generate, restart API",
+      "assignedTo": "user",
+      "status": "PENDING",
+      "priority": "P0",
+      "relatedGate": "CP-20"
     }
   ]
 }
