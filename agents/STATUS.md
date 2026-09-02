@@ -1,6 +1,6 @@
 # PetPooja POS Platform — Multi-Agent Operational Status
 
-**Last Updated:** 2026-09-01T00:10:00Z · **System Status:** 🟢 OPERATIONAL
+**Last Updated:** 2026-09-02T09:35:00Z · **System Status:** 🟢 OPERATIONAL
 
 ---
 
@@ -203,3 +203,17 @@ Frontend: 4 new components incl. a dependency-free inline-SVG RevenueTrendChart 
 Fake data removed: the hardcoded "(Non AC)" literal, AggregatorOrdersView's fake rider name/phone, the "Hotel kapila"/"R327038" outlet fallbacks.
 
 tsc: pos-web 0, api 100 (one better than the 101 baseline). No line-ending churn across 24 files. NOT verified in a browser — `next build` can't run here (node_modules installed on Windows, no Linux SWC binary, no network).
+
+## 2026-09-02 — CP-17 Menu Management screens (7 more reference screenshots)
+
+5 agents (1 DB, 2 backend, 3 frontend — hit an account-level rate limit mid-round, resumed after reset). Audit mapped 7 new screenshots (All In One Menu, Multi-Item Images Upload, Online Menu on/off, Special Note, Set Menu Commission, Menu Scheduling, Physical Menu) against the app.
+
+Findings: channel-availability.tsx already covers ~60-70% of "Online Menu on/off" (just not grouped under Menu & Discounts yet). special_notes had a full backend (CP-11) but zero frontend — pure UI gap. availability_schedules table existed in schema since migration 0002 with ZERO code references anywhere — fully dead until this round. Commission and physical-menu file storage did not exist at all — no commission concept anywhere in the schema, no file-upload/object-storage middleware anywhere in the repo (no multer/S3/etc).
+
+Built: migration 0040 (item_commissions, addon_commissions, physical_menu_files, outlets.last_menu_sync_at, availability_schedules.is_active/category_id top-up) — idempotent, additive only. Backend: commission.ts (item + addon commission CRUD, server-paginated), physical-menu.ts (file list/add/delete — URL-paste only, see limitation below), menu-scheduling.ts (schedule CRUD on the now-wired availability_schedules table). All new-model queries use the (prisma as any) cast pattern since the client isn't regenerated yet, and route through sendServerError.
+Frontend: menu/hub.tsx (tile grid + Last-Menu-Sync badge), menu/special-notes.tsx, menu/commission.tsx (2 tabs, real server pagination), menu/images-upload.tsx, menu/physical.tsx, menu/scheduling.tsx. Nav.tsx restructured into one "Menu & Discounts" group (8 entries), KapMetaHeader drawer defaults it expanded (same fix pattern as the CP-14 reports-discoverability round).
+
+Two limitations surfaced honestly instead of faked: (1) no file-upload backend exists anywhere in this repo, so images-upload.tsx and physical.tsx accept a pasted URL, not real file bytes — flagged in the UI copy itself, not hidden; (2) GET /auth/me doesn't expose lastMenuSyncAt yet, so the hub badge shows "Never synced" instead of a fake relative time until that's wired.
+
+tsc: pos-web 0 errors, api 100 (same pre-existing baseline as CP-16, 0 new). No line-ending churn (git diff --numstat clean on all modified files). NOT browser-verified (same next build limitation as CP-16).
+Commits: 8da7dc1 (schema), 40b0f9f (backend routes), ffa8eab (frontend).

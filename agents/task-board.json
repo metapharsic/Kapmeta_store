@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-09-02T07:00:00Z",
+  "lastUpdated": "2026-09-02T09:53:51Z",
   "activeTasks": [
     {
       "taskId": "TSK-001",
@@ -422,6 +422,78 @@
       "status": "PENDING",
       "priority": "P0",
       "relatedGate": "CP-16"
+    },
+    {
+      "taskId": "TSK-017-A1",
+      "title": "DB: item_commissions, addon_commissions, physical_menu_files, outlets.last_menu_sync_at, availability_schedules top-up (migration 0040)",
+      "assignedTo": "database-agent",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "relatedGate": "CP-17"
+    },
+    {
+      "taskId": "TSK-017-A2",
+      "title": "Backend: commission.ts, physical-menu.ts, menu-scheduling.ts routes + app.ts wiring + lastMenuSyncAt stamp",
+      "assignedTo": "backend-agent",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "relatedGate": "CP-17"
+    },
+    {
+      "taskId": "TSK-017-A3",
+      "title": "Frontend: menu/hub.tsx tile grid + Nav.tsx 'Menu & Discounts' group restructure + KapMetaHeader expand",
+      "assignedTo": "frontend-agent",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "relatedGate": "CP-17"
+    },
+    {
+      "taskId": "TSK-017-A4",
+      "title": "Frontend: menu/special-notes.tsx + menu/commission.tsx",
+      "assignedTo": "frontend-agent",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "relatedGate": "CP-17"
+    },
+    {
+      "taskId": "TSK-017-A5",
+      "title": "Frontend: menu/images-upload.tsx + menu/physical.tsx + menu/scheduling.tsx",
+      "assignedTo": "frontend-agent",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "relatedGate": "CP-17"
+    },
+    {
+      "taskId": "TSK-017b",
+      "title": "No file-upload/object-storage backend exists anywhere in repo - images-upload.tsx and physical.tsx cannot persist real files, URL-paste only",
+      "assignedTo": "backend-agent",
+      "status": "PENDING",
+      "priority": "P2",
+      "relatedGate": "CP-17"
+    },
+    {
+      "taskId": "TSK-017c",
+      "title": "GET /auth/me does not expose Outlet.lastMenuSyncAt - hub.tsx badge shows 'Never synced' until wired",
+      "assignedTo": "backend-agent",
+      "status": "PENDING",
+      "priority": "P2",
+      "relatedGate": "CP-17"
+    },
+    {
+      "taskId": "TSK-017d",
+      "title": "special-notes API has no page/limit/search params - UI does client-side pagination as a workaround",
+      "assignedTo": "backend-agent",
+      "status": "PENDING",
+      "priority": "P3",
+      "relatedGate": "CP-17"
+    },
+    {
+      "taskId": "TSK-017-U1",
+      "title": "USER ACTION: same as TSK-016-U1 - npm run db:verify, npm run db:migrate, npx prisma generate, restart API (now also covers migration 0040)",
+      "assignedTo": "user",
+      "status": "PENDING",
+      "priority": "P0",
+      "relatedGate": "CP-17"
     }
   ]
 }
