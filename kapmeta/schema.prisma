@@ -25,6 +25,7 @@ model User {
   sessions      Session[]
   quickLinks    UserQuickLink[]
   notifications Notification[]
+  physicalMenuFiles PhysicalMenuFile[]
 
   @@map("users")
 }
@@ -140,6 +141,7 @@ model Outlet {
   currency       String     @default("INR")
   dayStartTime   String?    @map("day_start_time")
   isActive       Boolean    @default(true) @map("is_active")
+  lastMenuSyncAt DateTime?  @map("last_menu_sync_at")
   createdAt      DateTime   @default(now()) @map("created_at")
   updatedAt      DateTime   @default(now()) @updatedAt @map("updated_at")
   createdBy      String?    @map("created_by")
@@ -347,6 +349,7 @@ model MenuItem {
   category          MenuCategory? @relation(fields: [categoryId], references: [id])
   kotItems          KOTItem[]
   orderItems        OrderItem[]
+  itemCommissions   ItemCommission[]
 
   @@index([categoryId], map: "idx_menu_items_category")
   @@index([outletId], map: "idx_menu_items_outlet")
@@ -779,9 +782,11 @@ model availability_schedules {
   id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   outlet_id   String   @db.Uuid
   item_id     String   @db.Uuid
+  category_id String?  @db.Uuid
   day_of_week Int      @db.SmallInt
   start_time  DateTime @db.Time(6)
   end_time    DateTime @db.Time(6)
+  is_active   Boolean  @default(true)
   created_at  DateTime @default(now()) @db.Timestamptz(6)
   updated_at  DateTime @default(now()) @db.Timestamptz(6)
   created_by  String?  @db.Uuid
@@ -914,15 +919,16 @@ model item_availability {
 }
 
 model modifier_options {
-  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  outlet_id         String   @db.Uuid
-  modifier_group_id String   @db.Uuid
+  id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  outlet_id         String            @db.Uuid
+  modifier_group_id String            @db.Uuid
   name              String
-  price             BigInt   @default(0)
-  is_active         Boolean  @default(true)
-  sort_order        Int      @default(0)
-  created_at        DateTime @default(now()) @db.Timestamptz(6)
-  updated_at        DateTime @default(now()) @db.Timestamptz(6)
+  price             BigInt            @default(0)
+  is_active         Boolean           @default(true)
+  sort_order        Int               @default(0)
+  created_at        DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime          @default(now()) @db.Timestamptz(6)
+  addonCommissions  AddonCommission[]
 
   @@index([outlet_id], map: "idx_modifier_options_outlet")
   @@index([modifier_group_id], map: "idx_modifier_options_group")
@@ -1392,5 +1398,68 @@ model WaiterShiftHandover {
   @@index([outletId, businessDate], map: "idx_waiter_shift_handovers_outlet_date")
   @@index([waiterId], map: "idx_waiter_shift_handovers_waiter")
   @@map("waiter_shift_handovers")
+}
+
+/// Backs the "Set Menu Commission" screen's Item Commission tab: one row per
+/// (outlet, menu item) commission rate, keyed off menu_items so the UI's
+/// Item | Category | Item Price columns can join straight through to
+/// MenuItem / MenuCategory. Absence of a row is the screen's "Not Configured"
+/// state -- there is no sentinel row for that, callers just get no match.
+/// commissionType is a discriminator ('PERCENTAGE' | 'FLAT', enforced by a DB
+/// CHECK constraint) over the single commissionValue column, so a percentage
+/// rate and a flat amount never both need to be populated at once.
+model ItemCommission {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  outletId         String   @map("outlet_id") @db.Uuid
+  menuItemId       String   @map("menu_item_id") @db.Uuid
+  commissionType   String   @map("commission_type")
+  commissionValue  Decimal? @map("commission_value") @db.Decimal(10, 2)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  menuItem         MenuItem @relation(fields: [menuItemId], references: [id])
+
+  @@unique([outletId, menuItemId], map: "ux_item_commissions_outlet_item")
+  @@index([outletId], map: "idx_item_commissions_outlet")
+  @@index([menuItemId], map: "idx_item_commissions_menu_item")
+  @@map("item_commissions")
+}
+
+/// Backs the "Set Menu Commission" screen's Addon Item Commission tab -- same
+/// shape as ItemCommission, but keyed off modifier_options (the table
+/// actually behind POST/PATCH /menu/modifier-options, added in migration
+/// 0025; not the older, unwired `modifiers` table from 0002_catalog.sql).
+model AddonCommission {
+  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  outletId         String           @map("outlet_id") @db.Uuid
+  addonItemId      String           @map("addon_item_id") @db.Uuid
+  commissionType   String           @map("commission_type")
+  commissionValue  Decimal?         @map("commission_value") @db.Decimal(10, 2)
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  addonItem        modifier_options @relation(fields: [addonItemId], references: [id])
+
+  @@unique([outletId, addonItemId], map: "ux_addon_commissions_outlet_addon_item")
+  @@index([outletId], map: "idx_addon_commissions_outlet")
+  @@index([addonItemId], map: "idx_addon_commissions_addon_item")
+  @@map("addon_commissions")
+}
+
+/// Backs the "Physical Menu" screen's empty state / "+ Add File" upload.
+/// fileUrl holds either a local path or an object-storage URL -- storage
+/// backend is a follow-up decision, this column just needs to hold whichever
+/// string that turns out to be. uploadedByUserId is nullable: an upload
+/// performed by a future system/sync process has no human uploader.
+model PhysicalMenuFile {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  outletId         String    @map("outlet_id") @db.Uuid
+  fileName         String    @map("file_name")
+  fileUrl          String    @map("file_url")
+  uploadedByUserId String?   @map("uploaded_by_user_id") @db.Uuid
+  uploadedAt       DateTime  @default(now()) @map("uploaded_at") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  uploadedByUser   User?     @relation(fields: [uploadedByUserId], references: [id])
+
+  @@index([outletId], map: "idx_physical_menu_files_outlet")
+  @@map("physical_menu_files")
 }
 
