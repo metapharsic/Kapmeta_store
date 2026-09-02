@@ -142,11 +142,15 @@ model Outlet {
   dayStartTime   String?    @map("day_start_time")
   isActive       Boolean    @default(true) @map("is_active")
   lastMenuSyncAt DateTime?  @map("last_menu_sync_at")
+  isVirtual      Boolean    @default(false) @map("is_virtual")
+  parentOutletId String?    @map("parent_outlet_id") @db.Uuid
   createdAt      DateTime   @default(now()) @map("created_at")
   updatedAt      DateTime   @default(now()) @updatedAt @map("updated_at")
   createdBy      String?    @map("created_by")
   updatedBy      String?    @map("updated_by")
   userRoles      UserRole[]
+  parentOutlet   Outlet?    @relation("OutletVirtualChildren", fields: [parentOutletId], references: [id])
+  virtualOutlets Outlet[]   @relation("OutletVirtualChildren")
 
   @@map("outlets")
 }
@@ -344,12 +348,14 @@ model MenuItem {
   isActive          Boolean       @default(true) @map("is_active")
   station_id        String?       @map("station_id") @db.Uuid
   onlineDisplayName String?       @map("online_display_name")
+  shortCode         String?       @map("short_code")
   createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt         DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   category          MenuCategory? @relation(fields: [categoryId], references: [id])
   kotItems          KOTItem[]
   orderItems        OrderItem[]
   itemCommissions   ItemCommission[]
+  itemChannelPrices ItemChannelPrice[]
 
   @@index([categoryId], map: "idx_menu_items_category")
   @@index([outletId], map: "idx_menu_items_outlet")
@@ -1463,3 +1469,29 @@ model PhysicalMenuFile {
   @@map("physical_menu_files")
 }
 
+/// Backs the "Menu Management -- <Channel>" screens (Base Menu / Home
+/// Delivery / Parcel / Dine In AC / Dine In Non AC / Zomato / Swiggy): one
+/// row per (item, channel) price override. Absence of a row for a given
+/// channel means the UI/API layer should fall back to the item's own base
+/// MenuItem.price for that channel -- not zero, not blank -- until someone
+/// explicitly overrides it here; this migration does not backfill any rows.
+/// onlineDisplayName is only meaningfully populated for ZOMATO/SWIGGY rows
+/// per the reference screens, but nothing here enforces that -- it is
+/// nullable for every channel.
+model ItemChannelPrice {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  outletId          String   @map("outlet_id") @db.Uuid
+  itemId            String   @map("item_id") @db.Uuid
+  channel           String   @map("channel")
+  priceMinor        BigInt   @map("price_minor")
+  onlineDisplayName String?  @map("online_display_name")
+  isAvailable       Boolean  @default(true) @map("is_available")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  item              MenuItem @relation(fields: [itemId], references: [id])
+
+  @@unique([outletId, itemId, channel], map: "ux_item_channel_prices_outlet_item_channel")
+  @@index([outletId], map: "idx_item_channel_prices_outlet")
+  @@index([itemId], map: "idx_item_channel_prices_item")
+  @@map("item_channel_prices")
+}
