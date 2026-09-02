@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-09-02T18:44:36Z",
+  "lastUpdated": "2026-09-02T18:50:10Z",
   "activeTasks": [
     {
       "taskId": "TSK-001",
@@ -677,6 +677,14 @@
       "assignedTo": "user",
       "status": "PENDING",
       "priority": "P0",
+      "relatedGate": "CP-20"
+    },
+    {
+      "taskId": "TSK-027",
+      "title": "order_payments table does not exist live at all (db:migrate 42P01) - two conflicting lineages (0004_orders.sql vs 0010_create_order_payments.sql) declare it with different columns, neither landed - 0043 patched to skip it safely (DO-block existence guard), needs its own decision+migration",
+      "assignedTo": "database-agent",
+      "status": "PENDING",
+      "priority": "P1",
       "relatedGate": "CP-20"
     }
   ]

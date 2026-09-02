@@ -126,8 +126,20 @@ ALTER TABLE kot_items ADD COLUMN IF NOT EXISTS order_item_id UUID;
 ALTER TABLE recipes ADD COLUMN IF NOT EXISTS version INT NOT NULL DEFAULT 1;
 ALTER TABLE recipes ADD COLUMN IF NOT EXISTS effective_from TIMESTAMPTZ;
 
-ALTER TABLE order_payments ADD COLUMN IF NOT EXISTS payment_group_id UUID;
-ALTER TABLE order_payments ADD COLUMN IF NOT EXISTS rounding_adjustment_minor BIGINT DEFAULT 0;
+-- order_payments does not exist live at all (confirmed by db:migrate
+-- itself: 42P01 relation "order_payments" does not exist) -- two
+-- conflicting migration lineages (0004_orders.sql and
+-- 0010_create_order_payments.sql) both declare a table of this name with
+-- DIFFERENT columns, and neither has actually landed. Guessing a shape here
+-- would risk locking in the wrong one, so this is skipped (guarded, not
+-- assumed) rather than invented -- flagged as TSK-027 for its own
+-- investigation, out of scope for the 0018/0022 repair this file targets.
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'order_payments') THEN
+        ALTER TABLE order_payments ADD COLUMN IF NOT EXISTS payment_group_id UUID;
+        ALTER TABLE order_payments ADD COLUMN IF NOT EXISTS rounding_adjustment_minor BIGINT DEFAULT 0;
+    END IF;
+END $$;
 
 ALTER TABLE petty_cash_ledger ADD COLUMN IF NOT EXISTS paid_to VARCHAR(255);
 
