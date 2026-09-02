@@ -1,6 +1,6 @@
 # PetPooja POS Platform — Multi-Agent Operational Status
 
-**Last Updated:** 2026-09-02T09:35:00Z · **System Status:** 🟢 OPERATIONAL
+**Last Updated:** 2026-09-02T10:15:00Z · **System Status:** 🟢 OPERATIONAL
 
 ---
 
@@ -217,3 +217,13 @@ Two limitations surfaced honestly instead of faked: (1) no file-upload backend e
 
 tsc: pos-web 0 errors, api 100 (same pre-existing baseline as CP-16, 0 new). No line-ending churn (git diff --numstat clean on all modified files). NOT browser-verified (same next build limitation as CP-16).
 Commits: 8da7dc1 (schema), 40b0f9f (backend routes), ffa8eab (frontend).
+
+## 2026-09-02 — CP-18 Correction: real Manage Menu screens (per-channel pricing)
+
+3 agents (1 DB, 1 backend, 1 frontend). User supplied more precise reference screenshots of the actual app's Menu Management screens after CP-17 shipped a simplified guess. Audit found the guess was wrong in a specific, fixable way: hub.tsx put a 6-channel tile grid directly on the landing page; the real app shows only 2 cards there (All In One Menu -> Manage Menu, Add Virtual Outlet), with the 6-channel switcher one screen deeper. Also found: the same item has a DIFFERENT price per channel (Base Menu/Home Delivery/Parcel/Dine In AC/Dine In Non AC/Zomato/Swiggy) — no per-channel price concept existed anywhere before this round (menu_items had one item-wide price only).
+
+Built: migration 0041 (item_channel_prices table, additive, does NOT touch item_availability which already backs the shipped channel-availability.tsx on/off feature; menu_items.short_code as a single item-level field, confirmed identical across channels from the screenshots; outlets.is_virtual/parent_outlet_id, both nullable/defaulted). Backend: GET/PUT /menu/channel-prices (falls back to the item's base price when no channel override exists — never 0/blank), GET/POST /outlets/virtual. Frontend: hub.tsx fixed to the real 2-card layout; menu/manage.tsx replicates the exact per-channel column differences from the reference (Base Menu has no Available column; delivery/parcel/dine-in channels have no Online Display Name; Zomato/Swiggy have no Short Code) with an "inherited from base price" badge on unoverridden rows; menu/virtual-outlets.tsx (minimal list+create).
+
+Two things surfaced honestly instead of faked: the Zomato/Swiggy "Last Menu Triggered..." sync banner and "Visit Store" button have no real data source anywhere in this schema (no lastSyncedAt/store-URL field on ChannelAccount) — rendered as neutral placeholders, not fabricated names/dates. The Manage Menu top tab bar's Variants and Discounts tabs have zero backend anywhere — marked "coming soon"; Addons and Taxes have real backend routes but no frontend page ever calls them, so those two are also "coming soon" on this tab bar pending a future round.
+
+tsc: pos-web 0, api 100 (same baseline, 0 new). No line-ending churn. Commits: 86673b6 (schema), b1d8cea (backend+frontend).

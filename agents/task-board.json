@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-09-02T09:53:51Z",
+  "lastUpdated": "2026-09-02T11:18:08Z",
   "activeTasks": [
     {
       "taskId": "TSK-001",
@@ -494,6 +494,54 @@
       "status": "PENDING",
       "priority": "P0",
       "relatedGate": "CP-17"
+    },
+    {
+      "taskId": "TSK-018-A1",
+      "title": "DB: item_channel_prices, menu_items.short_code, outlets.is_virtual/parent_outlet_id (migration 0041)",
+      "assignedTo": "database-agent",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "relatedGate": "CP-18"
+    },
+    {
+      "taskId": "TSK-018-A2",
+      "title": "Backend: menu-channel-pricing.ts, virtual-outlets.ts routes + app.ts wiring + shortCode whitelist",
+      "assignedTo": "backend-agent",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "relatedGate": "CP-18"
+    },
+    {
+      "taskId": "TSK-018-A3",
+      "title": "Frontend: fix hub.tsx to real 2-card layout, build menu/manage.tsx (per-channel Items table) + menu/virtual-outlets.tsx",
+      "assignedTo": "frontend-agent",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "relatedGate": "CP-18"
+    },
+    {
+      "taskId": "TSK-018b",
+      "title": "Zomato/Swiggy sync banner and Visit Store button are honest placeholders - ChannelAccount has no lastSyncedAt or store-URL field to source real data from",
+      "assignedTo": "backend-agent",
+      "status": "PENDING",
+      "priority": "P2",
+      "relatedGate": "CP-18"
+    },
+    {
+      "taskId": "TSK-018c",
+      "title": "Manage Menu top tabs: Variants and Discounts have zero backend anywhere - marked coming-soon, not built. Addons/Taxes have real backend but no frontend page - also coming-soon on this tab bar",
+      "assignedTo": "frontend-agent",
+      "status": "PENDING",
+      "priority": "P2",
+      "relatedGate": "CP-18"
+    },
+    {
+      "taskId": "TSK-018-U1",
+      "title": "USER ACTION: same as TSK-017-U1 - npm run db:verify, npm run db:migrate, npx prisma generate, restart API (now also covers migration 0041)",
+      "assignedTo": "user",
+      "status": "PENDING",
+      "priority": "P0",
+      "relatedGate": "CP-18"
     }
   ]
 }
