@@ -25,6 +25,8 @@ import { ordersRouter } from './routes/orders';
 import { settingsRouter } from './routes/settings';
 import { commissionRouter } from './routes/commission';
 import { physicalMenuRouter } from './routes/physical-menu';
+import { menuChannelPricingRouter } from './routes/menu-channel-pricing';
+import { virtualOutletsRouter } from './routes/virtual-outlets';
 import { menuSchedulingRouter } from './routes/menu-scheduling';
 import { taxSettingsRouter } from './routes/tax-settings';
 import { adminRouter } from './routes/admin';
@@ -73,6 +75,8 @@ export function createApp(): Express {
   app.use(settingsRouter);
   app.use('/commission', commissionRouter);
   app.use('/physical-menu', physicalMenuRouter);
+  app.use('/menu', menuChannelPricingRouter);
+  app.use('/outlets', virtualOutletsRouter);
   app.use('/menu-scheduling', menuSchedulingRouter);
   app.use(taxSettingsRouter);
 

@@ -342,7 +342,7 @@ router.patch("/items/:id", requireAuth, requirePermission("menu.item.manage"), a
   try {
     const outletId = req.auth!.outletId;
     const catalogRepository = new PrismaMenuCatalogRepository(prisma);
-    const { name, description, categoryId, isVeg, priceMinor, taxRate } = req.body;
+    const { name, description, categoryId, isVeg, priceMinor, taxRate, shortCode } = req.body;
     const item = await catalogRepository.updateMenuItem(outletId, req.params.id, {
       name,
       description,
@@ -350,7 +350,8 @@ router.patch("/items/:id", requireAuth, requirePermission("menu.item.manage"), a
       isVeg,
       priceMinor: priceMinor !== undefined ? BigInt(priceMinor) : undefined,
       taxRate,
-    });
+      ...(shortCode !== undefined ? { shortCode } : {}),
+    } as any);
     res.status(200).json({ ...item, price: String(item.price ?? "") });
   } catch (err: any) {
     console.error(err);

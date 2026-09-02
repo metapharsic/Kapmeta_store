@@ -1,9 +1,13 @@
 // "All In One Menu" landing page for the Menu & Discounts nav group.
-// Pure navigation surface - no catalog CRUD lives here (that's /menu). Tiles
-// route into the real screens (some built by other agents this round; see
-// apps/pos-web/pages/menu/{special-notes,commission,scheduling,physical,
-// images-upload}.tsx). The "Last Menu Sync" badge reads Outlet.lastMenuSyncAt
-// off GET /auth/me if the field is present there - it is not exposed by that
+// Pure navigation surface - no catalog CRUD lives here. The reference
+// screenshots for this landing screen show exactly two entry cards (Manage
+// Menu, Add Virtual Outlet) - the six-channel item table one screen deeper
+// lives at /menu/manage (channel tabs + per-channel pricing table), and
+// virtual outlet creation lives at /menu/virtual-outlets. Everything else
+// (special notes, commission, scheduling, physical menu, images upload,
+// on/off toggling) stays reachable from the sub-nav row below, same as
+// before. The "Last Menu Sync" badge reads Outlet.lastMenuSyncAt off
+// GET /auth/me if the field is present there - it is not exposed by that
 // endpoint as of this page's authoring (apps/api/src/routes/auth.ts only
 // projects a fixed outlet field list), so the badge reads "Never synced"
 // until a future change adds it. No fake relative timestamp is ever shown.
@@ -14,10 +18,11 @@ import { useRouter } from "next/router";
 import { useAuthGuard } from "../../lib/auth";
 import Nav from "../../components/Nav";
 
-interface CategoryTile {
+interface HubCard {
   label: string;
+  description: string;
+  buttonLabel: string;
   href: string;
-  hint: string;
   icon: JSX.Element;
 }
 
@@ -26,58 +31,39 @@ interface SubNavItem {
   href: string;
 }
 
-function TileIcon(path: JSX.Element): JSX.Element {
+function CardIcon(path: JSX.Element): JSX.Element {
   return (
-    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       {path}
     </svg>
   );
 }
 
-const CATEGORY_TILES: CategoryTile[] = [
+const HUB_CARDS: HubCard[] = [
   {
-    label: "Base Menu",
-    href: "/menu",
-    hint: "Categories & items",
-    icon: TileIcon(<><path d="M4 19V5a2 2 0 0 1 2-2h9l5 5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" /><path d="M14 3v5h5" /><path d="M8 13h8M8 17h5" /></>),
+    label: "All In One Menu",
+    description: "Manage Menu & it's related configuration from below.",
+    buttonLabel: "Manage Menu",
+    href: "/menu/manage",
+    icon: CardIcon(<><path d="M4 19V5a2 2 0 0 1 2-2h9l5 5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" /><path d="M14 3v5h5" /><path d="M8 13h8M8 17h5" /></>),
   },
   {
-    label: "Home Delivery",
-    href: "/menu?filter=delivery",
-    hint: "Delivery-channel pricing",
-    icon: TileIcon(<><rect x="1" y="7" width="14" height="10" rx="1.5" /><path d="M15 10h4l3 3v4h-7z" /><circle cx="6" cy="19" r="1.6" /><circle cx="17.5" cy="19" r="1.6" /></>),
-  },
-  {
-    label: "Parcel",
-    href: "/menu?filter=parcel",
-    hint: "Takeaway packaging & items",
-    icon: TileIcon(<><path d="M21 8 12 3 3 8l9 5 9-5Z" /><path d="M3 8v9l9 5 9-5V8" /><path d="M12 13v9" /></>),
-  },
-  {
-    label: "Dine In",
-    href: "/menu?filter=dinein",
-    hint: "Table-service menu",
-    icon: TileIcon(<><path d="M6 2v7a3 3 0 0 0 6 0V2" /><path d="M9 9v13" /><path d="M18 2c-1.5 0-3 1.5-3 4v4h6" /><path d="M18 10v11" /></>),
-  },
-  {
-    label: "Zomato",
-    href: "/channel-availability?channel=zomato",
-    hint: "Aggregator item status",
-    icon: TileIcon(<><circle cx="12" cy="12" r="9.5" /><path d="M8 9c1.5-2 6.5-2 8 0" /><path d="M8 15c1.5 2 6.5 2 8 0" /></>),
-  },
-  {
-    label: "Swiggy",
-    href: "/channel-availability?channel=swiggy",
-    hint: "Aggregator item status",
-    icon: TileIcon(<><path d="M12 2 4 12h6l-2 10 10-13h-6l0-7Z" /></>),
+    label: "Add Virtual Outlet",
+    description: "Create a new virtual outlet and have the ability to control the menu independently.",
+    buttonLabel: "Add Outlet",
+    href: "/menu/virtual-outlets",
+    icon: CardIcon(<><path d="M3 21V9l9-6 9 6v12" /><path d="M9 21v-6h6v6" /><path d="M3 9h18" /></>),
   },
 ];
 
 // Task text calls for the hub link plus the six other Menu & Discounts
-// screens here - Base Menu is left out because it already leads the tile
-// grid above.
+// screens here. Base Menu / channel pricing now has its own real entry
+// point (/menu/manage, opened from the "All In One Menu" card above), so it
+// is listed here too rather than only living inside that card - a person
+// scanning this row for "where do I edit menu items" should find it.
 const SUB_NAV: SubNavItem[] = [
   { label: "Menu & Discounts", href: "/menu/hub" },
+  { label: "Manage Menu", href: "/menu/manage" },
   { label: "Multi-Item Images Upload", href: "/menu/images-upload" },
   { label: "Menu on/off", href: "/channel-availability" },
   { label: "Special Note", href: "/menu/special-notes" },
@@ -159,7 +145,7 @@ export default function MenuHubPage() {
                 <section className="hub-toolbar">
                   <div>
                     <h1>Menu &amp; Discounts</h1>
-                    <p className="hub-subtitle">Pick a channel or open a Menu &amp; Discounts tool below.</p>
+                    <p className="hub-subtitle">Manage your menu or add a virtual outlet.</p>
                   </div>
                   <div
                     className={`sync-badge ${isSynced ? "synced" : "unsynced"}`}
@@ -174,13 +160,16 @@ export default function MenuHubPage() {
                   </div>
                 </section>
 
-                <section className="tile-grid" aria-label="Menu categories">
-                  {CATEGORY_TILES.map((tile) => (
-                    <Link key={tile.label} href={tile.href} className="category-tile">
-                      <span className="tile-icon">{tile.icon}</span>
-                      <span className="tile-label">{tile.label}</span>
-                      <span className="tile-hint">{tile.hint}</span>
-                    </Link>
+                <section className="hub-card-grid" aria-label="Menu setup">
+                  {HUB_CARDS.map((card) => (
+                    <article key={card.label} className="hub-card">
+                      <span className="hub-card-icon">{card.icon}</span>
+                      <h2 className="hub-card-title">{card.label}</h2>
+                      <p className="hub-card-desc">{card.description}</p>
+                      <Link href={card.href} className="hub-card-btn">
+                        {card.buttonLabel}
+                      </Link>
+                    </article>
                   ))}
                 </section>
 
@@ -361,13 +350,13 @@ export default function MenuHubPage() {
           color: var(--warning-text);
         }
 
-        .tile-grid {
+        .hub-card-grid {
           display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-          gap: 16px;
+          grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+          gap: 20px;
         }
 
-        .category-tile {
+        .hub-card {
           display: flex;
           flex-direction: column;
           align-items: flex-start;
@@ -375,46 +364,68 @@ export default function MenuHubPage() {
           background: var(--bg-card);
           border: 1px solid var(--border);
           border-radius: var(--radius-lg);
-          padding: 20px;
-          text-decoration: none;
-          color: var(--text-primary);
+          padding: 28px;
           box-shadow: var(--shadow-card);
-          cursor: pointer;
-          transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+          transition: box-shadow 180ms ease, border-color 180ms ease, transform 180ms ease;
         }
 
-        .category-tile:hover,
-        .category-tile:focus-visible {
+        .hub-card:hover {
           border-color: var(--accent);
           box-shadow: var(--shadow-pop);
           transform: translateY(-2px);
         }
 
-        .category-tile:focus-visible {
-          outline: 2px solid var(--accent);
-          outline-offset: 2px;
-        }
-
-        .tile-icon {
-          width: 44px;
-          height: 44px;
+        .hub-card-icon {
+          width: 52px;
+          height: 52px;
           border-radius: var(--radius-md);
           background: var(--accent-subtle);
           color: var(--accent-subtle-text);
           display: flex;
           align-items: center;
           justify-content: center;
+          margin-bottom: 4px;
         }
 
-        .tile-label {
-          font-size: 15px;
+        .hub-card-title {
+          margin: 0;
+          font-size: 17px;
           font-weight: 700;
           color: var(--text-primary);
         }
 
-        .tile-hint {
-          font-size: 12px;
+        .hub-card-desc {
+          margin: 0;
+          font-size: 13px;
+          line-height: 1.5;
           color: var(--text-secondary);
+          flex: 1;
+        }
+
+        .hub-card-btn {
+          margin-top: 8px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 10px 20px;
+          background: var(--dark-btn);
+          color: #fff;
+          border-radius: var(--radius-pill);
+          font-size: 13px;
+          font-weight: 700;
+          text-decoration: none;
+          cursor: pointer;
+          transition: background 180ms ease;
+        }
+
+        .hub-card-btn:hover,
+        .hub-card-btn:focus-visible {
+          background: var(--dark-btn-hover);
+        }
+
+        .hub-card-btn:focus-visible {
+          outline: 2px solid var(--accent);
+          outline-offset: 2px;
         }
 
         .subnav-section h2 {
@@ -469,11 +480,11 @@ export default function MenuHubPage() {
         }
 
         @media (prefers-reduced-motion: reduce) {
-          .category-tile,
+          .hub-card,
           .subnav-chip {
             transition: none;
           }
-          .category-tile:hover {
+          .hub-card:hover {
             transform: none;
           }
         }

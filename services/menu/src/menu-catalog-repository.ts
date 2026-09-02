@@ -65,6 +65,7 @@ export class PrismaMenuCatalogRepository {
     if (patch.isVeg !== undefined) data.isVeg = patch.isVeg;
     if (patch.priceMinor !== undefined) data.price = (Number(patch.priceMinor) / 100).toFixed(2);
     if (patch.taxRate !== undefined) data.taxRate = Number(patch.taxRate).toFixed(2);
+    if ((patch as any).shortCode !== undefined) data.shortCode = (patch as any).shortCode;
 
     const updated = await this.prisma.menuItem.update({
       where: { id: itemId },
