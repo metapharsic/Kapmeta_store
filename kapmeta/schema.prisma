@@ -667,16 +667,22 @@ model Notification {
 }
 
 model ChannelAccount {
-  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  outletId         String   @map("outlet_id") @db.Uuid
+  // id/outletId/created_by/updated_by were @db.Uuid; removed 2026-09-02
+  // (aggregator feed fix, migration 0044/0045) -- ground truth from
+  // scripts/inspect-db-v2.js: channel_accounts.id and .outlet_id are TEXT
+  // live, like every id/outlet_id in this database. integration_id keeps
+  // @db.Uuid -- it genuinely IS uuid live (migration 0044 created it that
+  // way, referencing integrations.id which is also uuid).
+  id               String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  outletId         String   @map("outlet_id")
   integration_id   String   @db.Uuid
   externalOutletId String?  @map("external_outlet_id")
   credentialsRef   String?  @map("credentials_ref")
   is_active        Boolean  @default(true)
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  created_by       String?  @db.Uuid
-  updated_by       String?  @db.Uuid
+  created_by       String?
+  updated_by       String?
 
   @@map("channel_accounts")
 }
@@ -908,16 +914,23 @@ model integrations {
 }
 
 model item_availability {
-  id         String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  outlet_id  String             @db.Uuid
-  item_id    String             @db.Uuid
-  channel_id String             @db.Uuid
+  // id/outlet_id/item_id/channel_id/created_by/updated_by were @db.Uuid;
+  // removed 2026-09-02 (migration 0045) -- ground truth from
+  // scripts/inspect-db-v2.js shows the live table (and every other table
+  // in this database) uses TEXT for id and every FK column, not uuid.
+  // A @db.Uuid annotation against a live text column makes Prisma emit an
+  // explicit ::uuid cast that a plain text column rejects.
+  id         String             @id @default(dbgenerated("gen_random_uuid()::text"))
+  outlet_id  String
+  item_id    String
+  channel_id String
   state      availability_state @default(UNSCHEDULED)
   version    Int                @default(1)
+  stock_qty  Int?               @default(100)
   created_at DateTime           @default(now()) @db.Timestamptz(6)
   updated_at DateTime           @default(now()) @db.Timestamptz(6)
-  created_by String?            @db.Uuid
-  updated_by String?            @db.Uuid
+  created_by String?
+  updated_by String?
 
   @@unique([item_id, channel_id], map: "uq_item_availability_item_channel")
   @@index([item_id], map: "idx_item_availability_item")
