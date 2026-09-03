@@ -1,4 +1,6 @@
 import { Router } from "express";
+import crypto from "crypto";
+import bcrypt from "bcryptjs";
 import { requireAuth, requirePermission, type AuthedRequest } from "../middleware/require-auth";
 import { prisma } from "../prisma";
 
@@ -347,6 +349,19 @@ managementRouter.get("/management/biller-app", requireAuth, requirePermission("u
       },
     });
 
+    // userCode (migration 0054) isn't on the checked-in generated Prisma
+    // client (no network path to run `prisma generate` in this sandbox --
+    // same situation as management_lists/_settings/_activity_logs below),
+    // so it's fetched with a raw query and merged in rather than via the
+    // `prisma.user` delegate.
+    const userIds = users.map((u) => u.id);
+    const codeRows = userIds.length
+      ? await prisma.$queryRaw<{ id: string; user_code: string | null }[]>`
+          SELECT id, user_code FROM users WHERE id = ANY(${userIds})
+        `
+      : [];
+    const codeByUserId = new Map(codeRows.map((r) => [r.id, r.user_code]));
+
     const serialized = users.map((user) => ({
       id: user.id,
       email: user.email,
@@ -354,6 +369,7 @@ managementRouter.get("/management/biller-app", requireAuth, requirePermission("u
       lastName: user.lastName,
       phone: user.phone,
       isActive: user.isActive,
+      userCode: codeByUserId.get(user.id) ?? null,
       userRoles: user.userRoles.map((ur) => ({
         roleId: ur.roleId,
         roleName: ur.role.name,
@@ -369,6 +385,228 @@ managementRouter.get("/management/biller-app", requireAuth, requirePermission("u
     res.status(200).json(filtered);
   } catch (err: any) {
     console.error("Error in GET /management/biller-app:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Generates a short random user_code, e.g. "K3F7QZ". Used at create time
+// and by the "Sync Code" action below. Regenerated on collision (the
+// partial-unique index from migration 0054 enforces uniqueness at the DB
+// level; the loop just avoids a 500 on the rare collision instead of
+// relying on that alone).
+function generateUserCode(): string {
+  return crypto.randomBytes(4).toString("hex").toUpperCase().slice(0, 6);
+}
+
+async function setUniqueUserCode(userId: string): Promise<string> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const code = generateUserCode();
+    try {
+      await prisma.$executeRaw`UPDATE users SET user_code = ${code} WHERE id = ${userId}`;
+      return code;
+    } catch (err) {
+      if (attempt === 4) throw err;
+    }
+  }
+  throw new Error("could not generate a unique user code");
+}
+
+// Confirms `userId` is a real user genuinely tied to the caller's outlet
+// (same outlet-scoping the GET list applies), returning the row or null.
+// Shared by PUT and the sync-code route below so neither can act on a
+// user from a different outlet just because they know its id.
+async function findOutletScopedUser(userId: string, outletId: string) {
+  return prisma.user.findFirst({
+    where: {
+      id: userId,
+      userRoles: { some: { OR: [{ outletId }, { outletId: null }] } },
+    },
+    include: { userRoles: { include: { role: true, outlet: true } } },
+  });
+}
+
+function serializeBillerUser(user: Awaited<ReturnType<typeof findOutletScopedUser>>, userCode: string | null) {
+  if (!user) return null;
+  return {
+    id: user.id,
+    email: user.email,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    phone: user.phone,
+    isActive: user.isActive,
+    userCode,
+    userRoles: user.userRoles.map((ur) => ({
+      roleId: ur.roleId,
+      roleName: ur.role.name,
+      outletId: ur.outletId,
+      outletName: ur.outlet?.name ?? null,
+    })),
+  };
+}
+
+// POST /management/biller-app -- create a real user for one of the Biller
+// App tabs (Biller/Captain/Delivery Boy/Waiter/Order Acceptance App), via
+// the exact same create-user mechanism as POST /users in
+// user-management.ts (bcrypt password hashing, optional PIN hashing,
+// UserRole assignment) rather than a parallel/fake path. `role` is a
+// free-text role name (repo convention -- see the GET handler's comment
+// above and migration 0002): if no Role row with that exact name exists
+// yet, one is created, matching how roles work everywhere else in this
+// schema.
+managementRouter.post("/management/biller-app", requireAuth, requirePermission("users.manage"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const { role, name, username, password, userCode: requestedUserCode } = req.body ?? {};
+
+    if (!role || typeof role !== "string" || !role.trim()) {
+      res.status(400).json({ error: "role is required" });
+      return;
+    }
+    if (!name || typeof name !== "string" || !name.trim()) {
+      res.status(400).json({ error: "name is required" });
+      return;
+    }
+    if (!username || typeof username !== "string" || !username.trim()) {
+      res.status(400).json({ error: "username is required" });
+      return;
+    }
+    if (!password || typeof password !== "string" || password.length < 4) {
+      res.status(400).json({ error: "password is required (min 4 chars)" });
+      return;
+    }
+
+    // user-management.ts's POST /users keys accounts by `email` (there is
+    // no separate username column on `users` -- see migration 0054's
+    // comment). The Biller App form's "User Name" field is stored here as
+    // that same login-identifier field.
+    const existing = await prisma.user.findUnique({ where: { email: username.trim() } });
+    if (existing) {
+      res.status(400).json({ error: "username already in use" });
+      return;
+    }
+
+    const [firstName, ...rest] = name.trim().split(/\s+/);
+    const lastName = rest.join(" ") || firstName;
+
+    const roleName = role.trim();
+    const existingRole = await prisma.role.findFirst({ where: { name: roleName } });
+    const roleRow = existingRole ?? (await prisma.role.create({ data: { name: roleName, createdBy: req.auth!.userId } }));
+
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(password, salt);
+
+    const newUser = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          email: username.trim(),
+          passwordHash,
+          firstName,
+          lastName,
+          isActive: true,
+          createdBy: req.auth!.userId,
+        },
+      });
+
+      await tx.userRole.create({
+        data: {
+          userId: user.id,
+          roleId: roleRow.id,
+          outletId: outletId ?? null,
+        },
+      });
+
+      return user;
+    });
+
+    // user_code isn't on the generated client (see comment above the GET
+    // handler) -- set via raw SQL right after create. Honors a
+    // caller-supplied code if given (still enforced unique by the DB
+    // index), otherwise generates one.
+    let userCode: string;
+    if (typeof requestedUserCode === "string" && requestedUserCode.trim()) {
+      userCode = requestedUserCode.trim();
+      await prisma.$executeRaw`UPDATE users SET user_code = ${userCode} WHERE id = ${newUser.id}`;
+    } else {
+      userCode = await setUniqueUserCode(newUser.id);
+    }
+
+    const full = await findOutletScopedUser(newUser.id, outletId);
+    res.status(201).json(serializeBillerUser(full, userCode));
+  } catch (err: any) {
+    console.error("Error in POST /management/biller-app:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /management/biller-app/:userId -- edit an existing biller-app user.
+// Outlet-scoped: a user not tied to the caller's outlet (via UserRole,
+// same rule the GET list and POST above use) 404s rather than leaking
+// cross-outlet edit access.
+managementRouter.put("/management/biller-app/:userId", requireAuth, requirePermission("users.manage"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const { userId } = req.params;
+    const { name, username, isActive } = req.body ?? {};
+
+    const existing = await findOutletScopedUser(userId, outletId);
+    if (!existing) {
+      res.status(404).json({ error: "user not found" });
+      return;
+    }
+
+    const updateData: any = { updatedBy: req.auth!.userId };
+
+    if (typeof username === "string" && username.trim()) {
+      const dupe = await prisma.user.findFirst({ where: { email: username.trim(), NOT: { id: userId } } });
+      if (dupe) {
+        res.status(400).json({ error: "username already in use" });
+        return;
+      }
+      updateData.email = username.trim();
+    }
+    if (typeof name === "string" && name.trim()) {
+      const [firstName, ...rest] = name.trim().split(/\s+/);
+      updateData.firstName = firstName;
+      updateData.lastName = rest.join(" ") || firstName;
+    }
+    if (typeof isActive === "boolean") {
+      updateData.isActive = isActive;
+    }
+
+    await prisma.user.update({ where: { id: userId }, data: updateData });
+
+    const codeRows = await prisma.$queryRaw<{ user_code: string | null }[]>`SELECT user_code FROM users WHERE id = ${userId}`;
+    const full = await findOutletScopedUser(userId, outletId);
+    res.status(200).json(serializeBillerUser(full, codeRows[0]?.user_code ?? null));
+  } catch (err: any) {
+    console.error("Error in PUT /management/biller-app/:userId:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /management/biller-app/:userId/sync-code -- regenerates the user's
+// user_code (migration 0054) and writes it for real. Honest caveat: there
+// is no actual POS-device/app "sync" mechanism anywhere in this repo (no
+// device registry, no push channel to a biller/captain/waiter terminal),
+// so this does not send anything to a device -- it only regenerates the
+// code server-side, which the UI can then show/copy for someone to key in
+// on the device by hand. That is the real behavior "Sync Code" gets here,
+// not a stubbed no-op.
+managementRouter.post("/management/biller-app/:userId/sync-code", requireAuth, requirePermission("users.manage"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const { userId } = req.params;
+
+    const existing = await findOutletScopedUser(userId, outletId);
+    if (!existing) {
+      res.status(404).json({ error: "user not found" });
+      return;
+    }
+
+    const userCode = await setUniqueUserCode(userId);
+    res.status(200).json(serializeBillerUser(existing, userCode));
+  } catch (err: any) {
+    console.error("Error in POST /management/biller-app/:userId/sync-code:", err);
     res.status(500).json({ error: err.message });
   }
 });
