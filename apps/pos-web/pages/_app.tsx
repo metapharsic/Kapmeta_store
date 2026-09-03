@@ -19,17 +19,17 @@ function MyApp({ Component, pageProps }: AppProps) {
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
         :root {
-          --bg-base: #f8fafc;
+          --bg-base: #f4f4f6;
           --bg-card: #ffffff;
-          --bg-subtle: #f1f5f9;
-          --bg-hover: #f8fafc;
+          --bg-subtle: #f9f9fb;
+          --bg-hover: #f1f1f4;
           
-          --text-primary: #0f172a;
-          --text-secondary: #64748b;
-          --text-muted: #6b7481;
+          --text-primary: #18181b;
+          --text-secondary: #71717a;
+          --text-muted: #a1a1aa;
           
-          --border: #e2e8f0;
-          --border-subtle: #f1f5f9;
+          --border: #e4e4e7;
+          --border-subtle: #f4f4f5;
           
           --accent: #10b981;
           --accent-hover: #059669;
@@ -37,8 +37,13 @@ function MyApp({ Component, pageProps }: AppProps) {
           --accent-subtle-text: #065f46;
           --accent-glow: rgba(16, 185, 129, 0.15);
           
-          --dark-btn: #0f172a;
-          --dark-btn-hover: #1e293b;
+          --color-coral: #f43f5e;
+          --color-coral-hover: #e11d48;
+          --color-coral-subtle: #fff1f2;
+          --color-coral-text: #e11d48;
+
+          --dark-btn: #18181b;
+          --dark-btn-hover: #27272a;
           
           --warning: #f59e0b;
           --warning-subtle: #fffbeb;
@@ -54,15 +59,17 @@ function MyApp({ Component, pageProps }: AppProps) {
           --purple-subtle: #faf5ff;
           --purple-text: #7e22ce;
 
-          --radius-sm: 6px;
-          --radius-md: 10px;
-          --radius-lg: 16px;
+          --radius-sm: 8px;
+          --radius-md: 14px;
+          --radius-lg: 22px;
+          --radius-card: 24px;
+          --radius-btn: 14px;
           --radius-pill: 9999px;
           
-          --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-          --shadow-card: 0 1px 3px 0 rgba(15, 23, 42, 0.04), 0 1px 2px -1px rgba(15, 23, 42, 0.04);
-          --shadow-pop: 0 10px 25px -3px rgba(15, 23, 42, 0.08), 0 4px 6px -4px rgba(15, 23, 42, 0.04);
-          --shadow-modal: 0 25px 50px -12px rgba(15, 23, 42, 0.2);
+          --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.02);
+          --shadow-card: 0 2px 14px rgba(0, 0, 0, 0.03);
+          --shadow-pop: 0 12px 28px -4px rgba(0, 0, 0, 0.06);
+          --shadow-modal: 0 24px 60px -12px rgba(0, 0, 0, 0.12);
         }
 
         body {

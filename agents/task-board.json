@@ -904,6 +904,14 @@
       "status": "DONE",
       "priority": "HIGH",
       "relatedGate": "CP-28"
+    },
+    {
+      "taskId": "TSK-051",
+      "title": "Global Shakuro Design System Integration & Crew/Waiter Fast PIN Authentication",
+      "assignedTo": "multi-agent(frontend+ux+a2a+qa)",
+      "status": "DONE",
+      "priority": "HIGH",
+      "relatedGate": "CP-29"
     }
   ]
 }

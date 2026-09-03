@@ -22,6 +22,7 @@
 | **CP-26** | Menu & Discounts Dynamic Suite | 18 | 🟢 PASSED | Multi-Agent Lead | 2026-09-04 | 8 tools, live DB sync, multi-channel pricing & images |
 | **CP-27** | Navigation Architecture & Sidebar Taxonomy | 19 | 🟢 PASSED | UX & A2A Lead | 2026-09-04 | Clear separation of Sales & Reports, A2A mesh telemetry |
 | **CP-28** | Shakuro Sales Analytics & BI Dashboard | 20 | 🟢 PASSED | UX & Reporting Lead | 2026-09-04 | Two-tier dock, hero cockpit, channel bars, A2A telemetry |
+| **CP-29** | Global Shakuro Theme & Waiter Fast PIN Login | 21 | 🟢 PASSED | Frontend & A2A Lead | 2026-09-04 | Global design tokens, Captain PIN modal, crew pills, zero PetPooja footprint |
 
 ---
 

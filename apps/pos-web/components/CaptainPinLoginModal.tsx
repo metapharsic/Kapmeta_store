@@ -122,85 +122,96 @@ export default function CaptainPinLoginModal({
   return (
     <div className="pin-login-backdrop" onClick={onClose}>
       <div className="pin-login-card" onClick={(e) => e.stopPropagation()}>
+        {/* Brand & Modal Header */}
         <div className="pin-login-header">
           <div className="brand-badge">
-            <span className="logo-text">POSS</span>
+            <div className="logo-box">
+              <span className="logo-letter">K</span>
+              <span className="logo-dot"></span>
+            </div>
             <div>
-              <div style={{ fontWeight: 800, fontSize: "1rem" }}>KapMeta Captain Login</div>
-              <div style={{ fontSize: "0.75rem", color: "#64748b" }}>Fast PIN Authentication & Shift Start</div>
+              <div className="brand-title">KapMeta Staff Access</div>
+              <div className="brand-subtitle">Fast Touch PIN Authentication & Shift Start</div>
             </div>
           </div>
-          <button className="close-btn" onClick={onClose}>✕</button>
+          <button type="button" className="close-btn" onClick={onClose}>✕</button>
         </div>
 
         {error && <div className="error-alert">{error}</div>}
 
-        {/* Staff Profile Selection Chips */}
-        <div className="staff-selector-row">
-          {loadingStaff ? (
-            <div style={{ padding: "8px 12px", color: "#64748b", fontSize: "0.85rem" }}>
-              Loading staff profiles…
-            </div>
-          ) : staffList.length === 0 ? (
-            <div style={{ padding: "8px 12px", color: "#dc2626", fontSize: "0.85rem" }}>
-              No active staff configured for this outlet.
-            </div>
-          ) : (
-            staffList.map((st) => (
-              <button
-                key={st.id}
-                type="button"
-                className={`staff-chip ${selectedStaff?.id === st.id ? "active" : ""}`}
-                onClick={() => {
-                  setSelectedStaff(st);
-                  setPin("");
-                  setError(null);
-                }}
-              >
-                <span className="staff-avatar">{st.avatar}</span>
-                <span className="staff-name">{st.name}</span>
-              </button>
-            ))
-          )}
+        {/* Shakuro Staff Member Pills */}
+        <div className="staff-section">
+          <div className="section-label">Select Crew Member</div>
+          <div className="staff-selector-row">
+            {loadingStaff ? (
+              <div className="loading-text">Loading crew profiles…</div>
+            ) : staffList.length === 0 ? (
+              <div className="empty-text">No active crew profiles configured.</div>
+            ) : (
+              staffList.map((st) => {
+                const isSelected = selectedStaff?.id === st.id;
+                return (
+                  <button
+                    key={st.id}
+                    type="button"
+                    className={`staff-pill ${isSelected ? "active" : ""}`}
+                    onClick={() => {
+                      setSelectedStaff(st);
+                      setPin("");
+                      setError(null);
+                    }}
+                  >
+                    <div className={`avatar-bubble ${isSelected ? "bubble-active" : ""}`}>
+                      {st.name.charAt(0)}
+                    </div>
+                    <div className="staff-info">
+                      <span className="staff-name">{st.name}</span>
+                      <span className="staff-role">{st.role.toLowerCase()}</span>
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
         </div>
 
-        {/* Shift Opening Float Input */}
-        <div className="float-row">
-          <label style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#334155" }}>
-            💵 Opening Cash Float (₹):
-          </label>
-          <input
-            type="number"
-            step="10"
-            value={openingFloat}
-            onChange={(e) => setOpeningFloat(e.target.value)}
-            className="float-input"
-            placeholder="500.00"
-          />
-        </div>
-
-        {/* PIN Dots Indicator */}
-        <div className="pin-display-container">
-          <div className="pin-dots">
-            {[0, 1, 2, 3].map((idx) => (
-              <span
-                key={idx}
-                className={`pin-dot ${pin.length > idx ? "filled" : ""}`}
+        {/* Shift Float & PIN Display */}
+        <div className="controls-row">
+          <div className="float-box">
+            <label className="float-label">Opening Float</label>
+            <div className="float-input-wrapper">
+              <span className="currency-prefix">₹</span>
+              <input
+                type="number"
+                step="10"
+                value={openingFloat}
+                onChange={(e) => setOpeningFloat(e.target.value)}
+                className="float-input"
+                placeholder="500.00"
               />
-            ))}
+            </div>
           </div>
-          <div style={{ fontSize: "0.6875rem", color: "#94a3b8", marginTop: "4px" }}>
-            Default test PIN: 1234
+
+          <div className="pin-display-card">
+            <label className="pin-label">Security PIN</label>
+            <div className="pin-dots">
+              {[0, 1, 2, 3].map((idx) => (
+                <span
+                  key={idx}
+                  className={`pin-dot ${pin.length > idx ? "filled" : ""}`}
+                />
+              ))}
+            </div>
           </div>
         </div>
 
-        {/* Touch Keypad */}
-        <div className="touch-keypad-grid">
+        {/* Tactile Keypad */}
+        <div className="keypad-grid">
           {["1", "2", "3", "4", "5", "6", "7", "8", "9", "C", "0", "⌫"].map((btn) => (
             <button
               key={btn}
               type="button"
-              className={`keypad-btn ${btn === "C" ? "btn-clear" : btn === "⌫" ? "btn-backspace" : ""}`}
+              className={`keypad-key ${btn === "C" ? "key-clear" : btn === "⌫" ? "key-backspace" : ""}`}
               onClick={() => {
                 if (btn === "C") handleClear();
                 else if (btn === "⌫") handleBackspace();
@@ -212,15 +223,15 @@ export default function CaptainPinLoginModal({
           ))}
         </div>
 
-        {/* Login CTA */}
-        <div style={{ marginTop: "16px" }}>
+        {/* Unlock Action Button */}
+        <div className="action-wrapper">
           <button
             type="button"
-            className="btn-unlock-captain"
+            className="btn-unlock"
             onClick={handleSubmit}
             disabled={loading || pin.length < 4}
           >
-            {loading ? "Verifying PIN..." : `Unlock & Start Shift (${selectedStaff?.name})`}
+            {loading ? "Verifying PIN..." : `Start Shift as ${selectedStaff?.name || "Staff"} ›`}
           </button>
         </div>
       </div>
@@ -232,186 +243,345 @@ export default function CaptainPinLoginModal({
           left: 0;
           width: 100vw;
           height: 100vh;
-          background: rgba(15, 23, 42, 0.6);
-          backdrop-filter: blur(4px);
-          z-index: 300;
+          background: rgba(24, 24, 27, 0.45);
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
+          z-index: 9999;
           display: flex;
           align-items: center;
           justify-content: center;
-          font-family: inherit;
+          padding: 16px;
+          animation: fadeIn 0.15s ease-out;
         }
 
         .pin-login-card {
+          width: 100%;
+          max-width: 440px;
           background: #ffffff;
-          border-radius: 16px;
-          padding: 24px;
-          width: 90%;
-          max-width: 420px;
-          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+          border-radius: 28px;
+          padding: 28px;
+          box-shadow: 0 20px 50px rgba(0, 0, 0, 0.12);
+          border: 1px solid #f4f4f5;
           display: flex;
           flex-direction: column;
+          gap: 16px;
         }
 
         .pin-login-header {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          border-bottom: 1px solid #e2e8f0;
           padding-bottom: 12px;
+          border-bottom: 1px solid #f4f4f5;
         }
+
         .brand-badge {
           display: flex;
           align-items: center;
-          gap: 10px;
-        }
-        .logo-text {
-          background: #e11d48;
-          color: #fff;
-          font-weight: 900;
-          padding: 4px 8px;
-          border-radius: 6px;
-          font-size: 0.875rem;
-        }
-        .close-btn {
-          background: transparent;
-          border: none;
-          font-size: 1.2rem;
-          color: #64748b;
-          cursor: pointer;
+          gap: 12px;
         }
 
-        .error-alert {
-          background: #fef2f2;
-          color: #dc2626;
-          padding: 8px 12px;
-          border-radius: 6px;
-          font-size: 0.8125rem;
-          margin-top: 12px;
-        }
-
-        .staff-selector-row {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 8px;
-          margin-top: 14px;
-        }
-        .staff-chip {
+        .logo-box {
+          width: 40,
+          height: 40;
+          width: 40px;
+          height: 40px;
+          border-radius: 12px;
+          background: #18181b;
           display: flex;
           align-items: center;
-          gap: 8px;
-          padding: 8px 10px;
-          border: 1px solid #e2e8f0;
-          background: #f8fafc;
-          border-radius: 8px;
-          cursor: pointer;
-          font-size: 0.75rem;
-          font-weight: 600;
-          color: #334155;
-          text-align: left;
+          justify-content: center;
+          position: relative;
         }
-        .staff-chip.active {
-          border-color: #2563eb;
-          background: #eff6ff;
-          color: #1e40af;
-          box-shadow: 0 0 0 1px #2563eb;
-        }
-        .staff-avatar {
+
+        .logo-letter {
+          color: #ffffff;
+          font-weight: 900;
           font-size: 1.1rem;
         }
 
-        .float-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          background: #f8fafc;
-          border: 1px solid #e2e8f0;
-          padding: 8px 12px;
-          border-radius: 8px;
-          margin-top: 12px;
-        }
-        .float-input {
-          width: 100px;
-          padding: 4px 8px;
-          border: 1px solid #cbd5e1;
-          border-radius: 4px;
-          font-weight: 700;
-          text-align: right;
-          font-size: 0.875rem;
+        .logo-dot {
+          position: absolute;
+          top: 4px;
+          right: 4px;
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: #10b981;
         }
 
-        .pin-display-container {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          margin: 16px 0 10px 0;
-        }
-        .pin-dots {
-          display: flex;
-          gap: 14px;
-        }
-        .pin-dot {
-          width: 16px;
-          height: 16px;
-          border-radius: 999px;
-          border: 2px solid #cbd5e1;
-          background: #f8fafc;
-          transition: all 0.15s;
-        }
-        .pin-dot.filled {
-          background: #2563eb;
-          border-color: #2563eb;
-          transform: scale(1.15);
+        .brand-title {
+          font-size: 1rem;
+          font-weight: 800;
+          color: #18181b;
+          letter-spacing: -0.01em;
         }
 
-        .touch-keypad-grid {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 8px;
-          margin-top: 6px;
+        .brand-subtitle {
+          font-size: 0.75rem;
+          color: #71717a;
+          font-weight: 500;
         }
-        .keypad-btn {
-          height: 48px;
-          border: 1px solid #cbd5e1;
-          background: #ffffff;
-          border-radius: 8px;
-          font-size: 1.25rem;
-          font-weight: 700;
-          color: #0f172a;
+
+        .close-btn {
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          border: 1px solid #e4e4e7;
+          background: #fafafa;
+          color: #71717a;
+          font-size: 0.85rem;
           cursor: pointer;
           display: flex;
           align-items: center;
           justify-content: center;
-          transition: background 0.1s, transform 0.05s;
-        }
-        .keypad-btn:active {
-          background: #f1f5f9;
-          transform: scale(0.96);
-        }
-        .btn-clear {
-          color: #dc2626;
-          font-size: 1rem;
-        }
-        .btn-backspace {
-          color: #64748b;
-          font-size: 1.1rem;
+          transition: all 0.15s ease;
         }
 
-        .btn-unlock-captain {
-          width: 100%;
-          background: #2563eb;
+        .close-btn:hover {
+          background: #18181b;
           color: #ffffff;
+          border-color: #18181b;
+        }
+
+        .error-alert {
+          background: #fff1f2;
+          color: #e11d48;
+          border: 1px solid #fecdd3;
+          padding: 10px 14px;
+          border-radius: 14px;
+          font-size: 0.82rem;
+          font-weight: 600;
+        }
+
+        .staff-section {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .section-label {
+          font-size: 0.72rem;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          color: #a1a1aa;
+        }
+
+        .staff-selector-row {
+          display: flex;
+          gap: 8px;
+          overflow-x: auto;
+          padding-bottom: 4px;
+          scrollbar-width: thin;
+        }
+
+        .staff-pill {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 6px 14px 6px 6px;
+          border-radius: 9999px;
+          background: #f4f4f6;
+          border: 1px solid transparent;
+          cursor: pointer;
+          transition: all 0.15s ease;
+          white-space: nowrap;
+          flex-shrink: 0;
+        }
+
+        .staff-pill:hover {
+          background: #ebebee;
+        }
+
+        .staff-pill.active {
+          background: #18181b;
+          color: #ffffff;
+          box-shadow: 0 4px 14px rgba(24, 24, 27, 0.2);
+        }
+
+        .avatar-bubble {
+          width: 28px;
+          height: 28px;
+          border-radius: 50%;
+          background: #e4e4e7;
+          color: #18181b;
+          font-weight: 800;
+          font-size: 0.75rem;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .bubble-active {
+          background: #f43f5e;
+          color: #ffffff;
+        }
+
+        .staff-info {
+          display: flex;
+          flex-direction: column;
+          text-align: left;
+        }
+
+        .staff-name {
+          font-size: 0.8rem;
+          font-weight: 700;
+          line-height: 1.1;
+        }
+
+        .staff-role {
+          font-size: 0.65rem;
+          opacity: 0.75;
+          text-transform: capitalize;
+        }
+
+        .controls-row {
+          display: grid;
+          grid-template-columns: 1fr 1.2fr;
+          gap: 12px;
+        }
+
+        .float-box, .pin-display-card {
+          background: #fafafa;
+          border: 1px solid #f4f4f5;
+          border-radius: 18px;
+          padding: 12px 14px;
+          display: flex;
+          flex-direction: column;
+          justifyContent: space-between;
+        }
+
+        .float-label, .pin-label {
+          font-size: 0.72rem;
+          font-weight: 700;
+          color: #71717a;
+          margin-bottom: 6px;
+        }
+
+        .float-input-wrapper {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+
+        .currency-prefix {
+          font-weight: 800;
+          color: #18181b;
+          font-size: 0.95rem;
+        }
+
+        .float-input {
           border: none;
-          padding: 12px;
-          border-radius: 8px;
-          font-size: 0.875rem;
+          background: transparent;
+          font-size: 1rem;
+          font-weight: 800;
+          color: #18181b;
+          width: 100%;
+          outline: none;
+        }
+
+        .pin-dots {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          height: 24px;
+        }
+
+        .pin-dot {
+          width: 12px;
+          height: 12px;
+          border-radius: 50%;
+          background: #e4e4e7;
+          transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .pin-dot.filled {
+          background: #f43f5e;
+          transform: scale(1.25);
+          box-shadow: 0 0 10px rgba(244, 63, 94, 0.5);
+        }
+
+        .keypad-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 10px;
+          margin-top: 4px;
+        }
+
+        .keypad-key {
+          height: 54px;
+          border-radius: 18px;
+          border: 1px solid #f4f4f5;
+          background: #ffffff;
+          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
+          font-size: 1.35rem;
+          font-weight: 700;
+          color: #18181b;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.12s ease;
+        }
+
+        .keypad-key:hover {
+          background: #f4f4f6;
+          transform: translateY(-1px);
+        }
+
+        .keypad-key:active {
+          transform: scale(0.96);
+          background: #e4e4e7;
+        }
+
+        .key-clear {
+          color: #e11d48;
+          font-size: 1rem;
+          font-weight: 800;
+          background: #fff1f2;
+          border-color: #ffe4e6;
+        }
+
+        .key-backspace {
+          color: #71717a;
+          font-size: 1.1rem;
+          background: #f4f4f6;
+        }
+
+        .action-wrapper {
+          margin-top: 4px;
+        }
+
+        .btn-unlock {
+          width: 100%;
+          padding: 14px;
+          border-radius: 9999px;
+          border: none;
+          background: #18181b;
+          color: #ffffff;
+          font-size: 0.95rem;
           font-weight: 700;
           cursor: pointer;
-          box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);
+          box-shadow: 0 4px 16px rgba(24, 24, 27, 0.2);
+          transition: all 0.15s ease;
         }
-        .btn-unlock-captain:disabled {
-          background: #94a3b8;
+
+        .btn-unlock:hover:not(:disabled) {
+          background: #27272a;
+          transform: translateY(-1px);
+          box-shadow: 0 6px 20px rgba(24, 24, 27, 0.3);
+        }
+
+        .btn-unlock:disabled {
+          opacity: 0.45;
           cursor: not-allowed;
           box-shadow: none;
+        }
+
+        @keyframes fadeIn {
+          from { opacity: 0; transform: scale(0.98); }
+          to { opacity: 1; transform: scale(1); }
         }
       `}</style>
     </div>

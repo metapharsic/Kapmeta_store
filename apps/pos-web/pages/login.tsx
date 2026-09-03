@@ -4,7 +4,6 @@ import { useRouter } from "next/router";
 import { login, logout, getApiBase } from "../lib/auth";
 import CaptainPinLoginModal from "../components/CaptainPinLoginModal";
 
-// Human-readable messages for LoginFailure["reason"] (packages/shared-types/auth.ts).
 const ERROR_MESSAGES: Record<string, string> = {
   INVALID_CREDENTIALS: "Incorrect email or password. Please try again.",
   USER_INACTIVE: "This account has been deactivated. Contact your outlet admin.",
@@ -30,6 +29,7 @@ interface StaffOption {
 
 export default function LoginPage() {
   const router = useRouter();
+  const [authMode, setAuthMode] = useState<"PIN" | "PASSWORD">("PIN");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [outletId, setOutletId] = useState("");
@@ -43,7 +43,6 @@ export default function LoginPage() {
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
 
   useEffect(() => {
-    // Restore remembered values if available
     if (typeof window !== "undefined") {
       const savedEmail = localStorage.getItem("kapmeta_last_email") || "";
       const savedOutletId = localStorage.getItem("kapmeta_last_outlet_id") || "";
@@ -51,7 +50,6 @@ export default function LoginPage() {
       if (savedOutletId) setOutletId(savedOutletId);
     }
 
-    // Fetch active outlets from database
     fetch(`${getApiBase()}/auth/outlets`)
       .then((res) => res.json())
       .then((data) => {
@@ -101,174 +99,195 @@ export default function LoginPage() {
       localStorage.setItem("kapmeta_last_outlet_id", outId);
     }
 
-    setNotice("✓ Login successful! Redirecting to dashboard...");
+    setNotice("Authenticated successfully! Loading POS workspace...");
     setTimeout(() => {
-      window.location.href = targetPath;
-    }, 400);
+      router.push(targetPath);
+    }, 300);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    await performLogin(email, password, outletId, "/");
+    if (!outletId) {
+      setError("Please select an active outlet.");
+      return;
+    }
+    performLogin(email, password, outletId, "/");
   };
 
   return (
-    <div className="login-app">
+    <div className="login-canvas">
       <Head>
-        <title>KapMeta POS — Sign In</title>
-        <meta name="description" content="Sign in to the KapMeta POS console." />
+        <title>Login | KapMeta POS Platform</title>
+        <meta name="description" content="Sign in to KapMeta Restaurant POS Platform" />
       </Head>
 
       <div className="login-card">
         {/* Brand Header */}
         <div className="brand-header">
-          <h1 className="welcome-title">Welcome back!</h1>
-          <p className="welcome-subtitle">Access your unified enterprise gateway dashboard.</p>
+          <div className="brand-crest">
+            <span className="crest-letter">K</span>
+            <span className="crest-dot"></span>
+          </div>
+          <div>
+            <h1 className="brand-name">Kap<span className="brand-highlight">Meta</span></h1>
+            <p className="brand-subtitle">Unified Restaurant POS Platform</p>
+          </div>
         </div>
 
-        {/* Live Notification Bar */}
+        {/* Mode Selector Tabs */}
+        <div className="mode-toggle">
+          <button
+            type="button"
+            className={`mode-btn ${authMode === "PIN" ? "active" : ""}`}
+            onClick={() => {
+              setAuthMode("PIN");
+              setError(null);
+            }}
+          >
+            🧑‍🍳 Crew Touch PIN
+          </button>
+          <button
+            type="button"
+            className={`mode-btn ${authMode === "PASSWORD" ? "active" : ""}`}
+            onClick={() => {
+              setAuthMode("PASSWORD");
+              setError(null);
+            }}
+          >
+            🔑 Admin Credentials
+          </button>
+        </div>
+
+        {/* Notifications & Error alerts */}
         {notice && (
-          <div className="notification-banner success">
-            <span className="notif-icon">✨</span>
+          <div className="alert-banner notice">
+            <span>✨</span>
             <span>{notice}</span>
           </div>
         )}
 
         {error && (
-          <div className="notification-banner error">
-            <span className="notif-icon">⚠️</span>
+          <div className="alert-banner error">
+            <span>⚠️</span>
             <span>{error}{errorDetail ? ` (${errorDetail})` : ""}</span>
           </div>
         )}
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="login-form">
-          <div className="field-group">
-            <label className="field-label" htmlFor="email">
-              Username / Email
-            </label>
-            <div className="input-wrapper">
-              <span className="input-icon">👤</span>
-              <input
-                id="email"
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="field-input"
-                placeholder="name@restaurant.com"
-                autoComplete="username"
-              />
-            </div>
-          </div>
-
-          <div className="field-group">
-            <div className="field-label-row">
-              <label className="field-label" htmlFor="password">
-                Password
-              </label>
-              <span className="forgot-password">Forgot Password?</span>
-            </div>
-            <div className="input-wrapper">
-              <span className="input-icon">🔒</span>
-              <input
-                id="password"
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="field-input"
-                placeholder="••••••••"
-                autoComplete="current-password"
-              />
-            </div>
-          </div>
-
-          <div className="field-group">
-            <label className="field-label" htmlFor="outletId">
-              Outlet
-            </label>
-            <div className="input-wrapper">
-              <span className="input-icon">🏢</span>
-              {outlets.length > 0 ? (
-                <select
-                  id="outletId"
-                  required
-                  value={outletId}
-                  onChange={(e) => setOutletId(e.target.value)}
-                  className="field-input"
-                >
-                  {outlets.map((o) => (
-                    <option key={o.id} value={o.id}>
-                      {o.name} {o.code ? `(${o.code})` : ""}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  id="outletId"
-                  type="text"
-                  required
-                  value={outletId}
-                  onChange={(e) => setOutletId(e.target.value)}
-                  className="field-input"
-                  placeholder="Enter Outlet ID"
-                  autoComplete="off"
-                />
-              )}
-            </div>
-          </div>
-
-          <button type="submit" className="submit-btn" disabled={submitting}>
-            {submitting ? "Signing in..." : "Sign In →"}
-          </button>
-        </form>
-
-        {/* Dynamic Staff Quick Access Section */}
-        {staffProfiles.length > 0 && (
-          <div className="quick-access-section">
-            <div className="quick-access-divider">
-              <span>ACTIVE STAFF PROFILES</span>
-            </div>
-
-            <div className="quick-access-buttons">
-              {staffProfiles.map((staff) => {
-                const isActive = email === staff.email;
-                return (
-                  <button
-                    key={staff.id}
-                    type="button"
-                    className={`quick-access-btn ${isActive ? "active" : ""}`}
-                    disabled={submitting}
-                    onClick={() => {
-                      setEmail(staff.email);
-                      setIsPinModalOpen(true);
-                    }}
-                    title={`Sign in with PIN as ${staff.name} (${staff.role})`}
-                  >
-                    <div className="icon-circle">
-                      {staff.avatar}
-                    </div>
-                    <span className="role-label">{staff.name.split(" ")[0]}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div style={{ marginTop: "16px", paddingTop: "14px", borderTop: "1px dashed #cbd5e1" }}>
-              <button
-                type="button"
-                className="fast-pin-btn"
-                onClick={() => setIsPinModalOpen(true)}
+        {/* Outlet Selector Pill */}
+        <div className="field-group">
+          <label className="field-label">Selected Outlet</label>
+          <div className="select-pill-wrapper">
+            <span className="field-icon">🏢</span>
+            {outlets.length > 0 ? (
+              <select
+                value={outletId}
+                onChange={(e) => setOutletId(e.target.value)}
+                className="select-pill"
               >
-                <span style={{ fontSize: "1.1rem" }}>⚡</span>
-                <span>Fast Captain / Waiter Touch PIN Login</span>
-              </button>
-            </div>
+                {outlets.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name} {o.code ? `(${o.code})` : ""}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="text"
+                value={outletId}
+                onChange={(e) => setOutletId(e.target.value)}
+                placeholder="Enter Outlet ID"
+                className="select-pill"
+              />
+            )}
           </div>
+        </div>
+
+        {/* AUTH MODE 1: Fast Touch PIN for Crew */}
+        {authMode === "PIN" && (
+          <div className="pin-mode-section">
+            <div className="crew-label">Choose Active Staff Member</div>
+            <div className="crew-grid">
+              {(staffProfiles.length > 0 ? staffProfiles : [
+                { id: "s1", name: "Armin A.", role: "CAPTAIN", email: "admin@kapmeta.com", avatar: "🧑‍🍳" },
+                { id: "s2", name: "Mikasa A.", role: "WAITER", email: "waiter@kapmeta.com", avatar: "🏃" },
+                { id: "s3", name: "Eren Y.", role: "KITCHEN", email: "chef@kapmeta.com", avatar: "👨‍🍳" },
+              ]).map((st) => (
+                <button
+                  key={st.id}
+                  type="button"
+                  className="crew-pill"
+                  onClick={() => {
+                    setEmail(st.email);
+                    setIsPinModalOpen(true);
+                  }}
+                  title={`Unlock with PIN as ${st.name}`}
+                >
+                  <div className="crew-avatar">{st.name.charAt(0)}</div>
+                  <div className="crew-text">
+                    <span className="crew-name">{st.name}</span>
+                    <span className="crew-role">{st.role.toLowerCase()}</span>
+                  </div>
+                  <span className="crew-arrow">→</span>
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              className="quick-pin-launch-btn"
+              onClick={() => setIsPinModalOpen(true)}
+            >
+              <span>⚡</span>
+              <span>Open Fast Numeric Keypad</span>
+            </button>
+          </div>
+        )}
+
+        {/* AUTH MODE 2: Admin Password Form */}
+        {authMode === "PASSWORD" && (
+          <form onSubmit={handleSubmit} className="password-form">
+            <div className="field-group">
+              <label className="field-label" htmlFor="email">Email Address</label>
+              <div className="input-pill-wrapper">
+                <span className="field-icon">👤</span>
+                <input
+                  id="email"
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="input-pill"
+                  placeholder="admin@kapmeta.com"
+                  autoComplete="username"
+                />
+              </div>
+            </div>
+
+            <div className="field-group">
+              <label className="field-label" htmlFor="password">Password</label>
+              <div className="input-pill-wrapper">
+                <span className="field-icon">🔒</span>
+                <input
+                  id="password"
+                  type="password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="input-pill"
+                  placeholder="••••••••"
+                  autoComplete="current-password"
+                />
+              </div>
+            </div>
+
+            <button type="submit" className="submit-pill-btn" disabled={submitting}>
+              {submitting ? "Authenticating..." : "Sign In to Management Hub →"}
+            </button>
+          </form>
         )}
       </div>
 
+      {/* Shakuro Fast PIN Modal */}
       <CaptainPinLoginModal
         isOpen={isPinModalOpen}
         onClose={() => setIsPinModalOpen(false)}
@@ -279,78 +298,130 @@ export default function LoginPage() {
       />
 
       <style jsx>{`
-        .login-app {
+        .login-canvas {
           min-height: 100vh;
           display: flex;
           align-items: center;
           justify-content: center;
-          background: #f8fafc;
-          font-family: "Inter", system-ui, -apple-system, sans-serif;
-          color: #0f172a;
-          padding: 20px;
+          background: #f4f4f6;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+          color: #18181b;
+          padding: 24px;
         }
 
         .login-card {
           width: 100%;
           max-width: 440px;
           background: #ffffff;
-          border: 1px solid #e2e8f0;
-          border-radius: 24px;
-          padding: 40px 36px;
-          box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+          border: 1px solid #f4f4f5;
+          border-radius: 28px;
+          padding: 36px 32px;
+          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.04);
+          display: flex;
+          flex-direction: column;
+          gap: 20px;
         }
 
         .brand-header {
-          margin-bottom: 24px;
+          display: flex;
+          align-items: center;
+          gap: 14px;
         }
 
-        .welcome-title {
-          font-size: 28px;
-          font-weight: 800;
-          color: #0f172a;
-          margin: 0 0 6px 0;
-          letter-spacing: -0.5px;
+        .brand-crest {
+          width: 46px;
+          height: 46px;
+          border-radius: 16px;
+          background: #18181b;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          position: relative;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         }
 
-        .welcome-subtitle {
-          font-size: 14px;
-          color: #64748b;
+        .crest-letter {
+          color: #ffffff;
+          font-weight: 900;
+          font-size: 1.3rem;
+        }
+
+        .crest-dot {
+          position: absolute;
+          top: 5px;
+          right: 5px;
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: #10b981;
+        }
+
+        .brand-name {
+          font-size: 1.45rem;
+          font-weight: 900;
+          color: #18181b;
+          letter-spacing: -0.02em;
           margin: 0;
-          line-height: 1.5;
         }
 
-        .notification-banner {
+        .brand-highlight {
+          color: #10b981;
+        }
+
+        .brand-subtitle {
+          font-size: 0.8rem;
+          color: #71717a;
+          margin: 2px 0 0 0;
+          font-weight: 500;
+        }
+
+        .mode-toggle {
+          display: flex;
+          padding: 4px;
+          border-radius: 9999px;
+          background: #f4f4f6;
+          gap: 4px;
+        }
+
+        .mode-btn {
+          flex: 1;
+          padding: 8px 12px;
+          border-radius: 9999px;
+          border: none;
+          background: transparent;
+          font-size: 0.78rem;
+          font-weight: 700;
+          color: #71717a;
+          cursor: pointer;
+          transition: all 0.15s ease;
+        }
+
+        .mode-btn.active {
+          background: #ffffff;
+          color: #18181b;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+        }
+
+        .alert-banner {
+          padding: 10px 14px;
+          border-radius: 14px;
+          font-size: 0.82rem;
+          font-weight: 600;
           display: flex;
           align-items: center;
           gap: 8px;
-          padding: 12px 16px;
-          border-radius: 12px;
-          font-size: 13px;
-          font-weight: 600;
-          margin-bottom: 20px;
-          animation: fadeIn 0.2s ease-in-out;
         }
 
-        .notification-banner.success {
+        .alert-banner.notice {
           background: #ecfdf5;
           color: #065f46;
           border: 1px solid #a7f3d0;
         }
 
-        .notification-banner.error {
-          background: #fef2f2;
-          color: #991b1b;
-          border: 1px solid #fecaca;
-        }
-
-        .notif-icon {
-          font-size: 16px;
-        }
-
-        .login-form {
-          display: flex;
-          flex-direction: column;
-          gap: 18px;
+        .alert-banner.error {
+          background: #fff1f2;
+          color: #e11d48;
+          border: 1px solid #fecdd3;
         }
 
         .field-group {
@@ -359,203 +430,167 @@ export default function LoginPage() {
           gap: 6px;
         }
 
-        .field-label-row {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-
         .field-label {
-          font-size: 13px;
-          font-weight: 600;
-          color: #334155;
-        }
-
-        .forgot-password {
-          font-size: 12px;
-          font-weight: 600;
-          color: #2563eb;
-          cursor: pointer;
-        }
-
-        .forgot-password:hover {
-          text-decoration: underline;
-        }
-
-        .input-wrapper {
-          position: relative;
-          display: flex;
-          align-items: center;
-        }
-
-        .input-icon {
-          position: absolute;
-          left: 14px;
-          font-size: 16px;
-          color: #94a3b8;
-          pointer-events: none;
-        }
-
-        .field-input {
-          width: 100%;
-          padding: 12px 14px 12px 42px;
-          border-radius: 12px;
-          border: 1px solid #e2e8f0;
-          background: #f1f5f9;
-          font-size: 14px;
-          color: #0f172a;
-          outline: none;
-          transition: all 0.15s ease;
-        }
-
-        .field-input:focus {
-          background: #ffffff;
-          border-color: #2563eb;
-          box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
-        }
-
-        .submit-btn {
-          margin-top: 10px;
-          padding: 14px;
-          background: #0f172a;
-          color: #ffffff;
-          border: none;
-          border-radius: 14px;
-          font-size: 15px;
+          font-size: 0.75rem;
           font-weight: 700;
-          cursor: pointer;
-          transition: all 0.15s ease;
-          display: flex;
-          justify-content: center;
-          align-items: center;
+          color: #71717a;
         }
 
-        .submit-btn:hover:not(:disabled) {
-          background: #1e293b;
+        .select-pill-wrapper, .input-pill-wrapper {
+          display: flex;
+          align-items: center;
+          background: #fafafa;
+          border: 1px solid #e4e4e7;
+          border-radius: 9999px;
+          padding: 6px 14px;
+          gap: 8px;
+          transition: border-color 0.15s ease;
+        }
+
+        .select-pill-wrapper:focus-within, .input-pill-wrapper:focus-within {
+          border-color: #18181b;
+          background: #ffffff;
+        }
+
+        .field-icon {
+          font-size: 0.95rem;
+        }
+
+        .select-pill, .input-pill {
+          width: 100%;
+          border: none;
+          background: transparent;
+          font-size: 0.86rem;
+          font-weight: 600;
+          color: #18181b;
+          outline: none;
+        }
+
+        .pin-mode-section {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+
+        .crew-label {
+          font-size: 0.75rem;
+          font-weight: 700;
+          color: #a1a1aa;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+        }
+
+        .crew-grid {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .crew-pill {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 8px 14px;
+          border-radius: 16px;
+          background: #fafafa;
+          border: 1px solid #f4f4f5;
+          cursor: pointer;
+          transition: all 0.15s ease;
+          text-align: left;
+        }
+
+        .crew-pill:hover {
+          background: #f4f4f6;
+          border-color: #e4e4e7;
           transform: translateY(-1px);
         }
 
-        .submit-btn:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-        }
-
-        .quick-access-section {
-          margin-top: 36px;
-        }
-
-        .quick-access-divider {
+        .crew-avatar {
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          background: #e4e4e7;
+          color: #18181b;
+          font-weight: 800;
+          font-size: 0.85rem;
           display: flex;
           align-items: center;
-          text-align: center;
-          margin-bottom: 24px;
+          justify-content: center;
         }
 
-        .quick-access-divider::before,
-        .quick-access-divider::after {
-          content: "";
+        .crew-text {
           flex: 1;
-          border-bottom: 1px solid #e2e8f0;
-        }
-
-        .quick-access-divider span {
-          padding: 0 16px;
-          color: #94a3b8;
-          font-size: 11px;
-          font-weight: 700;
-          letter-spacing: 1.2px;
-        }
-
-        .quick-access-buttons {
-          display: flex;
-          justify-content: space-around;
-          align-items: center;
-          gap: 16px;
-        }
-
-        .quick-access-btn {
-          background: transparent;
-          border: none;
           display: flex;
           flex-direction: column;
-          align-items: center;
-          gap: 8px;
-          cursor: pointer;
-          padding: 6px;
-          transition: transform 0.15s ease;
         }
 
-        .quick-access-btn:hover:not(:disabled) {
-          transform: translateY(-2px);
+        .crew-name {
+          font-size: 0.85rem;
+          font-weight: 700;
+          color: #18181b;
         }
 
-        .quick-access-btn:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
+        .crew-role {
+          font-size: 0.7rem;
+          color: #71717a;
+          text-transform: capitalize;
         }
 
-        .icon-circle {
-          width: 58px;
-          height: 58px;
-          border-radius: 50%;
-          border: 1.5px solid #e2e8f0;
+        .crew-arrow {
+          font-size: 0.9rem;
+          color: #a1a1aa;
+        }
+
+        .quick-pin-launch-btn {
+          margin-top: 6px;
+          padding: 12px;
+          border-radius: 9999px;
+          border: 1px dashed #d4d4d8;
           background: #ffffff;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 22px;
-          box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
-          transition: all 0.2s ease;
-        }
-
-        .quick-access-btn:hover .icon-circle {
-          border-color: #2563eb;
-          box-shadow: 0 6px 16px rgba(37, 99, 235, 0.15);
-        }
-
-        .quick-access-btn.active .icon-circle {
-          border-color: #2563eb;
-          background: #eff6ff;
-        }
-
-        .role-label {
-          font-size: 11px;
+          color: #18181b;
+          font-size: 0.82rem;
           font-weight: 700;
-          color: #475569;
-          letter-spacing: 0.5px;
-        }
-
-        .fast-pin-btn {
-          width: 100%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 8px;
-          padding: 10px 14px;
-          border-radius: 10px;
-          border: 1px solid #3b82f6;
-          background: #eff6ff;
-          color: #1d4ed8;
-          font-weight: 700;
-          font-size: 0.8125rem;
           cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
           transition: all 0.15s ease;
         }
 
-        .fast-pin-btn:hover {
-          background: #dbeafe;
-          box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
+        .quick-pin-launch-btn:hover {
+          background: #f4f4f6;
+          border-color: #18181b;
         }
 
-        @keyframes fadeIn {
-          from {
-            opacity: 0;
-            transform: translateY(-4px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
+        .password-form {
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+        }
+
+        .submit-pill-btn {
+          margin-top: 8px;
+          padding: 13px;
+          border-radius: 9999px;
+          border: none;
+          background: #18181b;
+          color: #ffffff;
+          font-size: 0.88rem;
+          font-weight: 700;
+          cursor: pointer;
+          box-shadow: 0 4px 14px rgba(24, 24, 27, 0.2);
+          transition: all 0.15s ease;
+        }
+
+        .submit-pill-btn:hover:not(:disabled) {
+          background: #27272a;
+          transform: translateY(-1px);
+        }
+
+        .submit-pill-btn:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
         }
       `}</style>
     </div>
