@@ -666,6 +666,47 @@ export default function KapMetaHeader({
                 }
 
                 const isExpanded = Boolean(expandedGroups[group.id]);
+                // Second nesting level (e.g. Management > Configuration /
+                // Accounting / User Management / User Logs). Purely additive:
+                // a group with no `subGroups` renders exactly as before.
+                const subGroupBlocks = group.subGroups?.map((sub) => {
+                  const subKey = `${group.id}::${sub.id}`;
+                  const isSubExpanded = Boolean(expandedGroups[subKey]);
+                  return (
+                    <div key={subKey} className="submenu-subgroup">
+                      <button
+                        type="button"
+                        className="submenu-subgroup-header"
+                        aria-expanded={isSubExpanded}
+                        onClick={() =>
+                          setExpandedGroups((prev) => ({ ...prev, [subKey]: !prev[subKey] }))
+                        }
+                      >
+                        <span className="item-label-text">{sub.label}</span>
+                        <span className={`chevron-indicator ${isSubExpanded ? "open" : ""}`}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.5" aria-hidden="true">
+                            <polyline points="6 9 12 15 18 9" />
+                          </svg>
+                        </span>
+                      </button>
+                      {isSubExpanded && (
+                        <div className="submenu-container submenu-container-nested">
+                          {sub.links.map((link) => (
+                            <Link
+                              key={`${subKey}-${link.label}`}
+                              href={link.href}
+                              className="submenu-link"
+                              onClick={() => setShowMenuDrawer(false)}
+                            >
+                              {link.label}
+                            </Link>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                });
+
                 return (
                   <React.Fragment key={group.id}>
                     <button
@@ -687,7 +728,8 @@ export default function KapMetaHeader({
                       </span>
                     </button>
 
-                    {isExpanded && submenuLinks}
+                    {isExpanded && group.links.length > 0 && submenuLinks}
+                    {isExpanded && subGroupBlocks}
                   </React.Fragment>
                 );
               })}
@@ -1452,6 +1494,36 @@ export default function KapMetaHeader({
         .submenu-link:focus-visible {
           outline: 2px solid var(--bg-card);
           outline-offset: -2px;
+        }
+        /* Second nesting level (Management > Configuration / Accounting /
+           User Management / User Logs, etc.). */
+        .submenu-subgroup {
+          display: flex;
+          flex-direction: column;
+        }
+        .submenu-subgroup-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+          background: transparent;
+          border: none;
+          width: 100%;
+          text-align: left;
+          font: inherit;
+          cursor: pointer;
+          padding: 8px 12px 8px 56px;
+          color: #e2e8f0;
+          font-size: 0.8125rem;
+          font-weight: 700;
+        }
+        .submenu-subgroup-header:hover {
+          color: #ffffff;
+        }
+        .submenu-container-nested {
+          padding-left: 76px;
+          border-left: none;
+          background: transparent;
         }
 
         /* 3. Bottom Metadata Panel */

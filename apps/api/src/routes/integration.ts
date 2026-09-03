@@ -263,6 +263,26 @@ router.patch(["/channel-items/:mappingId/availability", "/integration/channel-it
       },
     });
 
+    // Real write point for management_activity_logs (migration 0053, see
+    // apps/api/src/routes/management.ts's GET /management/logs comment for
+    // why this route was chosen over menu.ts's separate stock-86 toggle).
+    // Best-effort: a logging failure here must never fail the toggle
+    // itself, so it's caught and only console.error'd.
+    try {
+      await prisma.$executeRaw`
+        INSERT INTO management_activity_logs (outlet_id, log_type, actor_id, message, meta)
+        VALUES (
+          ${outletId},
+          'ONLINE_ITEM_ON_OFF',
+          ${req.auth!.userId},
+          ${`Item ${updated.item_id} turned ${nextState === "OFF" ? "OFF" : "ON"} for channel ${updated.channel_id}`},
+          ${JSON.stringify({ mappingId: updated.id, itemId: updated.item_id, channelId: updated.channel_id, state: updated.state, version: updated.version })}::jsonb
+        )
+      `;
+    } catch (logErr) {
+      console.error("Error writing management_activity_logs for channel-items availability toggle:", logErr);
+    }
+
     res.status(200).json({ newVersion: updated.version, isAvailable: updated.state !== "OFF", mappingId: updated.id });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

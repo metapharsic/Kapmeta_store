@@ -88,6 +88,11 @@ export interface SidebarGroupDef {
   // to begin with.
   alwaysExpanded?: boolean;
   links: SidebarLinkDef[];
+  // Optional second nesting level (drawer-only today - see KapMetaHeader.tsx).
+  // Each sub-group renders as its own chevron-collapsible header nested under
+  // the parent group's already-expanded body, in addition to the parent's
+  // own flat `links` above.
+  subGroups?: { id: string; label: string; links: SidebarLinkDef[] }[];
 }
 
 export const SIDEBAR_GROUPS: SidebarGroupDef[] = [
@@ -175,6 +180,62 @@ export const SIDEBAR_GROUPS: SidebarGroupDef[] = [
       { href: "/table-management", permission: "menu.category.manage", label: "Table Management" },
       { href: "/admin", permission: "report.read", label: "Admin Overview Hub" },
       { href: "/admin?tab=agents", permission: "report.read", label: "Multi-Agent & A2A Status" },
+      // Flat Management items with no backend contract of their own yet -
+      // honest "coming soon" placeholder pages (see pages/management/).
+      { href: "/management/explore-products", permission: "report.read", label: "Explore Products" },
+      { href: "/management/audit-trail", permission: "report.read", label: "Audit Trail" },
+      { href: "/management/device-mapping", permission: "report.read", label: "Device Mapping" },
+    ],
+    subGroups: [
+      {
+        id: "configuration",
+        label: "Configuration",
+        links: [
+          { href: "/management/settings?key=outlet_configuration", permission: "settings.manage", label: "Outlet Configuration" },
+          { href: "/management/list?key=sub_order_type", permission: "settings.manage", label: "Sub Order Type" },
+          { href: "/management/list?key=delivery_distance", permission: "settings.manage", label: "Delivery Distance" },
+          { href: "/management/list?key=area_locality_delivery_charges", permission: "settings.manage", label: "Area/Locality Wise Delivery Charges" },
+          { href: "/management/list?key=floor_plan", permission: "settings.manage", label: "Floor Plan" },
+          { href: "/management/list?key=email_template_settings", permission: "settings.manage", label: "Email Template Settings" },
+        ],
+      },
+      {
+        id: "accounting",
+        label: "Accounting",
+        links: [
+          { href: "/management/settings?key=virtual_wallet", permission: "settings.manage", label: "Virtual Wallet" },
+          { href: "/management/settings?key=online_order_reconciliation", permission: "settings.manage", label: "Online Order Reconciliation" },
+          { href: "/management/settings?key=gst_information", permission: "settings.manage", label: "GST Information" },
+          { href: "/management/list?key=utility_bill_operator", permission: "settings.manage", label: "Utility Bill Operator" },
+          { href: "/management/settings?key=expense_withdrawal", permission: "settings.manage", label: "Expense & Withdrawal" },
+          { href: "/management/settings?key=service_payment_history", permission: "settings.manage", label: "Service Payment History" },
+          { href: "/management/list?key=loan_information", permission: "settings.manage", label: "Loan Information" },
+          { href: "/management/list?key=denomination", permission: "settings.manage", label: "Denomination" },
+        ],
+      },
+      {
+        id: "user-management",
+        label: "User Management",
+        links: [
+          { href: "/management/biller-app", permission: "users.manage", label: "Biller App" },
+        ],
+      },
+      {
+        id: "user-logs",
+        label: "User Logs",
+        links: [
+          { href: "/management/logs?type=ONLINE_STORE", permission: "users.manage", label: "Online Store Logs" },
+          { href: "/management/logs?type=ONLINE_ITEM_ON_OFF", permission: "users.manage", label: "Online Item On/Off Logs" },
+          { href: "/management/logs?type=AUTO_ACCEPT", permission: "users.manage", label: "Auto Accept Change Logs" },
+          { href: "/management/logs?type=SUPPORT", permission: "users.manage", label: "Support Management" },
+          { href: "/management/logs?type=NOTIFICATION", permission: "users.manage", label: "Notification" },
+          { href: "/management/logs?type=MENU_TRIGGER", permission: "users.manage", label: "Menu Trigger Logs" },
+          { href: "/management/logs?type=CLOSING_HOUR", permission: "users.manage", label: "Closing Hour Logs" },
+          { href: "/management/logs?type=EXPENSE", permission: "users.manage", label: "Expense Logs" },
+          { href: "/management/logs?type=WITHDRAWAL", permission: "users.manage", label: "Withdrawal Logs" },
+          { href: "/management/logs?type=CASH_TOPUP", permission: "users.manage", label: "Cash Top-Up Logs" },
+        ],
+      },
     ],
   },
   {
@@ -213,7 +274,15 @@ export function filterSidebarGroups(
     links: group.links.filter(
       (link) => superAdmin || link.alwaysVisible || perms.includes(link.permission)
     ),
-  })).filter((group) => group.links.length > 0);
+    subGroups: group.subGroups
+      ?.map((sub) => ({
+        ...sub,
+        links: sub.links.filter(
+          (link) => superAdmin || link.alwaysVisible || perms.includes(link.permission)
+        ),
+      }))
+      .filter((sub) => sub.links.length > 0),
+  })).filter((group) => group.links.length > 0 || (group.subGroups && group.subGroups.length > 0));
 }
 
 interface NavProps {

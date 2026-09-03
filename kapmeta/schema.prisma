@@ -1717,3 +1717,54 @@ model report_notifications {
 
   @@index([outlet_id], map: "idx_report_notifications_outlet")
 }
+
+/// New tables (migration 0053) -- backing storage for the "Management" nav
+/// section (Configuration / Accounting / User Management / User Logs
+/// screens). Generic keyed tables (list_key/settings_key/log_type) shared
+/// across many near-identical screens rather than one bespoke table per
+/// screen -- see migration 0053's header for the full reasoning and the
+/// key catalog per table. TEXT id/outlet_id, gen_random_uuid()::text
+/// default: same convention as report_notifications above.
+///
+/// Routes (apps/api/src/routes/management.ts) use $queryRaw/$executeRaw
+/// against these tables rather than these delegates, since `prisma
+/// generate` cannot run in this sandbox (see report_notifications' note
+/// above) -- these model blocks are for a future `prisma generate` only.
+model management_lists {
+  id         String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  outlet_id  String
+  list_key   String
+  label      String
+  value      String?
+  extra      Json     @default("{}")
+  is_active  Boolean  @default(true)
+  sort_order Int      @default(0)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+  created_by String?
+
+  @@index([outlet_id, list_key], map: "idx_management_lists_outlet_key")
+}
+
+model management_settings {
+  id           String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  outlet_id    String
+  settings_key String
+  data         Json     @default("{}")
+  updated_at   DateTime @default(now()) @db.Timestamptz(6)
+  updated_by   String?
+
+  @@unique([outlet_id, settings_key])
+}
+
+model management_activity_logs {
+  id         String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  outlet_id  String
+  log_type   String
+  actor_id   String?
+  message    String
+  meta       Json     @default("{}")
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([outlet_id, log_type, created_at(sort: Desc)], map: "idx_management_activity_logs_outlet_type_created")
+}
