@@ -322,3 +322,16 @@ Reference screenshots: Payment Information, Virtual Wallet, Online Order Reconci
 - Payment Information + PG Transactions tab: real queries against existing payments/orders tables.
 - Honestly stubbed (documented in code, no fake rows): reconciliation status-mismatch/variance/rejected-cancelled/final tabs, payment-history swiping/MDR/hardware/deposit/invoices/ledgers tabs — no backing schema exists yet (TSK-042).
 - Verified: git diff reviewed, tsc clean pos-web, api baseline unchanged (82 pre-existing errors, 0 new). Committed.
+
+## 2026-09-03 — CP-24: menu desync (chef/waiter/admin) fixed
+User report: "Chef, waiter and admin all of them menu are not in sync."
+Real root cause found (not the same class as prior DB-type bugs): listAllItems/listByCategory
+in menu-catalog-repository.ts referenced row.availabilities, a Prisma relation that doesn't
+exist - always fell back to a hardcoded {isStocked:true} stub, so 86'd items never actually
+hid on GET /menu/items (fed waiter.tsx and the public QR order menu) even though
+GET /menu/availability computed it correctly. Fixed with a real item_availability lookup.
+Also: waiter.tsx and menu.tsx (admin) only fetched menu once on mount, no refresh - added
+to waiter's existing 15s poll loop (same pattern kitchen.tsx already uses for KOTs) and a
+silent 15s poll on admin. kitchen.tsx confirmed out of scope: shows immutable KOT snapshots.
+Verified: diff reviewed (3 files, +56/-17), tsc clean both projects. Committed.
+Flagged not fixed: MenuItem/modifier_* schema.prisma still @db.Uuid (TSK-044, same class as TSK-028).

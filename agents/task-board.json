@@ -840,6 +840,22 @@
       "status": "PENDING",
       "priority": "LOW",
       "relatedGate": "CP-23"
+    },
+    {
+      "taskId": "TSK-043",
+      "title": "Menu desync fix: real availability join + polling refresh (chef/waiter/admin)",
+      "assignedTo": "multi-agent(root-cause+fix)",
+      "status": "DONE",
+      "priority": "HIGH",
+      "relatedGate": "CP-24"
+    },
+    {
+      "taskId": "TSK-044",
+      "title": "schema.prisma MenuItem/modifier_* still @db.Uuid, contradicts TEXT convention - needs same audit as TSK-028",
+      "assignedTo": "unassigned",
+      "status": "PENDING",
+      "priority": "LOW",
+      "relatedGate": "CP-24"
     }
   ]
 }
