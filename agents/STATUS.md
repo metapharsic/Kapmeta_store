@@ -315,3 +315,10 @@ Reference screenshots showed Biller App tabs need Create/Sync Code/User Code col
 - management.ts: POST/PUT /management/biller-app + sync-code regenerate, reuses real user-management.ts create-user logic (no parallel fake system).
 - biller-app.tsx: matches reference (Create, Sync Code, copy code, status toggle real DB write, empty-state + card for empty tabs).
 - Verified: git diff reviewed, tsc clean (pos-web 0 errors, api 82 pre-existing unrelated errors confirmed via stash/pop, zero new). Committed.
+
+## 2026-09-03 — CP-23 amendment: Accounting sub-group
+Reference screenshots: Payment Information, Virtual Wallet, Online Order Reconciliation, Utility Bill Operator, Expense Management, Service Payment History.
+- New real tables: wallet_transactions, expense_transactions (0055). Utility Bill Operator/Expense/Withdrawal/CashTopUp masters + GST/Loan Info/Denomination reused existing generic management_lists/management_settings from CP-23 round 1, zero new code needed.
+- Payment Information + PG Transactions tab: real queries against existing payments/orders tables.
+- Honestly stubbed (documented in code, no fake rows): reconciliation status-mismatch/variance/rejected-cancelled/final tabs, payment-history swiping/MDR/hardware/deposit/invoices/ledgers tabs — no backing schema exists yet (TSK-042).
+- Verified: git diff reviewed, tsc clean pos-web, api baseline unchanged (82 pre-existing errors, 0 new). Committed.

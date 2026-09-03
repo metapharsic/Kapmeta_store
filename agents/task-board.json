@@ -824,6 +824,22 @@
       "status": "DONE",
       "priority": "HIGH",
       "relatedGate": "CP-23"
+    },
+    {
+      "taskId": "TSK-041",
+      "title": "Accounting sub-group (Payment Info/Wallet/Reconciliation/Expense/Payment History)",
+      "assignedTo": "multi-agent(backend+frontend)",
+      "status": "DONE",
+      "priority": "HIGH",
+      "relatedGate": "CP-23"
+    },
+    {
+      "taskId": "TSK-042",
+      "title": "Payment History tabs (swiping/MDR/hardware/deposit/invoices/ledgers) + reconciliation status-mismatch/variance/rejected/final have no real backing schema, honestly stubbed",
+      "assignedTo": "unassigned",
+      "status": "PENDING",
+      "priority": "LOW",
+      "relatedGate": "CP-23"
     }
   ]
 }
