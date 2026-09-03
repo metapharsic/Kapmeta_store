@@ -856,6 +856,30 @@
       "status": "PENDING",
       "priority": "LOW",
       "relatedGate": "CP-24"
+    },
+    {
+      "taskId": "TSK-045",
+      "title": "Inventory Management & Daily Stock Closing Tracker Suite (Screens 1, 2, 3)",
+      "assignedTo": "multi-agent(db+backend+frontend)",
+      "status": "DONE",
+      "priority": "HIGH",
+      "relatedGate": "CP-25"
+    },
+    {
+      "taskId": "TSK-046",
+      "title": "Stock Purchase & Purchase Order Ingestion (Screens 4, 5) with A2A Multi-Agent Telemetry",
+      "assignedTo": "multi-agent(a2a+backend+frontend)",
+      "status": "DONE",
+      "priority": "HIGH",
+      "relatedGate": "CP-25"
+    },
+    {
+      "taskId": "TSK-045",
+      "title": "Public customer order app: Dine In/Delivery/Pick Up enabled (outlet-scoped tableless entry)",
+      "assignedTo": "multi-agent(backend+frontend)",
+      "status": "DONE",
+      "priority": "HIGH",
+      "relatedGate": "CP-25"
     }
   ]
 }

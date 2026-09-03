@@ -28,6 +28,29 @@
 - **SRE & Diagnostics:** Automatically scans `logs/` to capture stack traces and recommend immediate fixes for other agents.
 - **QA Agent:** Ensures all unit tests pass prior to milestone gate progression in `checkpoints/`.
 
+## 2026-09-03 — CP-25 Inventory Management, Daily Stock Closing & A2A Architecture (Complete)
+
+All 5 reference screens and multi-agent coordination requirements have been fully provisioned:
+- **Screens 1, 2, 3 (Inventory Dashboard - `/inventory`):**
+  - Daily Stock Closing Tracker (accuracy %, monthly progress grid with status badges, update accuracy warning, and interactive "Update Today's Closing" modal).
+  - Inventory Overview cards (AI-generated Raw Materials & Recipes prompt with "+ Add Now" dynamic seeding, metric totals).
+  - Current Inventory (Worth of stocks, low stock warning %, category breakdown pie chart, and Low Stock Alert progress bar list).
+  - COGS Breakdown (COGS total, highest and least profit generating items, ingredient cost breakdown chart, and Raw Material & Recipe Master update prompt).
+  - Purchase Insights (Total purchase, pending payment, item price trends matrix, supplier stacked bar graph with Current vs Pending purchases).
+  - Pending Tasks (PO stages tracker and empty state with "+ Create PO" action).
+  - Bottom dashboard customization banner.
+- **Screen 4 (Stock Purchase - `/inventory/purchase`):**
+  - Exact filter bar (Start Date, End Date, Supplier "From", Invoice No., "More Filters", Search, Clear).
+  - Empty state document illustration ("No Purchase Found").
+  - Real interactive table and "+ Ingest Purchase" modal that creates PostgreSQL records in `stock_purchases` & `stock_purchase_items` and increments ingredient stock in DB.
+- **Screen 5 (Purchase Order List - `/inventory/purchase-orders`):**
+  - Filter bar (Start Date, End Date, Supplier "To", PO Number, Search, Clear).
+  - Empty state and interactive PO table with statuses (DRAFT, RECEIVED, COMPLETED, CANCELLED).
+  - "+ Create PO" modal and GRN receipt workflow that receives goods directly into inventory.
+- **A2A Multi-Agent Coordination & Invariant Enforcement:**
+  - Real-time `[🤖 AI Agent]` drawer in header displaying live telemetry, health checks, domain scopes, and A2A bus status for all 7 agents.
+  - Zero hardcoded business literals: all data backed by database tables, tenant-scoped with `outlet_id`, and stored in `BIGINT` minor units (paise).
+
 ## 2026-09-01 — CP-11 Full-CRUD Parity (in progress)
 
 5 sub-tasks landed this pass (TSK-008a/b/c/f-crm/g), 1 flagged pending (TSK-008k):
@@ -335,3 +358,19 @@ to waiter's existing 15s poll loop (same pattern kitchen.tsx already uses for KO
 silent 15s poll on admin. kitchen.tsx confirmed out of scope: shows immutable KOT snapshots.
 Verified: diff reviewed (3 files, +56/-17), tsc clean both projects. Committed.
 Flagged not fixed: MenuItem/modifier_* schema.prisma still @db.Uuid (TSK-044, same class as TSK-028).
+
+## 2026-09-03 — CP-25: Dine In/Delivery/Pick Up enabled on public order app
+User: enable Dine In/Delivery/Pick Up and sync with the app. Found: POS terminal already
+fully wired for all 3 orderTypes. The gap was the customer-facing public QR order page
+(public-order.ts) which hardcoded DINE_IN, no selector, no tableless entry.
+- public-order.ts: table-QR route untouched (real dine-in stays locked). Added outlet-scoped
+  GET/POST /public/outlets/:idOrCode/menu|order, real orderType normalization matching orders.ts.
+- New pages/order/index.tsx: tableless entry, 3 cards (Dine In explains it needs a table QR,
+  Delivery/Pickup collect phone/address then hit real menu+order endpoints).
+- [tableId].tsx refactored onto shared PublicOrderMenu component, dine-in behavior unchanged.
+- No fake customer fields invented: phone/address folded into order line notes since no
+  dedicated field exists server-side (documented, not silently dropped).
+- Verified: diff reviewed, targeted commit (only my files - another session's concurrent
+  inventory work + STATUS/task-board edits were left untouched, not mine to commit).
+  Stale .git/index.lock from a timed-out heredoc hit mid-round, cleared after confirming no
+  live git process. Committed f1a6460.
