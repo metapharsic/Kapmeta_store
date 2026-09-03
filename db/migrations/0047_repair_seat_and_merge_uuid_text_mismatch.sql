@@ -160,7 +160,7 @@ SELECT DISTINCT
     dt.merge_primary_table_id::text,
     dt.id
   ),
-  'ACTIVE',
+  'ACTIVE'::table_merge_status,
   now()
 FROM dining_tables dt
 WHERE dt.merge_group_id IS NOT NULL
@@ -198,7 +198,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_table_seats_outlet_table_seat
 -- Backfill: one EMPTY seat per capacity slot on every currently-active
 -- table. Copied verbatim from 0030 (already idempotent via ON CONFLICT).
 INSERT INTO table_seats (outlet_id, dining_table_id, seat_number, status)
-SELECT dt.outlet_id, dt.id, gs.seat_number, 'EMPTY'
+SELECT dt.outlet_id, dt.id, gs.seat_number, 'EMPTY'::seat_status
 FROM dining_tables dt
 CROSS JOIN LATERAL generate_series(1, GREATEST(dt.capacity, 1)) AS gs(seat_number)
 ON CONFLICT (outlet_id, dining_table_id, seat_number) DO NOTHING;
