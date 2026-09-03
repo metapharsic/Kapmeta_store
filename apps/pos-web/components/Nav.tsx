@@ -203,12 +203,21 @@ export const SIDEBAR_GROUPS: SidebarGroupDef[] = [
         id: "accounting",
         label: "Accounting",
         links: [
-          { href: "/management/settings?key=virtual_wallet", permission: "settings.manage", label: "Virtual Wallet" },
-          { href: "/management/settings?key=online_order_reconciliation", permission: "settings.manage", label: "Online Order Reconciliation" },
+          // Reference screenshot nests "Payments" (Payment Information +
+          // Virtual Wallet) as its own expandable row under Accounting.
+          // KapMetaHeader.tsx's subGroup support is one level deep only
+          // (added earlier this session) - adding a 3rd nesting level here
+          // is out of scope, so both links are flat entries in this
+          // sub-group instead, labelled distinctly so the grouping still
+          // reads clearly without inventing a nav-tree depth nothing
+          // renders yet.
+          { href: "/management/payment-information", permission: "settings.read", label: "Payments: Payment Information" },
+          { href: "/management/virtual-wallet", permission: "settings.read", label: "Payments: Virtual Wallet" },
+          { href: "/management/online-reconciliation", permission: "settings.read", label: "Online Order Reconciliation" },
           { href: "/management/settings?key=gst_information", permission: "settings.manage", label: "GST Information" },
           { href: "/management/list?key=utility_bill_operator", permission: "settings.manage", label: "Utility Bill Operator" },
-          { href: "/management/settings?key=expense_withdrawal", permission: "settings.manage", label: "Expense & Withdrawal" },
-          { href: "/management/settings?key=service_payment_history", permission: "settings.manage", label: "Service Payment History" },
+          { href: "/management/expense-management", permission: "settings.read", label: "Expense & Withdrawal" },
+          { href: "/management/service-payment-history", permission: "settings.read", label: "Service Payment History" },
           { href: "/management/list?key=loan_information", permission: "settings.manage", label: "Loan Information" },
           { href: "/management/list?key=denomination", permission: "settings.manage", label: "Denomination" },
         ],

@@ -610,3 +610,464 @@ managementRouter.post("/management/biller-app/:userId/sync-code", requireAuth, r
     res.status(500).json({ error: err.message });
   }
 });
+
+// ---------------------------------------------------------------------------
+// Accounting sub-group (Management nav): Payment Information, Virtual
+// Wallet, Online Order Reconciliation, Utility Bill Operator, Expense
+// Management, Service Payment History.
+//
+// Utility Bill Operator needs NO new route: it's a plain named list, fully
+// served today by the generic GET/POST/PUT/DELETE /management/lists routes
+// above with list_key='UTILITY_BILL_OPERATOR' (search-by-name is a client
+// side filter over `label`, same as every other management_lists screen).
+// Likewise the "*_master" tab of each Expense Management sub-screen
+// (Expense Master / Withdrawal Master / Cash Top-Up Master) is served by
+// /management/lists with list_key='EXPENSE_MASTER' / 'WITHDRAWAL_MASTER' /
+// 'CASH_TOPUP_MASTER' -- those are just named category records, identical
+// in shape to Utility Bill Operator. Nothing new needed for either; routes
+// below cover only the parts with no generic equivalent yet.
+
+interface WalletRow {
+  customer_mobile: string;
+  remaining_amount_minor: bigint | number;
+  last_activity_at: Date;
+}
+
+// GET /management/payment-information?from=&to=&status=&provider=&orderId=
+//
+// Queries the REAL payments/orders tables (no new table). "provider" maps
+// to orders.channel (e.g. ZOMATO/SWIGGY/DIRECT -- the same free-text
+// column ChannelAccount-backed integrations write into orders.channel on
+// order creation, see integration.ts); "status" filters payments.status
+// (CAPTURED/FAILED/REFUNDED/etc, whatever real values payments.status
+// carries); "orderId" matches payments.orderId or orders.orderNumber
+// (either the internal id or the human-facing order number a cashier
+// would search).
+managementRouter.get("/management/payment-information", requireAuth, requirePermission("settings.read"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const { from, to, status, provider, orderId } = req.query as {
+      from?: string;
+      to?: string;
+      status?: string;
+      provider?: string;
+      orderId?: string;
+    };
+    const parsedFrom = from ? new Date(from) : undefined;
+    const parsedTo = to ? new Date(to) : undefined;
+
+    let orderIdFilter: string[] | undefined;
+    if (orderId && orderId.trim()) {
+      const matchingOrders = await prisma.order.findMany({
+        where: {
+          outletId,
+          OR: [{ id: orderId.trim() }, { orderNumber: { contains: orderId.trim(), mode: "insensitive" } }],
+        },
+        select: { id: true },
+      });
+      orderIdFilter = matchingOrders.map((o) => o.id);
+      if (orderIdFilter.length === 0) {
+        res.status(200).json([]);
+        return;
+      }
+    }
+
+    const payments = await prisma.payment.findMany({
+      where: {
+        outletId,
+        ...(orderIdFilter ? { orderId: { in: orderIdFilter } } : {}),
+        ...(status && status.trim() ? { status: status.trim() } : {}),
+        createdAt: {
+          ...(parsedFrom ? { gte: parsedFrom } : {}),
+          ...(parsedTo ? { lte: parsedTo } : {}),
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 500,
+    });
+
+    const orderIds = Array.from(new Set(payments.map((p) => p.orderId)));
+    const relatedOrders = orderIds.length
+      ? await prisma.order.findMany({
+          where: { id: { in: orderIds }, outletId },
+          select: { id: true, orderNumber: true, channel: true, externalOrderId: true },
+        })
+      : [];
+    const orderById = new Map(relatedOrders.map((o) => [o.id, o]));
+
+    const providerFilter = provider && provider.trim() ? provider.trim().toLowerCase() : "";
+
+    const rows = payments
+      .map((p) => {
+        const order = orderById.get(p.orderId);
+        return {
+          id: p.id,
+          orderId: p.orderId,
+          orderNumber: order?.orderNumber ?? null,
+          provider: order?.channel ?? null,
+          externalOrderId: order?.externalOrderId ?? null,
+          amountMinor: p.amount.toString(),
+          method: p.method,
+          status: p.status,
+          transactionId: p.transactionId,
+          createdAt: p.createdAt.toISOString(),
+        };
+      })
+      .filter((r) => !providerFilter || (r.provider ?? "").toLowerCase().includes(providerFilter));
+
+    res.status(200).json(rows);
+  } catch (error: any) {
+    console.error("Error in GET /management/payment-information:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /management/virtual-wallet?mobile=&from=&to=
+//
+// Grouped real balances from wallet_transactions (migration 0055) -- no
+// dedicated mobile-keyed wallet table existed in the schema before this
+// (loyalty_accounts is a points balance keyed by customer_id, a different
+// concept -- see that migration's header comment). "Remaining Amount" is
+// SUM(CREDIT) - SUM(DEBIT) computed here, not stored redundantly.
+managementRouter.get("/management/virtual-wallet", requireAuth, requirePermission("settings.read"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const mobile = typeof req.query.mobile === "string" ? req.query.mobile.trim() : "";
+    const from = typeof req.query.from === "string" ? req.query.from.trim() : "";
+    const to = typeof req.query.to === "string" ? req.query.to.trim() : "";
+    const parsedFrom = from ? new Date(from) : null;
+    const parsedTo = to ? new Date(to) : null;
+
+    const rows = await prisma.$queryRaw<WalletRow[]>`
+      SELECT
+        customer_mobile,
+        SUM(CASE WHEN type = 'CREDIT' THEN amount_minor ELSE -amount_minor END) AS remaining_amount_minor,
+        MAX(created_at) AS last_activity_at
+      FROM wallet_transactions
+      WHERE outlet_id = ${outletId}
+        AND (${mobile === ""}::boolean OR customer_mobile = ${mobile})
+        AND (${parsedFrom === null}::boolean OR created_at >= ${parsedFrom})
+        AND (${parsedTo === null}::boolean OR created_at <= ${parsedTo})
+      GROUP BY customer_mobile
+      ORDER BY MAX(created_at) DESC
+    `;
+
+    res.status(200).json(
+      rows.map((r) => ({
+        customerMobile: r.customer_mobile,
+        remainingAmountMinor: r.remaining_amount_minor.toString(),
+        lastActivityAt: r.last_activity_at.toISOString(),
+      }))
+    );
+  } catch (error: any) {
+    console.error("Error in GET /management/virtual-wallet:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+interface ExpenseTxnRow {
+  id: string;
+  outlet_id: string;
+  list_id: string | null;
+  kind: string;
+  amount_minor: bigint | number;
+  note: string | null;
+  created_by: string | null;
+  created_at: Date;
+  title: string | null;
+}
+
+const EXPENSE_KINDS = ["EXPENSE", "WITHDRAWAL", "CASH_TOPUP"] as const;
+
+// GET /management/expense-transactions?kind=EXPENSE|WITHDRAWAL|CASH_TOPUP&from=&to=&title=&page=&pageSize=
+//
+// Backs the "Listing" tab (as opposed to "Master") of each Expense
+// Management pair. Joins expense_transactions to management_lists for the
+// human-readable title (the master record picked when the entry was
+// created), real pagination, real grand total across the whole filtered
+// set (not just the current page).
+managementRouter.get("/management/expense-transactions", requireAuth, requirePermission("settings.read"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const kind = typeof req.query.kind === "string" ? req.query.kind.trim().toUpperCase() : "";
+    if (!EXPENSE_KINDS.includes(kind as any)) {
+      res.status(400).json({ error: "kind must be one of EXPENSE, WITHDRAWAL, CASH_TOPUP" });
+      return;
+    }
+    const from = typeof req.query.from === "string" ? req.query.from.trim() : "";
+    const to = typeof req.query.to === "string" ? req.query.to.trim() : "";
+    const title = typeof req.query.title === "string" ? req.query.title.trim() : "";
+    const parsedFrom = from ? new Date(from) : null;
+    const parsedTo = to ? new Date(to) : null;
+
+    const rawPage = Number(req.query.page);
+    const rawPageSize = Number(req.query.pageSize);
+    const page = Number.isFinite(rawPage) && rawPage > 0 ? Math.floor(rawPage) : 1;
+    const pageSize = Number.isFinite(rawPageSize) && rawPageSize > 0 ? Math.min(Math.floor(rawPageSize), 200) : 50;
+    const offset = (page - 1) * pageSize;
+
+    const rows = await prisma.$queryRaw<ExpenseTxnRow[]>`
+      SELECT t.id, t.outlet_id, t.list_id, t.kind, t.amount_minor, t.note, t.created_by, t.created_at, l.label AS title
+      FROM expense_transactions t
+      LEFT JOIN management_lists l ON l.id = t.list_id
+      WHERE t.outlet_id = ${outletId}
+        AND t.kind = ${kind}
+        AND (${parsedFrom === null}::boolean OR t.created_at >= ${parsedFrom})
+        AND (${parsedTo === null}::boolean OR t.created_at <= ${parsedTo})
+        AND (${title === ""}::boolean OR l.label ILIKE ${"%" + title + "%"})
+      ORDER BY t.created_at DESC
+      LIMIT ${pageSize} OFFSET ${offset}
+    `;
+
+    const totalRows = await prisma.$queryRaw<{ count: bigint; grand_total_minor: bigint | number | null }[]>`
+      SELECT COUNT(*) AS count, COALESCE(SUM(t.amount_minor), 0) AS grand_total_minor
+      FROM expense_transactions t
+      LEFT JOIN management_lists l ON l.id = t.list_id
+      WHERE t.outlet_id = ${outletId}
+        AND t.kind = ${kind}
+        AND (${parsedFrom === null}::boolean OR t.created_at >= ${parsedFrom})
+        AND (${parsedTo === null}::boolean OR t.created_at <= ${parsedTo})
+        AND (${title === ""}::boolean OR l.label ILIKE ${"%" + title + "%"})
+    `;
+
+    res.status(200).json({
+      items: rows.map((r) => ({
+        id: r.id,
+        outletId: r.outlet_id,
+        listId: r.list_id,
+        title: r.title,
+        kind: r.kind,
+        amountMinor: r.amount_minor.toString(),
+        note: r.note,
+        createdBy: r.created_by,
+        createdAt: r.created_at.toISOString(),
+      })),
+      page,
+      pageSize,
+      total: Number(totalRows[0]?.count ?? 0),
+      grandTotalMinor: (totalRows[0]?.grand_total_minor ?? 0).toString(),
+    });
+  } catch (error: any) {
+    console.error("Error in GET /management/expense-transactions:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /management/expense-transactions {kind, listId, amountMinor, note}
+managementRouter.post("/management/expense-transactions", requireAuth, requirePermission("settings.manage"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const userId = req.auth!.userId;
+    const { kind, listId, amountMinor, note } = req.body ?? {};
+
+    const kindUpper = typeof kind === "string" ? kind.trim().toUpperCase() : "";
+    if (!EXPENSE_KINDS.includes(kindUpper as any)) {
+      res.status(400).json({ error: "kind must be one of EXPENSE, WITHDRAWAL, CASH_TOPUP" });
+      return;
+    }
+    const amount = Number(amountMinor);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      res.status(400).json({ error: "amountMinor must be a positive number" });
+      return;
+    }
+
+    let resolvedListId: string | null = null;
+    if (listId !== undefined && listId !== null && String(listId).trim() !== "") {
+      const listRow = await prisma.$queryRaw<{ id: string }[]>`
+        SELECT id FROM management_lists WHERE id = ${String(listId).trim()} AND outlet_id = ${outletId}
+      `;
+      if (listRow.length === 0) {
+        res.status(400).json({ error: "listId does not reference a list item for this outlet" });
+        return;
+      }
+      resolvedListId = listRow[0].id;
+    }
+
+    const rows = await prisma.$queryRaw<ExpenseTxnRow[]>`
+      INSERT INTO expense_transactions (outlet_id, list_id, kind, amount_minor, note, created_by)
+      VALUES (${outletId}, ${resolvedListId}, ${kindUpper}, ${BigInt(Math.trunc(amount))}, ${note ?? null}, ${userId})
+      RETURNING id, outlet_id, list_id, kind, amount_minor, note, created_by, created_at, NULL AS title
+    `;
+
+    res.status(201).json({
+      id: rows[0].id,
+      outletId: rows[0].outlet_id,
+      listId: rows[0].list_id,
+      kind: rows[0].kind,
+      amountMinor: rows[0].amount_minor.toString(),
+      note: rows[0].note,
+      createdBy: rows[0].created_by,
+      createdAt: rows[0].created_at.toISOString(),
+    });
+  } catch (error: any) {
+    console.error("Error in POST /management/expense-transactions:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /management/online-reconciliation/missing-orders?provider=&from=&to=
+//
+// HONEST SIMPLIFICATION: "missing orders" in the reference screenshot means
+// orders the provider (Zomato/Swiggy) says exist but this POS never
+// received, or vice versa -- that requires a real provider-side order feed
+// to diff against, which does not exist anywhere in this schema
+// (channel_accounts/inbound_events store *received* webhook events, not an
+// independent provider order list to reconcile against; there is no
+// "expected order count from provider X" source of truth). Rather than
+// invent a fake mismatch algorithm, this returns the real list of online
+// orders for the given provider/date range (orders.channel = provider,
+// case-insensitive) so the screen has real data to show -- it is NOT
+// actually filtered down to only the "missing" ones. TODO: once a real
+// provider order feed / reconciliation source exists, filter this to
+// orders with no matching feed entry.
+managementRouter.get("/management/online-reconciliation/missing-orders", requireAuth, requirePermission("settings.read"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const { provider, from, to } = req.query as { provider?: string; from?: string; to?: string };
+    const parsedFrom = from ? new Date(from) : undefined;
+    const parsedTo = to ? new Date(to) : undefined;
+
+    const orders = await prisma.order.findMany({
+      where: {
+        outletId,
+        ...(provider && provider.trim() ? { channel: { equals: provider.trim(), mode: "insensitive" } } : { channel: { not: null } }),
+        createdAt: {
+          ...(parsedFrom ? { gte: parsedFrom } : {}),
+          ...(parsedTo ? { lte: parsedTo } : {}),
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 500,
+      select: {
+        id: true,
+        orderNumber: true,
+        channel: true,
+        externalOrderId: true,
+        status: true,
+        grandTotal: true,
+        createdAt: true,
+      },
+    });
+
+    res.status(200).json(
+      orders.map((o) => ({
+        id: o.id,
+        orderNumber: o.orderNumber,
+        provider: o.channel,
+        externalOrderId: o.externalOrderId,
+        status: o.status,
+        grandTotalMinor: o.grandTotal.toString(),
+        createdAt: o.createdAt.toISOString(),
+      }))
+    );
+  } catch (error: any) {
+    console.error("Error in GET /management/online-reconciliation/missing-orders:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /management/online-reconciliation/:tab
+// tab in {status-mismatch, variance, rejected-cancelled, final}
+//
+// HONEST STUB: none of these four tabs has a real computable signal in
+// this schema today.
+//   * status-mismatch needs the provider's own order status alongside
+//     ours, to diff against orders.status -- no provider status feed exists
+//     (only inbound_events.rawPayload, which is per-webhook-event, not a
+//     queryable "current provider status" per order).
+//   * variance needs the provider's reported payout/amount alongside our
+//     grandTotal -- no provider settlement/payout table exists.
+//   * rejected-cancelled could reuse orders.status IN ('REJECTED',
+//     'CANCELLED') filtered by channel, but the reference screenshot's
+//     "Rejected/Cancelled Orders" reconciliation tab specifically means
+//     provider-reported rejections (rejected before this POS accepted it),
+//     which the same missing-feed problem blocks; returning a same-shaped
+//     but semantically different set as if it were real would be
+//     misleading rather than honest, so this is left as the stub too.
+//   * final reconciliation aggregates all of the above -- inherits the
+//     same gap.
+// Each returns an honest empty result with the exact real signal needed
+// documented, rather than fabricated rows.
+const RECONCILIATION_STUB_TABS: Record<string, string> = {
+  "status-mismatch": "requires a provider-reported order status feed (not present in this schema) to diff against orders.status",
+  variance: "requires a provider-reported payout/settlement amount (not present in this schema) to diff against payments/orders totals",
+  "rejected-cancelled": "requires provider-reported rejection/cancellation events (not present in this schema) distinct from orders.status",
+  final: "aggregates status-mismatch + variance + rejected-cancelled, all of which are stubbed above for the same missing-feed reason",
+};
+
+managementRouter.get("/management/online-reconciliation/:tab", requireAuth, requirePermission("settings.read"), async (req: AuthedRequest, res) => {
+  const { tab } = req.params;
+  const reason = RECONCILIATION_STUB_TABS[tab];
+  if (!reason) {
+    res.status(404).json({ error: "unknown reconciliation tab" });
+    return;
+  }
+  res.status(200).json({ items: [], total: 0, note: `honest stub -- ${reason}` });
+});
+
+// GET /management/payment-history?tab=pg|swiping|mdr|hardware|deposit|invoices|ledgers&from=&to=
+//
+// tab=pg (PG Transactions) is real: queries the payments table filtered to
+// online/PG-style methods (method NOT IN ('CASH') -- whatever real
+// non-cash method values payments.method carries, e.g. CARD/UPI/ONLINE/
+// WALLET). Every other tab has no backing table in this schema (no
+// swiping-machine terminal log, no MDR rate/fee table, no hardware
+// inventory/lease table, no security deposit ledger, no monthly invoice
+// table, no restaurant-ledger table distinct from payments/orders) --
+// those return an honest empty array with a note, not fabricated rows.
+const PAYMENT_HISTORY_STUB_TABS: Record<string, string> = {
+  swiping: "no swiping-machine/terminal transaction log table exists in this schema",
+  mdr: "no MDR (merchant discount rate) fee table exists in this schema",
+  hardware: "no hardware inventory/lease/billing table exists in this schema",
+  deposit: "no security deposit ledger table exists in this schema",
+  invoices: "no monthly invoice table exists in this schema",
+  ledgers: "no restaurant-ledger table distinct from payments/orders exists in this schema",
+};
+
+managementRouter.get("/management/payment-history", requireAuth, requirePermission("settings.read"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const tab = typeof req.query.tab === "string" ? req.query.tab.trim().toLowerCase() : "";
+    const { from, to } = req.query as { from?: string; to?: string };
+    const parsedFrom = from ? new Date(from) : undefined;
+    const parsedTo = to ? new Date(to) : undefined;
+
+    if (tab === "pg") {
+      const payments = await prisma.payment.findMany({
+        where: {
+          outletId,
+          method: { notIn: ["CASH"] },
+          createdAt: {
+            ...(parsedFrom ? { gte: parsedFrom } : {}),
+            ...(parsedTo ? { lte: parsedTo } : {}),
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 500,
+      });
+      res.status(200).json({
+        items: payments.map((p) => ({
+          id: p.id,
+          orderId: p.orderId,
+          amountMinor: p.amount.toString(),
+          method: p.method,
+          status: p.status,
+          transactionId: p.transactionId,
+          createdAt: p.createdAt.toISOString(),
+        })),
+        total: payments.length,
+      });
+      return;
+    }
+
+    const reason = PAYMENT_HISTORY_STUB_TABS[tab];
+    if (!reason) {
+      res.status(400).json({ error: "tab must be one of pg, swiping, mdr, hardware, deposit, invoices, ledgers" });
+      return;
+    }
+    res.status(200).json({ items: [], total: 0, note: `honest stub -- ${reason}` });
+  } catch (error: any) {
+    console.error("Error in GET /management/payment-history:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
