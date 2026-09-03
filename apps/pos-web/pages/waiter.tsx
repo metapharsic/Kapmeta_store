@@ -705,6 +705,12 @@ export default function WaiterDashboard() {
     const interval = setInterval(() => {
       fetchTables();
       fetchKots();
+      // Menu items/categories/prices/availability are edited from the admin
+      // menu page (and the 86 toggle modal) on a different device/tab; without
+      // this the waiter tablet only ever sees the menu as it was at page load.
+      // Same polling cadence/pattern as the rest of this app (see kitchen.tsx's
+      // KOT board refresh) rather than inventing a new transport.
+      fetchMenu();
       heartbeat();
       if (navigator.onLine) flushOfflineQueue();
     }, 15000);

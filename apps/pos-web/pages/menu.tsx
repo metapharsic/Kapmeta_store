@@ -98,8 +98,8 @@ export default function MenuManagement() {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  const fetchCategoriesAndItems = () => {
-    setLoading(true);
+  const fetchCategoriesAndItems = (silent = false) => {
+    if (!silent) setLoading(true);
     setLoadError(null);
     authedFetch("/menu/categories")
       .then((res) => {
@@ -121,14 +121,23 @@ export default function MenuManagement() {
         setItemsByCategory(Object.fromEntries(entries));
       })
       .catch((err) => {
-        setLoadError(err instanceof Error ? err.message : "Failed to load categories");
+        if (!silent) setLoadError(err instanceof Error ? err.message : "Failed to load categories");
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!silent) setLoading(false);
+      });
   };
 
   useEffect(() => {
     if (authLoading) return;
     fetchCategoriesAndItems();
+
+    // Category/item/price changes can come from another admin session on a
+    // different device/tab; poll quietly (no loading spinner) so this screen
+    // doesn't go stale while left open, same cadence as the rest of the app's
+    // other live-updating screens (see kitchen.tsx's KOT board refresh).
+    const interval = setInterval(() => fetchCategoriesAndItems(true), 15000);
+    return () => clearInterval(interval);
   }, [authLoading]);
 
   const totalItems = useMemo(

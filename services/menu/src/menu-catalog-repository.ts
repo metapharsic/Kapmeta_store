@@ -144,12 +144,40 @@ export class PrismaMenuCatalogRepository {
     });
   }
 
+  // item_availability has no Prisma relation onto menuItem (see schema.prisma
+  // note on that model), so "live" availability/86-status has to be fetched
+  // and merged in manually rather than via `include`. A prior version of this
+  // file referenced a non-existent `row.availabilities` relation and always
+  // fell back to a hardcoded { isStocked: true, stockQty: 100 } stub -- every
+  // consumer of listAllItems/listByCategory (waiter app, public QR ordering)
+  // therefore always saw items as in-stock regardless of real 86 state. Mirror
+  // the same version-max-wins logic used by GET /menu/availability so all
+  // surfaces agree.
+  private async loadAvailabilityByItem(outletId: string): Promise<Map<string, { isStocked: boolean; stockQty: number; version: number }>> {
+    const rows = await (this.prisma as any).item_availability.findMany({
+      where: { outlet_id: outletId },
+    });
+    const byItem = new Map<string, { isStocked: boolean; stockQty: number; version: number }>();
+    for (const row of rows) {
+      const prev = byItem.get(row.item_id);
+      if (!prev || row.version >= prev.version) {
+        byItem.set(row.item_id, {
+          isStocked: row.state !== "OFF",
+          stockQty: row.stock_qty ?? 100,
+          version: row.version,
+        });
+      }
+    }
+    return byItem;
+  }
+
   async listAllItems(outletId: string): Promise<MenuItemView[]> {
     const rows = await this.prisma.menuItem.findMany({
       where: { outletId, isActive: true },
       include: { category: true },
       orderBy: { name: "asc" },
     });
+    const availByItem = await this.loadAvailabilityByItem(outletId);
     return rows.map((row: any) => ({
       id: row.id,
       outletId: row.outletId,
@@ -161,17 +189,11 @@ export class PrismaMenuCatalogRepository {
       isVeg: Boolean(row.isVeg),
       taxRate: (row.taxRate ?? 5.0).toString(),
       isActive: row.isActive !== false,
-      availability: row.availabilities && row.availabilities[0]
-        ? {
-            isStocked: row.availabilities[0].isStocked,
-            stockQty: row.availabilities[0].stockQty,
-            version: row.availabilities[0].version,
-          }
-        : {
-            isStocked: true,
-            stockQty: 100,
-            version: 1,
-          },
+      availability: availByItem.get(row.id) ?? {
+        isStocked: row.isActive !== false,
+        stockQty: 100,
+        version: 1,
+      },
     }));
   }
 
@@ -180,6 +202,8 @@ export class PrismaMenuCatalogRepository {
       where: { categoryId },
       include: { category: true },
     });
+    const outletId = rows[0]?.outletId;
+    const availByItem = outletId ? await this.loadAvailabilityByItem(outletId) : new Map();
     return rows.map((row: any) => ({
       id: row.id,
       outletId: row.outletId,
@@ -191,8 +215,8 @@ export class PrismaMenuCatalogRepository {
       isVeg: Boolean(row.isVeg),
       taxRate: (row.taxRate ?? 5.0).toString(),
       isActive: row.isActive !== false,
-      availability: {
-        isStocked: true,
+      availability: availByItem.get(row.id) ?? {
+        isStocked: row.isActive !== false,
         stockQty: 100,
         version: 1,
       },
