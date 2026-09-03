@@ -29,10 +29,10 @@ export default function InventorySidebar({ currentOutletName = "Hotel Kapila", o
       <div style={styles.brandRow}>
         <div style={styles.brandContainer}>
           <div style={styles.brandLogoBox}>
-            <span style={styles.brandLogoText}>P</span>
+            <span style={styles.brandLogoText}>K</span>
           </div>
           <div>
-            <div style={styles.brandName}>PETPOOJA</div>
+            <div style={styles.brandName}>KAPMETA</div>
             <div style={styles.brandSub}>POSS</div>
           </div>
         </div>

@@ -49,7 +49,7 @@ export async function provisionAgentTelemetry() {
       health: "Passing",
       currentTask: "Supervising backend, frontend and persistence processes",
       metrics: { apiPort: 4001, posPort: 4444, dbPort: 5432, supervisor: "active" },
-      assignedFiles: ["scripts/startup.ps1", "scripts/shutdown.ps1", "scripts/status.ts", "Start_PetPooja.bat"],
+      assignedFiles: ["scripts/startup.ps1", "scripts/shutdown.ps1", "scripts/status.ts", "Start_KapMeta.bat"],
     },
     {
       id: "agent-a2a",

@@ -1,4 +1,4 @@
-# PetPooja POS Platform — Checkpoint & Delivery Gates Log
+# KapMeta POS Platform — Checkpoint & Delivery Gates Log
 
 **Owner:** PMO & Multi-Agent Operations · **Version:** 1.3 · **Updated:** 2026-08-14  
 
@@ -21,6 +21,7 @@
 | **CP-25** | Inventory & Stock Closing Suite | 17 | 🟢 PASSED | Multi-Agent Lead | 2026-09-03 | 5 screens, daily closing tracker, PO/GRN ingestion |
 | **CP-26** | Menu & Discounts Dynamic Suite | 18 | 🟢 PASSED | Multi-Agent Lead | 2026-09-04 | 8 tools, live DB sync, multi-channel pricing & images |
 | **CP-27** | Navigation Architecture & Sidebar Taxonomy | 19 | 🟢 PASSED | UX & A2A Lead | 2026-09-04 | Clear separation of Sales & Reports, A2A mesh telemetry |
+| **CP-28** | Shakuro Sales Analytics & BI Dashboard | 20 | 🟢 PASSED | UX & Reporting Lead | 2026-09-04 | Two-tier dock, hero cockpit, channel bars, A2A telemetry |
 
 ---
 

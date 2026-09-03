@@ -180,7 +180,7 @@ export default function StockPurchasePage() {
   return (
     <div style={styles.pageLayout}>
       <Head>
-        <title>Stock Purchase — PetPooja POSS</title>
+        <title>Stock Purchase — KapMeta POS</title>
       </Head>
 
       <InventorySidebar onOpenAgentStatus={() => setIsAgentModalOpen(true)} />

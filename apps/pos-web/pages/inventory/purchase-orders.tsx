@@ -183,7 +183,7 @@ export default function PurchaseOrderListPage() {
   return (
     <div style={styles.pageLayout}>
       <Head>
-        <title>Purchase Order List — PetPooja POSS</title>
+        <title>Purchase Order List — KapMeta POS</title>
       </Head>
 
       <InventorySidebar onOpenAgentStatus={() => setIsAgentModalOpen(true)} />

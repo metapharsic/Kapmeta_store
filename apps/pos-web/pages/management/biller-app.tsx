@@ -253,7 +253,7 @@ export default function BillerAppPage() {
                     // placeholder static link, not a claim that a download exists.
                     <a
                       className="btn btn-secondary"
-                      href="https://www.petpooja.com"
+                      href="https://www.kapmeta.com"
                       target="_blank"
                       rel="noreferrer"
                     >

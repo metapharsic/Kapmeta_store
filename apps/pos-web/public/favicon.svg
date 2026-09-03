@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="km-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#1e293b" />
+    </linearGradient>
+    <linearGradient id="accent-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Rounded Base -->
+  <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#km-grad)" stroke="#334155" stroke-width="2" />
+  
+  <!-- Emerald Accent Glow -->
+  <circle cx="50" cy="14" r="6" fill="url(#accent-grad)" />
+  
+  <!-- Stylized Geometric "K" -->
+  <path d="M20 16 V48 M20 32 L38 16 M28 26 L42 48" stroke="#ffffff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

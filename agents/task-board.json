@@ -896,6 +896,14 @@
       "status": "DONE",
       "priority": "HIGH",
       "relatedGate": "CP-27"
+    },
+    {
+      "taskId": "TSK-050",
+      "title": "Shakuro Sales Analytics Dashboard & Executive BI Cockpit wired to PostgreSQL and A2A multi-agent telemetry",
+      "assignedTo": "multi-agent(ux+frontend+reporting+a2a)",
+      "status": "DONE",
+      "priority": "HIGH",
+      "relatedGate": "CP-28"
     }
   ]
 }

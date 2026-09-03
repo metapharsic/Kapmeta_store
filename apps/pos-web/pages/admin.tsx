@@ -8,6 +8,7 @@ import KapMetaHeader from "../components/KapMetaHeader";
 import QuickLinks from "../components/QuickLinks";
 import NotificationBell from "../components/NotificationBell";
 import OutletSwitcher from "../components/OutletSwitcher";
+import ShakuroSalesAnalytics from "../components/analytics/ShakuroSalesAnalytics";
 
 interface AgentStatusItem {
   id: string;
@@ -428,6 +429,7 @@ export default function AdminDashboard() {
   const router = useRouter();
   const { me, loading: authLoading } = useAuthGuard("report.read");
   const [activeTab, setActiveTab] = useState<"daily-ops" | "agents" | "analytics" | "hub" | "audit">("daily-ops");
+  const [analyticsViewMode, setAnalyticsViewMode] = useState<"modern" | "classic">("modern");
   const [dailyOps, setDailyOps] = useState<DailyOperationsApi | null>(null);
   const [dailyOpsLoading, setDailyOpsLoading] = useState(false);
   const [simulationRunning, setSimulationRunning] = useState(false);
@@ -2288,9 +2290,52 @@ export default function AdminDashboard() {
 
             {/* TAB 4: EXECUTIVE SALES ANALYTICS */}
             {activeTab === "analytics" && (
-              <div className="analytics-surface">
-                {/* Header Greeting & Controls */}
-            <section className="dashboard-greeting-row">
+              analyticsViewMode === "modern" ? (
+                <div style={{ animation: "fadeIn 0.2s ease" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, padding: "0 8px" }}>
+                    <div style={{ fontSize: "0.85rem", color: "#71717a" }}>
+                      ✨ <strong>Executive Mode:</strong> Shakuro Design System · Real-time DB &amp; A2A Telemetry
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAnalyticsViewMode("classic")}
+                      style={{
+                        padding: "6px 12px",
+                        borderRadius: 8,
+                        border: "1px solid #e4e4e7",
+                        background: "#ffffff",
+                        fontSize: "0.78rem",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Switch to Classic Audit Tables ▾
+                    </button>
+                  </div>
+                  <ShakuroSalesAnalytics />
+                </div>
+              ) : (
+                <div className="analytics-surface">
+                  <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+                    <button
+                      type="button"
+                      onClick={() => setAnalyticsViewMode("modern")}
+                      style={{
+                        padding: "8px 16px",
+                        borderRadius: 999,
+                        background: "#18181b",
+                        color: "#ffffff",
+                        border: "none",
+                        fontSize: "0.82rem",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      ✨ Switch to Modern Shakuro Executive View
+                    </button>
+                  </div>
+                  {/* Header Greeting & Controls */}
+                  <section className="dashboard-greeting-row">
               <div>
                 <span className="breadcrumb-line">Operations &gt; Financial Reports</span>
                 <h1 className="greeting-title">Good morning, {me?.name ?? "there"}</h1>
@@ -3563,6 +3608,7 @@ export default function AdminDashboard() {
               </>
             )}
               </div>
+              )
             )}
           </>
         )}

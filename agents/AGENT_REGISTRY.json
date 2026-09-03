@@ -13,7 +13,7 @@
         "scripts/startup.ps1",
         "scripts/shutdown.ps1",
         "scripts/status.ts",
-        "Start_PetPooja.bat"
+        "Start_KapMeta.bat"
       ]
     },
     {

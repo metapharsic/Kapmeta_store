@@ -16,7 +16,7 @@
 
 ## 2. Key Tools & Scripts
 
-- `scripts/startup.ps1` / `Start_PetPooja.bat`
-- `scripts/shutdown.ps1` / `Stop_PetPooja.bat`
-- `scripts/status.ts` / `Status_PetPooja.bat`
+- `scripts/startup.ps1` / `Start_KapMeta.bat`
+- `scripts/shutdown.ps1` / `Stop_KapMeta.bat`
+- `scripts/status.ts` / `Status_KapMeta.bat`
 - `scripts/checkpoint-manager.ts`

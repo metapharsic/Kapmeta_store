@@ -183,7 +183,7 @@ export default function InventoryDashboardPage() {
   return (
     <div style={styles.pageLayout}>
       <Head>
-        <title>Inventory Dashboard — PetPooja POSS</title>
+        <title>Inventory Dashboard — KapMeta POS</title>
       </Head>
 
       {/* Persistent Inventory Sidebar */}

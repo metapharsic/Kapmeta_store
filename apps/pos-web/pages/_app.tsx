@@ -1,5 +1,6 @@
 import type { AppProps } from "next/app";
 import React from "react";
+import Head from "next/head";
 import "../styles/globals.css";
 
 import GlobalAlertModal from "../components/GlobalAlertModal";
@@ -7,6 +8,11 @@ import GlobalAlertModal from "../components/GlobalAlertModal";
 function MyApp({ Component, pageProps }: AppProps) {
   return (
     <>
+      <Head>
+        <title>KapMeta POS Platform</title>
+        <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+        <meta name="description" content="KapMeta Restaurant POS Platform — Enterprise Operations, Kitchen KDS & Analytics" />
+      </Head>
       <style
         dangerouslySetInnerHTML={{
           __html: `

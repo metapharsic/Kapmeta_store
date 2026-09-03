@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 60" width="240" height="60">
+  <defs>
+    <linearGradient id="logo-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#1e293b" />
+    </linearGradient>
+    <linearGradient id="emerald-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+  </defs>
+
+  <!-- Crest Icon -->
+  <rect x="4" y="6" width="48" height="48" rx="14" fill="url(#logo-grad)" stroke="#334155" stroke-width="1.5" />
+  <circle cx="44" cy="14" r="4.5" fill="url(#emerald-grad)" />
+  <path d="M19 19 V41 M19 30 L33 19 M25 26 L36 41" stroke="#ffffff" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" />
+
+  <!-- Typography: KapMeta -->
+  <text x="64" y="34" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="24" font-weight="900" fill="#0f172a" letter-spacing="-0.5">Kap<tspan fill="#10b981">Meta</tspan></text>
+  <text x="65" y="47" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="10" font-weight="700" fill="#64748b" letter-spacing="1.5">POS PLATFORM</text>
+</svg>

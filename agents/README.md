@@ -1,4 +1,4 @@
-# PetPooja POS Platform — Multi-Agent Operational Framework
+# KapMeta POS Platform — Multi-Agent Operational Framework
 
 **Architecture:** Distributed Domain-Driven Multi-Agent Topology  
 **Protocol Version:** 2.0  
@@ -8,7 +8,7 @@
 
 ## 1. Multi-Agent Hierarchy & Roles
 
-The PetPooja POS platform divides engineering, verification, and operational duties among 7 specialized autonomous and collaborative agents:
+The KapMeta POS platform divides engineering, verification, and operational duties among 7 specialized autonomous and collaborative agents:
 
 ```
                           ┌──────────────────────────┐
@@ -50,10 +50,10 @@ The PetPooja POS platform divides engineering, verification, and operational dut
 
 ## 3. Agent Reference Documents
 
-- [orchestrator-agent.md](file:///c:/Users/Dell/Desktop/PetPooja/agents/orchestrator-agent.md) — Master Conductor
-- [frontend-agent.md](file:///c:/Users/Dell/Desktop/PetPooja/agents/frontend-agent.md) — UI/UX & Client Logic
-- [backend-agent.md](file:///c:/Users/Dell/Desktop/PetPooja/agents/backend-agent.md) — API Gateway & Domain Services
-- [database-agent.md](file:///c:/Users/Dell/Desktop/PetPooja/agents/database-agent.md) — Schema, Migrations & Transactions
-- [integration-agent.md](file:///c:/Users/Dell/Desktop/PetPooja/agents/integration-agent.md) — Swiggy/Zomato/Printers
-- [qa-agent.md](file:///c:/Users/Dell/Desktop/PetPooja/agents/qa-agent.md) — Testing, Validation & Verification
-- [sre-agent.md](file:///c:/Users/Dell/Desktop/PetPooja/agents/sre-agent.md) — Ports, Health & Error Diagnostics
+- [orchestrator-agent.md](./orchestrator-agent.md) — Master Conductor
+- [frontend-agent.md](./frontend-agent.md) — UI/UX & Client Logic
+- [backend-agent.md](./backend-agent.md) — API Gateway & Domain Services
+- [database-agent.md](./database-agent.md) — Schema, Migrations & Transactions
+- [integration-agent.md](./integration-agent.md) — Swiggy/Zomato/Printers
+- [qa-agent.md](./qa-agent.md) — Testing, Validation & Verification
+- [sre-agent.md](./sre-agent.md) — Ports, Health & Error Diagnostics
