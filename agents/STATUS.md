@@ -279,3 +279,11 @@ Route code re-checked (orders.ts, tables.ts, finance.ts, menu-scheduling.ts, wai
 Personally verified before committing: read all 6 new migrations end-to-end plus the full schema.prisma diff, cross-checked several against their source migration files and cited log evidence directly, confirmed the enum types 0047 depends on (table_merge_status, seat_status) were created independently by 0028 and would have landed regardless. tsc: 91 pre-existing errors, unchanged, zero new.
 
 User must run `npm run db:migrate` again (0046-0051) and restart the API.
+
+## 2026-09-03 — CP-21 Drawer nav matched to reference sidebar screenshot
+
+1 agent. User supplied a reference screenshot of the real app's left nav drawer. Audit found `Nav.tsx`'s `SIDEBAR_GROUPS` (built across CP-16/17) already matched the reference's categorization and order near-exactly (Dashboard, Daily Operations, Menu, Inventory, Marketing Automation [New], Finance [New], Reports, Management, CRM, Aggregator Center, Quick Links) — this was a targeted refinement, not a rebuild.
+
+Fixed: "Menu & Discounts" header renamed to "Menu" (exact label match). Added `SidebarGroupDef.alwaysExpanded`, set true only on Daily Operations — the drawer (`KapMetaHeader.tsx`) previously gave every header-group the same chevron-collapsible treatment; now Daily Operations renders as a plain static label with its 4 links always visible (no chevron), while Menu/Reports/Management/CRM/Aggregator Center stay collapsed-by-default with a chevron, matching the reference exactly. Quick Links (`QuickLinks.tsx`, already real and backend-wired to `/quick-links`, fixed by CP-20's 0051) was only rendered in `Nav.tsx`'s desktop sidebar variant, missing from the drawer entirely — added there too, same component, no new logic.
+
+tsc: pos-web 0 errors (both before and after). No scope creep — no new pages/routes/backend touched.

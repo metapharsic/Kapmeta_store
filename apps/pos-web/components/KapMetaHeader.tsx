@@ -5,6 +5,7 @@ import { authedFetch, fetchMe, logout, type MeResponse } from "../lib/auth";
 import QuickSearchModal from "./QuickSearchModal";
 import ItemToggleModal from "./ItemToggleModal";
 import HoldOrdersDrawer from "./HoldOrdersDrawer";
+import QuickLinks from "./QuickLinks";
 import { filterSidebarGroups } from "./Nav";
 
 export interface KapMetaHeaderProps {
@@ -156,14 +157,11 @@ export default function KapMetaHeader({
   const refId = me?.outletId ? `${me.outletId.slice(0, 8).toUpperCase()}` : (me?.outlet as any)?.code || "";
 
   // Left Drawer expanded submenu state, keyed by SIDEBAR_GROUPS group id.
-  // "menu" (Menu & Discounts) defaults open too - same "open by default for
-  // discoverability" fix applied to Reports in the prior CP-14 round
-  // (7fb1ce0, "Make the reports findable"); this round's whole point is
-  // making the Menu & Discounts tools easy to find.
-  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
-    "daily-operations": true,
-    "menu": true,
-  });
+  // Menu/Reports/Management/CRM/Aggregator Center default collapsed with a
+  // chevron, matching the reference drawer - opened on tap. "daily-operations"
+  // isn't listed here at all: it's rendered via SidebarGroupDef.alwaysExpanded
+  // below (always expanded, no chevron), so it's never gated by this state.
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [activeMenuItem, setActiveMenuItem] = useState<string>("daily-operations");
 
   const [notifications, setNotifications] = useState<Array<{
@@ -622,6 +620,51 @@ export default function KapMetaHeader({
                   );
                 }
 
+                // Rendered submenu links are identical either way - only how the
+                // group header is presented (plain label vs. chevron toggle)
+                // differs, per SidebarGroupDef.alwaysExpanded.
+                const submenuLinks = (
+                  <div className="submenu-container">
+                    {group.links.map((link) =>
+                      link.action === "item-toggle" ? (
+                        <button
+                          type="button"
+                          key={`${group.id}-${link.label}`}
+                          className="submenu-link submenu-link-btn"
+                          onClick={() => {
+                            setShowMenuDrawer(false);
+                            setIsItemToggleOpen(true);
+                          }}
+                        >
+                          {link.label}
+                        </button>
+                      ) : (
+                        <Link
+                          key={`${group.id}-${link.label}`}
+                          href={link.href}
+                          className="submenu-link"
+                          onClick={() => setShowMenuDrawer(false)}
+                        >
+                          {link.label}
+                        </Link>
+                      )
+                    )}
+                  </div>
+                );
+
+                if (group.alwaysExpanded) {
+                  return (
+                    <React.Fragment key={group.id}>
+                      <div className={`menu-row-item menu-row-header-static ${activeMenuItem === group.id ? "is-selected" : ""}`}>
+                        <div className="item-icon-col">{drawerGroupIcon(group.id)}</div>
+                        <span className="item-label-text">{group.header}</span>
+                        {group.badge && <span className="item-new-badge">{group.badge}</span>}
+                      </div>
+                      {submenuLinks}
+                    </React.Fragment>
+                  );
+                }
+
                 const isExpanded = Boolean(expandedGroups[group.id]);
                 return (
                   <React.Fragment key={group.id}>
@@ -644,34 +687,7 @@ export default function KapMetaHeader({
                       </span>
                     </button>
 
-                    {isExpanded && (
-                      <div className="submenu-container">
-                        {group.links.map((link) =>
-                          link.action === "item-toggle" ? (
-                            <button
-                              type="button"
-                              key={`${group.id}-${link.label}`}
-                              className="submenu-link submenu-link-btn"
-                              onClick={() => {
-                                setShowMenuDrawer(false);
-                                setIsItemToggleOpen(true);
-                              }}
-                            >
-                              {link.label}
-                            </button>
-                          ) : (
-                            <Link
-                              key={`${group.id}-${link.label}`}
-                              href={link.href}
-                              className="submenu-link"
-                              onClick={() => setShowMenuDrawer(false)}
-                            >
-                              {link.label}
-                            </Link>
-                          )
-                        )}
-                      </div>
-                    )}
+                    {isExpanded && submenuLinks}
                   </React.Fragment>
                 );
               })}
@@ -707,6 +723,12 @@ export default function KapMetaHeader({
                 </div>
                 <span className="item-label-text">Logout</span>
               </button>
+
+              {/* Quick Links - bottom of the drawer, same shared component and
+                  "+ Add" behavior used by <Nav variant="sidebar" />. */}
+              <div className="drawer-quick-links-row">
+                <QuickLinks />
+              </div>
             </div>
 
             {/* 3. Bottom Metadata Block (Ref ID, Version, Biller Name) — all from /auth/me */}
@@ -1361,6 +1383,18 @@ export default function KapMetaHeader({
         .menu-row-item.is-selected {
           background: #575757;
           border-left: 4px solid #ffffff;
+        }
+        /* Daily Operations header: same box as a chevron group header, but
+           plain text - not a button, no hover/selected affordance, since it
+           never toggles anything (its links are always shown below it). */
+        .menu-row-header-static {
+          cursor: default;
+        }
+        .menu-row-header-static:hover {
+          background: transparent;
+        }
+        .drawer-quick-links-row {
+          padding: 10px 18px 18px;
         }
 
         .item-icon-col {

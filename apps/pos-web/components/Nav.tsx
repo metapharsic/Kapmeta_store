@@ -52,7 +52,7 @@ export type NavVariant = "topbar" | "pill" | "sidebar";
 /* docs/03-design/artifact-03-design-contract.md section 6.                 */
 /*                                                                          */
 /* Structure/labels/order follow the reference design:                      */
-/*   Dashboard | Daily Operations | Menu & Discounts | Inventory |           */
+/*   Dashboard | Daily Operations | Menu | Inventory |                       */
 /*   Marketing Automation [New] | Finance [New] | Reports | Management |    */
 /*   CRM | Aggregator Center | Quick Links                                  */
 /* ------------------------------------------------------------------------ */
@@ -80,6 +80,13 @@ export interface SidebarGroupDef {
   id: string;
   header: string | null; // null => single-link group, rendered directly (no header)
   badge?: string;
+  // Drawer-only: when true, the group's header renders as a plain
+  // non-interactive label (no chevron, no collapse) and its links are
+  // always shown, instead of the default chevron-toggle/collapsed behavior.
+  // Nav.tsx's own variant="sidebar" already renders every group's links
+  // always-expanded regardless of this flag - it has no collapse behavior
+  // to begin with.
+  alwaysExpanded?: boolean;
   links: SidebarLinkDef[];
 }
 
@@ -92,6 +99,7 @@ export const SIDEBAR_GROUPS: SidebarGroupDef[] = [
   {
     id: "daily-operations",
     header: "Daily Operations",
+    alwaysExpanded: true,
     links: [
       // POS Terminal and Waiter App are not in the reference sidebar, but they
       // are this app's primary operating surfaces and dropping them would make
@@ -106,7 +114,7 @@ export const SIDEBAR_GROUPS: SidebarGroupDef[] = [
   },
   {
     id: "menu",
-    header: "Menu & Discounts",
+    header: "Menu",
     links: [
       { href: "/menu/hub", permission: "menu.category.manage", label: "All In One Menu" },
       { href: "/menu", permission: "menu.category.manage", label: "Base Menu" },

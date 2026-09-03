@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-09-03T11:51:50Z",
+  "lastUpdated": "2026-09-03T13:08:27Z",
   "activeTasks": [
     {
       "taskId": "TSK-001",
@@ -760,6 +760,14 @@
       "status": "PENDING",
       "priority": "P0",
       "relatedGate": "CP-20"
+    },
+    {
+      "taskId": "TSK-034",
+      "title": "Frontend: match drawer nav (KapMetaHeader.tsx) to reference sidebar screenshot - Daily Operations always-expanded no chevron, Menu/Reports/Management/CRM/Aggregator Center collapsed-with-chevron, Menu & Discounts -> Menu label, Quick Links added to drawer bottom (SIDEBAR_GROUPS data was already a near-exact match from CP-16/17)",
+      "assignedTo": "frontend-agent",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "relatedGate": "CP-21"
     }
   ]
 }
