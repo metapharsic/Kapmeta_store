@@ -816,6 +816,14 @@
       "status": "PENDING",
       "priority": "LOW",
       "relatedGate": "CP-23"
+    },
+    {
+      "taskId": "TSK-040",
+      "title": "Biller App full workflow (create/edit/sync-code/status) per reference screenshots",
+      "assignedTo": "multi-agent(backend+frontend)",
+      "status": "DONE",
+      "priority": "HIGH",
+      "relatedGate": "CP-23"
     }
   ]
 }

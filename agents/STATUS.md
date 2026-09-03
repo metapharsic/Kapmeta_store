@@ -308,3 +308,10 @@ Reference: 14 screenshots of real app Management nav (Configuration/Accounting/U
 - Nav.tsx/KapMetaHeader.tsx: two-level nested Management drawer (Configuration/Accounting/User Management/User Logs sub-groups), additive only, other groups untouched.
 - 14 real screens wired to generic list/settings/logs/biller-app pages via management-catalog.ts. Explore Products/Audit Trail/Device Mapping: honest coming-soon stubs (no backend spec yet, TSK-039).
 - Verified: tsc clean on all touched/new files (apps/api + pos-web), git diff reviewed, DB convention (TEXT ids) followed throughout. Not migrated live (db:migrate must run on user's machine). Committed ef016e1.
+
+## 2026-09-03 — CP-23 amendment: Biller App full workflow
+Reference screenshots showed Biller App tabs need Create/Sync Code/User Code column/status toggle, not read-only list.
+- Added real users.user_code field (migration 0054) - no fake/hardcoded code, generated server-side.
+- management.ts: POST/PUT /management/biller-app + sync-code regenerate, reuses real user-management.ts create-user logic (no parallel fake system).
+- biller-app.tsx: matches reference (Create, Sync Code, copy code, status toggle real DB write, empty-state + card for empty tabs).
+- Verified: git diff reviewed, tsc clean (pos-web 0 errors, api 82 pre-existing unrelated errors confirmed via stash/pop, zero new). Committed.
