@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from "react";
 import Head from "next/head";
 import Link from "next/link";
-import { authedFetch, useAuthGuard } from "../lib/auth";
-import InventoryHeader from "../components/inventory/InventoryHeader";
-import InventorySidebar from "../components/inventory/InventorySidebar";
+import { authedFetch, useAuthGuard } from "../../lib/auth";
+import InventoryHeader from "../../components/inventory/InventoryHeader";
+import InventorySidebar from "../../components/inventory/InventorySidebar";
 
 interface ItemAvailability {
   id: string; // menuItemId, used as the row key and for PATCH calls
@@ -337,7 +337,7 @@ export default function InventoryDashboard() {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
     authedFetch("/menu/availability", { signal: controller.signal })
-      .then((res) => {
+      .then((res: any) => {
         clearTimeout(timeout);
         if (!res.ok) throw new Error("HTTP error " + res.status);
         return res.json();
@@ -346,7 +346,7 @@ export default function InventoryDashboard() {
         setItems(Array.isArray(data) ? data.map(mapApiRow) : []);
         setLoading(false);
       })
-      .catch((err) => {
+      .catch((err: any) => {
         clearTimeout(timeout);
         setLoadError(err instanceof Error ? err.message : "Failed to load inventory");
         setItems([]);

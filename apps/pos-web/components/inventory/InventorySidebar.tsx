@@ -149,7 +149,7 @@ export default function InventorySidebar({ currentOutletName = "Hotel Kapila", o
               <line x1="8" y1="21" x2="16" y2="21"></line>
               <line x1="12" y1="17" x2="12" y2="21"></line>
             </svg>
-            <span>Sales</span>
+            <span>Order Consumption</span>
           </Link>
           <Link href="/inventory" style={styles.flatNavItem}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -158,44 +158,72 @@ export default function InventorySidebar({ currentOutletName = "Hotel Kapila", o
               <polyline points="7 23 3 19 7 15"></polyline>
               <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
             </svg>
-            <span>Transfer</span>
+            <span>Stock Transfer</span>
           </Link>
           <Link href="/inventory" style={styles.flatNavItem}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="3 6 5 6 21 6"></polyline>
               <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
             </svg>
-            <span>Wastage</span>
+            <span>Wastage & Spoilage</span>
           </Link>
-          <div style={styles.viewMoreLink}>View More</div>
         </div>
 
         {/* Production Section */}
         <button onClick={() => setProductionOpen(!productionOpen)} style={styles.accordionBtn}>
           <div style={styles.accordionLeft}>
-            <span style={styles.sectionHeaderNoPad}>Production</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+              <polyline points="2 17 12 22 22 17"></polyline>
+              <polyline points="2 12 12 17 22 12"></polyline>
+            </svg>
+            <span style={styles.navLabel}>Production</span>
           </div>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ transform: productionOpen ? "rotate(90deg)" : "rotate(0deg)" }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ transform: productionOpen ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.2s" }}>
             <polyline points="9 18 15 12 9 6"></polyline>
           </svg>
         </button>
+        {productionOpen && (
+          <div style={styles.subNavList}>
+            <Link href="/inventory" style={styles.subNavItem}>Production Batches</Link>
+            <Link href="/inventory" style={styles.subNavItem}>Yield & Prep Master</Link>
+          </div>
+        )}
 
-        {/* Reports Section */}
+        {/* Reports & Analytics Section */}
         <button onClick={() => setReportsOpen(!reportsOpen)} style={styles.accordionBtn}>
           <div style={styles.accordionLeft}>
-            <span style={styles.sectionHeaderNoPad}>Reports</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+            </svg>
+            <span style={styles.navLabel}>Reports & Analytics</span>
           </div>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ transform: reportsOpen ? "rotate(90deg)" : "rotate(0deg)" }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ transform: reportsOpen ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.2s" }}>
             <polyline points="9 18 15 12 9 6"></polyline>
           </svg>
         </button>
+        {reportsOpen && (
+          <div style={styles.subNavList}>
+            <Link href="/reports/other-reports" style={styles.subNavItem}>Stock Summary Report</Link>
+            <Link href="/reports/day-end-summary" style={styles.subNavItem}>Closing Stock Report</Link>
+            <Link href="/reporting" style={styles.subNavItem}>COGS & Margins Report</Link>
+            <Link href="/inventory/purchase" style={styles.subNavItem}>Purchase & Vendor Report</Link>
+            <Link href="/reports/report-notification" style={styles.subNavItem}>Scheduled Stock Alerts</Link>
+          </div>
+        )}
 
         {/* Masters Section */}
         <button onClick={() => setMastersOpen(!mastersOpen)} style={styles.accordionBtn}>
           <div style={styles.accordionLeft}>
-            <span style={styles.sectionHeaderNoPad}>Masters</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+            </svg>
+            <span style={styles.navLabel}>Masters</span>
           </div>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ transform: mastersOpen ? "rotate(90deg)" : "rotate(0deg)" }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ transform: mastersOpen ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.2s" }}>
             <polyline points="9 18 15 12 9 6"></polyline>
           </svg>
         </button>
@@ -203,9 +231,38 @@ export default function InventorySidebar({ currentOutletName = "Hotel Kapila", o
           <div style={styles.subNavList}>
             <Link href="/inventory" style={styles.subNavItem}>Raw Materials</Link>
             <Link href="/inventory" style={styles.subNavItem}>Recipes Master</Link>
-            <Link href="/inventory" style={styles.subNavItem}>Vendors</Link>
+            <Link href="/inventory/purchase" style={styles.subNavItem}>Vendors & Suppliers</Link>
           </div>
         )}
+      </div>
+
+      {/* Live A2A Multi-Agent Mesh Card */}
+      <div style={{ padding: "8px 14px", borderTop: "1px solid #f1f5f9" }}>
+        <button
+          type="button"
+          onClick={onOpenAgentStatus}
+          style={{
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "8px 10px",
+            background: "#f0fdf4",
+            border: "1px solid #bbf7d0",
+            borderRadius: "8px",
+            color: "#15803d",
+            fontSize: "11px",
+            fontWeight: 700,
+            cursor: "pointer",
+            textAlign: "left",
+          }}
+        >
+          <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#22c55e", display: "inline-block" }}></span>
+            <span>A2A Multi-Agent Mesh</span>
+          </span>
+          <span style={{ fontSize: "10px", background: "#dcfce7", padding: "1px 6px", borderRadius: "999px", color: "#166534" }}>8/8 Online</span>
+        </button>
       </div>
 
       {/* Assistance Footer */}

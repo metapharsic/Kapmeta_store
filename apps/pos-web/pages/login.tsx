@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
-import { login, logout } from "../lib/auth";
+import { login, logout, getApiBase } from "../lib/auth";
 import CaptainPinLoginModal from "../components/CaptainPinLoginModal";
 
 // Human-readable messages for LoginFailure["reason"] (packages/shared-types/auth.ts).
@@ -13,71 +13,69 @@ const ERROR_MESSAGES: Record<string, string> = {
   LOGIN_FAILED: "Login failed. Please verify credentials and try again.",
 };
 
-interface QuickRole {
-  key: string;
-  label: string;
-  roleTitle: string;
-  icon: string;
-  email: string;
-  password: string;
-  outletId: string;
-  targetPath: string;
+interface OutletOption {
+  id: string;
+  name: string;
+  code: string | null;
+  address?: string | null;
 }
 
-const QUICK_ROLES: QuickRole[] = [
-  {
-    key: "admin",
-    label: "ADMIN",
-    roleTitle: "Super Admin / Owner",
-    icon: "🛡️",
-    email: "admin@hotelkapila.com",
-    password: "password123",
-    outletId: "11111111-1111-1111-1111-111111111111",
-    targetPath: "/admin",
-  },
-  {
-    key: "cashier",
-    label: "CASHIER",
-    roleTitle: "Front Desk Cashier",
-    icon: "💳",
-    email: "cashier@hotelkapila.com",
-    password: "password123",
-    outletId: "11111111-1111-1111-1111-111111111111",
-    targetPath: "/",
-  },
-  {
-    key: "chef",
-    label: "CHEF",
-    roleTitle: "Kitchen Display Staff",
-    icon: "👨‍🍳",
-    email: "chef@hotelkapila.com",
-    password: "password123",
-    outletId: "11111111-1111-1111-1111-111111111111",
-    targetPath: "/kitchen",
-  },
-  {
-    key: "waiter",
-    label: "WAITER",
-    roleTitle: "Floor Staff",
-    icon: "🍽️",
-    email: "waiter@hotelkapila.com",
-    password: "password123",
-    outletId: "11111111-1111-1111-1111-111111111111",
-    targetPath: "/waiter",
-  },
-];
+interface StaffOption {
+  id: string;
+  name: string;
+  role: string;
+  email: string;
+  avatar: string;
+}
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("admin@hotelkapila.com");
-  const [password, setPassword] = useState("password123");
-  const [outletId, setOutletId] = useState("11111111-1111-1111-1111-111111111111");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [outletId, setOutletId] = useState("");
+  const [outlets, setOutlets] = useState<OutletOption[]>([]);
+  const [staffProfiles, setStaffProfiles] = useState<StaffOption[]>([]);
+  const [loadingOutlets, setLoadingOutlets] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [activeRoleKey, setActiveRoleKey] = useState<string | null>(null);
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+
+  useEffect(() => {
+    // Restore remembered values if available
+    if (typeof window !== "undefined") {
+      const savedEmail = localStorage.getItem("kapmeta_last_email") || "";
+      const savedOutletId = localStorage.getItem("kapmeta_last_outlet_id") || "";
+      if (savedEmail) setEmail(savedEmail);
+      if (savedOutletId) setOutletId(savedOutletId);
+    }
+
+    // Fetch active outlets from database
+    fetch(`${getApiBase()}/auth/outlets`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setOutlets(data);
+          setOutletId((prev) => prev || data[0].id);
+        }
+      })
+      .catch((err) => console.error("Failed to load outlets:", err))
+      .finally(() => setLoadingOutlets(false));
+  }, []);
+
+  useEffect(() => {
+    if (outletId) {
+      fetch(`${getApiBase()}/auth/staff-profiles?outletId=${encodeURIComponent(outletId)}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (Array.isArray(data)) {
+            setStaffProfiles(data);
+          }
+        })
+        .catch((err) => console.error("Failed to load staff profiles:", err));
+    }
+  }, [outletId]);
 
   const performLogin = async (eMail: string, pass: string, outId: string, targetPath = "/") => {
     setError(null);
@@ -90,14 +88,17 @@ export default function LoginPage() {
     if (result.ok === false) {
       const friendlyMsg = ERROR_MESSAGES[result.error] ?? ERROR_MESSAGES.LOGIN_FAILED;
       setError(friendlyMsg);
-      // Show raw error code for debugging if it doesn't match a known code
       if (!ERROR_MESSAGES[result.error]) {
         setErrorDetail(`Error code: ${result.error}`);
       }
       setNotice(null);
       setSubmitting(false);
-      setActiveRoleKey(null);
       return;
+    }
+
+    if (typeof window !== "undefined") {
+      localStorage.setItem("kapmeta_last_email", eMail);
+      localStorage.setItem("kapmeta_last_outlet_id", outId);
     }
 
     setNotice("✓ Login successful! Redirecting to dashboard...");
@@ -109,14 +110,6 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     await performLogin(email, password, outletId, "/");
-  };
-
-  const handleQuickAccess = async (role: QuickRole) => {
-    setActiveRoleKey(role.key);
-    setEmail(role.email);
-    setPassword(role.password);
-    setOutletId(role.outletId);
-    await performLogin(role.email, role.password, role.outletId, role.targetPath);
   };
 
   return (
@@ -163,7 +156,7 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="field-input"
-                placeholder="account@hotelkapila.com"
+                placeholder="name@restaurant.com"
                 autoComplete="username"
               />
             </div>
@@ -193,20 +186,36 @@ export default function LoginPage() {
 
           <div className="field-group">
             <label className="field-label" htmlFor="outletId">
-              Outlet ID
+              Outlet
             </label>
             <div className="input-wrapper">
               <span className="input-icon">🏢</span>
-              <input
-                id="outletId"
-                type="text"
-                required
-                value={outletId}
-                onChange={(e) => setOutletId(e.target.value)}
-                className="field-input"
-                placeholder="11111111-1111-1111-1111-111111111111"
-                autoComplete="off"
-              />
+              {outlets.length > 0 ? (
+                <select
+                  id="outletId"
+                  required
+                  value={outletId}
+                  onChange={(e) => setOutletId(e.target.value)}
+                  className="field-input"
+                >
+                  {outlets.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.name} {o.code ? `(${o.code})` : ""}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  id="outletId"
+                  type="text"
+                  required
+                  value={outletId}
+                  onChange={(e) => setOutletId(e.target.value)}
+                  className="field-input"
+                  placeholder="Enter Outlet ID"
+                  autoComplete="off"
+                />
+              )}
             </div>
           </div>
 
@@ -215,44 +224,49 @@ export default function LoginPage() {
           </button>
         </form>
 
-        {/* Quick Access Section */}
-        <div className="quick-access-section">
-          <div className="quick-access-divider">
-            <span>QUICK ACCESS</span>
-          </div>
+        {/* Dynamic Staff Quick Access Section */}
+        {staffProfiles.length > 0 && (
+          <div className="quick-access-section">
+            <div className="quick-access-divider">
+              <span>ACTIVE STAFF PROFILES</span>
+            </div>
 
-          <div className="quick-access-buttons">
-            {QUICK_ROLES.map((role) => {
-              const isActive = activeRoleKey === role.key;
-              return (
-                <button
-                  key={role.key}
-                  type="button"
-                  className={`quick-access-btn ${isActive ? "active" : ""}`}
-                  disabled={submitting}
-                  onClick={() => handleQuickAccess(role)}
-                  title={`Sign in directly as ${role.roleTitle}`}
-                >
-                  <div className="icon-circle">
-                    {isActive ? "⏳" : role.icon}
-                  </div>
-                  <span className="role-label">{role.label}</span>
-                </button>
-              );
-            })}
-          </div>
+            <div className="quick-access-buttons">
+              {staffProfiles.map((staff) => {
+                const isActive = email === staff.email;
+                return (
+                  <button
+                    key={staff.id}
+                    type="button"
+                    className={`quick-access-btn ${isActive ? "active" : ""}`}
+                    disabled={submitting}
+                    onClick={() => {
+                      setEmail(staff.email);
+                      setIsPinModalOpen(true);
+                    }}
+                    title={`Sign in with PIN as ${staff.name} (${staff.role})`}
+                  >
+                    <div className="icon-circle">
+                      {staff.avatar}
+                    </div>
+                    <span className="role-label">{staff.name.split(" ")[0]}</span>
+                  </button>
+                );
+              })}
+            </div>
 
-          <div style={{ marginTop: "16px", paddingTop: "14px", borderTop: "1px dashed #cbd5e1" }}>
-            <button
-              type="button"
-              className="fast-pin-btn"
-              onClick={() => setIsPinModalOpen(true)}
-            >
-              <span style={{ fontSize: "1.1rem" }}>⚡</span>
-              <span>Fast Captain / Waiter Touch PIN Login</span>
-            </button>
+            <div style={{ marginTop: "16px", paddingTop: "14px", borderTop: "1px dashed #cbd5e1" }}>
+              <button
+                type="button"
+                className="fast-pin-btn"
+                onClick={() => setIsPinModalOpen(true)}
+              >
+                <span style={{ fontSize: "1.1rem" }}>⚡</span>
+                <span>Fast Captain / Waiter Touch PIN Login</span>
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       <CaptainPinLoginModal

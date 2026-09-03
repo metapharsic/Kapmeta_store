@@ -28,6 +28,47 @@
 - **SRE & Diagnostics:** Automatically scans `logs/` to capture stack traces and recommend immediate fixes for other agents.
 - **QA Agent:** Ensures all unit tests pass prior to milestone gate progression in `checkpoints/`.
 
+## 2026-09-04 — CP-27 Clean Navigation Architecture & Sidebar Taxonomy (Complete)
+
+Categorized sidebar navigation to separate operational sales workflows from business intelligence and reports:
+- **1. Dashboard**: High-level executive & day operations summary (`/admin?tab=daily-ops`).
+- **2. Daily Operations**: Frontline POS Terminal (`/`), Waiter App (`/waiter`), Live Orders (`/orders?tab=live`), All Orders (`/orders?tab=all`), Online Orders (`/orders?tab=online`), Kitchen KOT / KDS (`/kitchen`), and Table Floor Management (`/table-management`).
+- **3. Menu & Discounts**: All In One Menu Hub (`/menu/hub`), Manage Menu (`/menu/manage`), Base Catalog (`/menu`), Virtual Cloud Outlets (`/menu/virtual-outlets`), Multi-Item Images (`/menu/images-upload`), Channel Status (`/channel-availability`), Special Notes (`/menu/special-notes`), Item Commission (`/menu/commission`), Timed Schedules (`/menu/scheduling`), Physical Menu & QR (`/menu/physical`).
+- **4. Inventory & Stock**: Dashboard & Closing (`/inventory`), Stock Purchases (`/inventory/purchase`), Purchase Orders (`/inventory/purchase-orders`).
+- **5. Sales**: Dedicated sales analytics and frontline registers — Sales Analytics & Trends (`/admin?tab=analytics`), Daily Sales Register (`/reporting`), and Delivery Management (`/reports/delivery-management`).
+- **6. Reports & BI**: Dedicated BI & audit suite — Day End Summary & Z-Report (`/reports/day-end-summary`), All Other Reports Center (`/reports/other-reports`), Report Notifications (`/reports/report-notification`), and System Audit Trail (`/management/audit-trail`).
+- **7. Finance & Accounting**: Finance Dashboard (`/finance`), Online Order Reconciliation (`/management/online-reconciliation`), Payment Gateways & UPI (`/management/payment-information`), Virtual Wallet (`/management/virtual-wallet`), GST Configuration (`/management/settings?key=gst_information`), Expense & Withdrawal (`/management/expense-management`), and Service Payment History (`/management/service-payment-history`).
+- **8. CRM & Marketing**: Customers & Loyalty Directory (`/crm`), Marketing Automation Campaigns (`/marketing`).
+- **9. Management & Settings**: User & Role Management (`/user-management`), Company Details (`/settings/company`), Admin Overview Hub (`/admin`), Multi-Agent HUD (`/admin?tab=agents`), Explore Products (`/management/explore-products`), Device Mapping (`/management/device-mapping`), Configuration & Audit Log sub-groups.
+- **10. Aggregator Center**: Connect Delivery Apps (`/integrations`), Online Channel Availability (`/channel-availability`).
+
+## 2026-09-04 — CP-26 Menu & Discounts Suite & A2A Dynamic Multi-Agent Provisioning (Complete)
+
+All 8 tools and sub-modules across the Menu & Discounts subsystem have been elevated to dynamic database standards with A2A multi-agent telemetry:
+- **Menu & Discounts Hub (`/menu/hub`):**
+  - Instant "Sync Menu Now" action hitting `POST /menu/sync`, updating `outlets.last_menu_sync_at` in DB, creating audit log records, and broadcasting `menu.synced` over the A2A WebSocket mesh.
+  - Live operational KPI strip pulling real counts from `GET /menu/stats` (Total Items, Categories, Virtual Brands, Timed Schedules, 86'd Out-of-Stock count).
+  - Dynamic `Last Menu Sync` relative badge updating reactively on socket events.
+- **Catalog & Channel Pricing Management (`/menu/manage`):**
+  - Full CRUD for categories and items with per-channel pricing matrix (Base Menu, Home Delivery, Parcel, Dine In AC/Non-AC, Swiggy, Zomato).
+  - Live availability 86 toggling per channel with audit trail persistence.
+- **Virtual Cloud Kitchen Outlets (`/menu/virtual-outlets`):**
+  - Full DB CRUD for virtual outlets (`outlets.is_virtual = true`, `parent_outlet_id`) with active status indicators and delete management.
+- **Multi-Item Images Studio (`/menu/images-upload`):**
+  - Multi-item image asset studio with instant image URL assignment, fallback dish library integration, and live sync to POS register cards.
+- **Channel Availability & Online Item Status (`/channel-availability`):**
+  - Real DB channel mapping toggles (Dine In, Takeaway, Delivery, Swiggy, Zomato), bulk toggle, and stock quantity sync.
+- **Special Kitchen Notes (`/menu/special-notes`):**
+  - Kitchen modifier presets with database persistence, category attachments, and POS fast-touch previews.
+- **Aggregator Commission & Margin Optimizer (`/menu/commission`):**
+  - Real commission calculation across Swiggy, Zomato, Direct Online, and Dine-in with target margin pricing recommendations.
+- **Timed Menu Shifts Scheduler (`/menu/scheduling`):**
+  - Meal shift scheduling in DB (`availability_schedules`) with time window pickers, recurring days of week, and active status toggles.
+- **Physical Menu & QR Studio (`/menu/physical`):**
+  - Physical menu file records and printable menu generator with dietary tags and table QR codes.
+- **A2A Multi-Agent Coordination & GitNexus Intelligence:**
+  - Full blast radius validation across callers and affected execution flows using GitNexus.
+
 ## 2026-09-03 — CP-25 Inventory Management, Daily Stock Closing & A2A Architecture (Complete)
 
 All 5 reference screens and multi-agent coordination requirements have been fully provisioned:
@@ -374,3 +415,18 @@ fully wired for all 3 orderTypes. The gap was the customer-facing public QR orde
   inventory work + STATUS/task-board edits were left untouched, not mine to commit).
   Stale .git/index.lock from a timed-out heredoc hit mid-round, cleared after confirming no
   live git process. Committed f1a6460.
+
+## 2026-09-04 — CP-26: Zero Hardcoded Auth & Dynamic Database Ingestion (TSK-047)
+- Dynamic Data Ingestion: Updated `scripts/seed-dynamic-data.ts` to support dynamic user and staff roster provisioning directly into PostgreSQL database tables (`user`, `user_role`, `role`, `dining_tables`, `outlets`, `item_availability`, `ingredients`). Executed seed script dynamically with UUIDv7/randomUUID primary keys. All users (`admin@hotelkapila.com`, `cashier@hotelkapila.com`, `chef@hotelkapila.com`, `waiter@hotelkapila.com`) seeded with real bcrypt password & PIN hashes (`1234`).
+- Backend Authentication Routes (`apps/api/src/routes/auth.ts`):
+  - Added `GET /auth/outlets`: Returns list of all active database outlets for dynamic pre-login selection.
+  - Added `GET /auth/staff-profiles`: Returns active user roles and staff profiles with tenant outlet scoping for touchscreen PIN login modal on floor tablets.
+  - Fixed `/auth/me` fallback: Removed static literal `'Admin'` fallback in favor of `user.email.split('@')[0]`.
+- Frontend POS Web (`apps/pos-web/pages/login.tsx` & `CaptainPinLoginModal.tsx`):
+  - Removed static `QUICK_ROLES` with hardcoded credentials and outlet IDs.
+  - Replaced with dynamic database-driven active staff roster fetched from `/auth/staff-profiles`.
+  - Added outlet selection dropdown dynamically populated from `/auth/outlets`.
+  - Connected `localStorage` caching for seamless return sessions (`kapmeta_last_email`, `kapmeta_last_outlet_id`).
+  - Removed static `STAFF_LIST` from `CaptainPinLoginModal.tsx`; staff now load dynamically from the PostgreSQL database with fallback and loading indicators.
+  - Verified `apps/pos-web` with `npx tsc --noEmit` (0 errors).
+

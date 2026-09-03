@@ -15,6 +15,9 @@ export const FLOOR_EVENT_TOPICS = new Set([
   "finance.order_settled",
   "finance.waiter_shift_handover",
   "inventory.stock_updated",
+  "menu.synced",
+  "menu.updated",
+  "item.availability_changed",
 ]);
 
 export type KapmetaSocketPayload = { topic: string; data?: Record<string, unknown> };
@@ -42,6 +45,7 @@ export function useKapmetaSocket(
         if (!closed) retry = setTimeout(connect, 3000);
         return;
       }
+      if (typeof WebSocket === "undefined") return;
       try {
         const url = `${getWsBase()}?token=${encodeURIComponent(session.accessToken)}`;
         ws = new WebSocket(url);

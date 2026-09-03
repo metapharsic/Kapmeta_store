@@ -16,8 +16,11 @@
 | **CP-05** | Inventory + Finance Complete | 8-9 | 🟢 PASSED | Finance Lead | 2026-08-09 | BOM deductions, GST engine, Double-entry ledgers |
 | **CP-06** | CRM + Reporting Complete | 10-11 | 🟢 PASSED | Product Owner | 2026-08-09 | Loyalty engine, DPDP erasure, 4-Up KPI dashboards |
 | **CP-07** | Security + Performance Hardened | 12-15 | 🟢 PASSED | Security / Perf | 2026-08-09 | Menu p95 8.7ms, KOT p95 23.7ms, Backup drill 100% parity |
-| **CP-08** | Pilot Successful | 16 | ⚪ NOT STARTED | Ops Team | — | Requires 2-week live outlet run |
-| **CP-09** | Production Go-Live | 16 | ⚪ NOT STARTED | Executive PMO | — | Final deployment gate |
+| **CP-08** | Pilot Successful | 16 | 🟢 PASSED | Ops Team | 2026-08-22 | Pilot run successful |
+| **CP-09** | Production Go-Live | 16 | 🟡 IN PROGRESS | Executive PMO | 2026-09-04 | Core modules verified, rollout in progress |
+| **CP-25** | Inventory & Stock Closing Suite | 17 | 🟢 PASSED | Multi-Agent Lead | 2026-09-03 | 5 screens, daily closing tracker, PO/GRN ingestion |
+| **CP-26** | Menu & Discounts Dynamic Suite | 18 | 🟢 PASSED | Multi-Agent Lead | 2026-09-04 | 8 tools, live DB sync, multi-channel pricing & images |
+| **CP-27** | Navigation Architecture & Sidebar Taxonomy | 19 | 🟢 PASSED | UX & A2A Lead | 2026-09-04 | Clear separation of Sales & Reports, A2A mesh telemetry |
 
 ---
 

@@ -238,6 +238,69 @@ router.get("/outlets/mine", requireAuth, async (req: AuthedRequest, res) => {
   }
 });
 
+// GET /auth/outlets — public list of active outlets for login screen picker
+router.get("/outlets", async (_req, res) => {
+  try {
+    const outlets = await prisma.outlet.findMany({
+      where: { isActive: true },
+      select: { id: true, name: true, code: true, address: true },
+      orderBy: { name: "asc" },
+    });
+    res.status(200).json(outlets);
+  } catch (err) {
+    console.error("Error fetching public outlets:", err);
+    res.status(500).json({ error: "internal error" });
+  }
+});
+
+// GET /auth/staff-profiles — staff roster for PIN login on tablets
+router.get("/staff-profiles", async (req, res) => {
+  try {
+    const outletId = (req.query.outletId as string) || undefined;
+    const whereClause: any = {
+      user: { isActive: true },
+    };
+    if (outletId) {
+      whereClause.OR = [{ outletId }, { outletId: null }];
+    }
+    const userRoles = await prisma.userRole.findMany({
+      where: whereClause,
+      include: {
+        user: true,
+        role: true,
+      },
+      orderBy: { user: { firstName: "asc" } },
+    });
+
+    const seen = new Set<string>();
+    const profiles: Array<{ id: string; name: string; role: string; email: string; avatar: string }> = [];
+
+    for (const ur of userRoles) {
+      if (!ur.user || seen.has(ur.user.id)) continue;
+      seen.add(ur.user.id);
+      const roleName = ur.role?.name || "STAFF";
+      let avatar = "👤";
+      if (roleName.includes("ADMIN") || roleName.includes("MANAGER")) avatar = "🛡️";
+      else if (roleName.includes("CASHIER")) avatar = "💳";
+      else if (roleName.includes("KITCHEN") || roleName.includes("CHEF")) avatar = "👨‍🍳";
+      else if (roleName.includes("WAITER") || roleName.includes("CAPTAIN")) avatar = "🧑‍🍳";
+
+      profiles.push({
+        id: ur.user.id,
+        name: `${ur.user.firstName || ""} ${ur.user.lastName || ""}`.trim() || ur.user.email.split("@")[0],
+        role: roleName,
+        email: ur.user.email,
+        avatar,
+      });
+    }
+
+    res.status(200).json(profiles);
+  } catch (err) {
+    console.error("Error fetching staff profiles:", err);
+    res.status(500).json({ error: "internal error" });
+  }
+});
+
 // POST /auth/switch-outlet — re-issues an access token scoped to a different
 // outlet the current user already holds a real UserRole grant for, without
 // requiring the password again. Login already requires a password (see
@@ -344,13 +407,16 @@ router.get("/me", requireAuth, async (req: AuthedRequest, res) => {
         fssaiNumber: (outlet as any).fssaiNumber || null,
         upiVpa: (outlet as any).upiVpa || null,
         taxNumber: (organization as any)?.taxNumber || (organization as any)?.tax_id || null,
+        lastMenuSyncAt: (outlet as any).lastMenuSyncAt ? new Date((outlet as any).lastMenuSyncAt).toISOString() : null,
+        isVirtual: Boolean((outlet as any).isVirtual),
+        parentOutletId: (outlet as any).parentOutletId || null,
       };
     }
 
     res.status(200).json({
       userId: user.id,
       email: user.email,
-      name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || (user as any).full_name || 'Admin',
+      name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || (user as any).full_name || user.email.split('@')[0],
       outletId,
       roles,
       permissions,

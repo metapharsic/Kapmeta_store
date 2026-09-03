@@ -874,12 +874,28 @@
       "relatedGate": "CP-25"
     },
     {
-      "taskId": "TSK-045",
-      "title": "Public customer order app: Dine In/Delivery/Pick Up enabled (outlet-scoped tableless entry)",
-      "assignedTo": "multi-agent(backend+frontend)",
+      "taskId": "TSK-047",
+      "title": "Eliminate hardcoded credentials & dynamic database auth wiring with GitNexus validation",
+      "assignedTo": "multi-agent(a2a+backend+frontend)",
       "status": "DONE",
       "priority": "HIGH",
-      "relatedGate": "CP-25"
+      "relatedGate": "CP-26"
+    },
+    {
+      "taskId": "TSK-048",
+      "title": "Menu & Discounts Dynamic Provisioning Suite (Hub, Manage, Virtual Outlets, Images, Special Notes, Commission, Scheduling, Physical)",
+      "assignedTo": "multi-agent(a2a+backend+frontend)",
+      "status": "DONE",
+      "priority": "HIGH",
+      "relatedGate": "CP-26"
+    },
+    {
+      "taskId": "TSK-049",
+      "title": "Navigation Architecture & Sidebar Categorization: Clean separation of Sales from Reports & BI across all surfaces with A2A telemetry",
+      "assignedTo": "multi-agent(ux+frontend+a2a)",
+      "status": "DONE",
+      "priority": "HIGH",
+      "relatedGate": "CP-27"
     }
   ]
 }

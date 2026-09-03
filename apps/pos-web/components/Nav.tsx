@@ -25,13 +25,13 @@ const NAV_LINKS: NavLinkDef[] = [
   { href: "/", permission: "order.create", topbarLabel: "POS Terminal", pillLabel: "🛒 POS Register" },
   { href: "/waiter", permission: "order.create", topbarLabel: "Waiter App", pillLabel: "🏃 Waiter App" },
   { href: "/orders?tab=live", permission: "order.read", topbarLabel: "Live Orders", pillLabel: "🔴 Live Orders" },
-  { href: "/orders?tab=all", permission: "order.read", topbarLabel: "All Orders", pillLabel: "📋 All Orders" },
+  { href: "/orders?tab=all", permission: "order.read", topbarLabel: "Sales Register", pillLabel: "🧾 Sales Register" },
   { href: "/orders?tab=online", permission: "order.read", topbarLabel: "Online Orders", pillLabel: "🌐 Online Orders" },
   { href: "/kitchen", permission: "kot.read", topbarLabel: "KDS Kitchen Board", pillLabel: "🍳 Kitchen KDS" },
   { href: "/inventory", permission: "inventory.read", topbarLabel: "Stock & 86-List", pillLabel: "📦 Stock Control" },
   { href: "/menu", permission: "menu.category.manage", topbarLabel: "Menu Management", pillLabel: "🍽️ Menu Management" },
   { href: "/channel-availability", permission: "integration.manage", topbarLabel: "Online Item Status", pillLabel: "📡 Online Status" },
-  { href: "/admin?tab=analytics", permission: "report.read", topbarLabel: "Sales Analytics", pillLabel: "📊 Sales Reports" },
+  { href: "/reports/other-reports", permission: "report.read", topbarLabel: "Reports & Analytics", pillLabel: "📊 Reports & Analytics" },
   { href: "/finance", permission: "report.read", topbarLabel: "Finance & Z-Report", pillLabel: "💰 Finance" },
   { href: "/crm", permission: "crm.read", topbarLabel: "Customers & Loyalty", pillLabel: "🎁 Customers" },
   { href: "/marketing", permission: "crm.write", topbarLabel: "Marketing Campaigns", pillLabel: "📣 Marketing" },
@@ -106,84 +106,93 @@ export const SIDEBAR_GROUPS: SidebarGroupDef[] = [
     header: "Daily Operations",
     alwaysExpanded: true,
     links: [
-      // POS Terminal and Waiter App are not in the reference sidebar, but they
-      // are this app's primary operating surfaces and dropping them would make
-      // the POS unreachable from the nav. They lead the group.
       { href: "/", permission: "order.create", label: "POS Terminal" },
       { href: "/waiter", permission: "order.create", label: "Waiter App" },
       { href: "/orders?tab=live", permission: "order.read", label: "Live Orders" },
       { href: "/orders?tab=all", permission: "order.read", label: "All Orders" },
       { href: "/orders?tab=online", permission: "order.read", label: "Online Orders" },
-      { href: "/kitchen", permission: "kot.read", label: "KOT" },
+      { href: "/kitchen", permission: "kot.read", label: "KOT / Kitchen KDS" },
+      { href: "/table-management", permission: "menu.category.manage", label: "Table Floor Management" },
     ],
   },
   {
     id: "menu",
-    header: "Menu",
+    header: "Menu & Discounts",
     links: [
-      { href: "/menu/hub", permission: "menu.category.manage", label: "All In One Menu" },
-      { href: "/menu", permission: "menu.category.manage", label: "Base Menu" },
+      { href: "/menu/hub", permission: "menu.category.manage", label: "All In One Menu Hub" },
+      { href: "/menu/manage", permission: "menu.category.manage", label: "Manage Menu & Prices" },
+      { href: "/menu", permission: "menu.category.manage", label: "Base Catalog" },
+      { href: "/menu/virtual-outlets", permission: "settings.manage", label: "Virtual Cloud Outlets" },
       { href: "/menu/images-upload", permission: "menu.category.manage", label: "Multi-Item Images Upload" },
-      // Reused from the old "Aggregator Center" group (was "Online Item Status")
-      // rather than duplicated - this is the same /channel-availability screen.
-      { href: "/channel-availability", permission: "integration.manage", label: "Menu on/off" },
-      { href: "/menu/special-notes", permission: "menu.category.manage", label: "Special Note" },
+      { href: "/channel-availability", permission: "integration.manage", label: "Menu on/off (Channel Status)" },
+      { href: "/menu/special-notes", permission: "menu.category.manage", label: "Special Kitchen Notes" },
       { href: "/menu/commission", permission: "menu.category.manage", label: "Set Item Commission" },
-      { href: "/menu/scheduling", permission: "menu.category.manage", label: "Schedule Changes" },
-      { href: "/menu/physical", permission: "menu.category.manage", label: "Physical Menu" },
+      { href: "/menu/scheduling", permission: "menu.category.manage", label: "Timed Menu Schedules" },
+      { href: "/menu/physical", permission: "menu.category.manage", label: "Physical Menu & QR" },
     ],
   },
   {
     id: "inventory",
-    header: null,
-    // pages/inventory.tsx guards on menu.read
-    links: [{ href: "/inventory", permission: "menu.read", label: "Inventory" }],
+    header: "Inventory & Stock",
+    links: [
+      { href: "/inventory", permission: "menu.read", label: "Inventory Dashboard & Closing" },
+      { href: "/inventory/purchase", permission: "menu.read", label: "Stock Purchases & Ingestion" },
+      { href: "/inventory/purchase-orders", permission: "menu.read", label: "Purchase Orders (PO / GRN)" },
+    ],
   },
   {
-    id: "marketing",
-    header: null,
-    badge: "New",
-    links: [{ href: "/marketing", permission: "crm.write", label: "Marketing Automation" }],
-  },
-  {
-    id: "finance",
-    header: null,
-    badge: "New",
-    links: [{ href: "/finance", permission: "report.read", label: "Finance" }],
+    id: "sales",
+    header: "Sales & Invoicing",
+    links: [
+      { href: "/orders?tab=all", permission: "order.read", label: "Sales Invoices & Bills" },
+      { href: "/reporting", permission: "report.read", label: "Daily Sales Register" },
+      { href: "/orders?tab=live", permission: "order.read", label: "Live Counter Sales" },
+      { href: "/orders?tab=online", permission: "order.read", label: "Online Channel Sales" },
+      { href: "/reports/delivery-management", permission: "report.read", label: "Delivery Dispatch Desk" },
+    ],
   },
   {
     id: "reports",
-    header: "Reports",
+    header: "Reports & Business Intelligence",
     links: [
-      // Sales Analytics, Day-End Settlement / Z-Report, Kitchen Prep Times,
-      // Waiter Floor Monitor and Audit Log used to be flat links here.
-      // They are not gone or orphaned — every one of them is still
-      // reachable, now as a card inside /reports/other-reports (see
-      // lib/report-catalog.ts), matching the reference design's 4-link
-      // Reports section below.
-      { href: "/reports/day-end-summary", permission: "report.read", label: "Day End Summary" },
-      { href: "/reports/other-reports", permission: "report.read", label: "Other Reports" },
-      { href: "/reports/report-notification", permission: "report.read", label: "Report Notification" },
-      { href: "/reports/delivery-management", permission: "report.read", label: "Delivery Management" },
+      { href: "/admin?tab=analytics", permission: "report.read", label: "Sales Analytics & Trends" },
+      { href: "/reports/day-end-summary", permission: "report.read", label: "Day End Summary & Z-Report" },
+      { href: "/reports/other-reports", permission: "report.read", label: "All Other Reports Center" },
+      { href: "/reports/report-notification", permission: "report.read", label: "Scheduled Report Notifications" },
+      { href: "/management/audit-trail", permission: "report.read", label: "System Audit Trail" },
+    ],
+  },
+  {
+    id: "finance",
+    header: "Finance & Accounting",
+    badge: "New",
+    links: [
+      { href: "/finance", permission: "report.read", label: "Finance Dashboard" },
+      { href: "/management/online-reconciliation", permission: "settings.read", label: "Online Order Reconciliation" },
+      { href: "/management/payment-information", permission: "settings.read", label: "Payment Gateways & UPI" },
+      { href: "/management/virtual-wallet", permission: "settings.read", label: "Virtual Wallet" },
+      { href: "/management/settings?key=gst_information", permission: "settings.manage", label: "GST & Tax Configuration" },
+      { href: "/management/expense-management", permission: "settings.read", label: "Expense & Withdrawal" },
+      { href: "/management/service-payment-history", permission: "settings.read", label: "Service Payment History" },
+    ],
+  },
+  {
+    id: "crm",
+    header: "CRM & Marketing",
+    links: [
+      { href: "/crm", permission: "crm.read", label: "Customers & Loyalty Directory" },
+      { href: "/marketing", permission: "crm.write", label: "Marketing Automation Campaigns" },
     ],
   },
   {
     id: "management",
-    header: "Management",
+    header: "Management & Settings",
     links: [
-      // alwaysVisible: these two were the "I can't find it" incidents this
-      // session. They must stay reachable from the POS terminal drawer even
-      // for roles without users.manage / settings.manage.
       { href: "/user-management", permission: "users.manage", label: "User & Role Management", alwaysVisible: true },
-      { href: "/settings/company", permission: "settings.manage", label: "Company Details", alwaysVisible: true },
-      // pages/table-management.tsx guards on menu.category.manage
-      { href: "/table-management", permission: "menu.category.manage", label: "Table Management" },
+      { href: "/settings/company", permission: "settings.manage", label: "Company & Store Details", alwaysVisible: true },
       { href: "/admin", permission: "report.read", label: "Admin Overview Hub" },
-      { href: "/admin?tab=agents", permission: "report.read", label: "Multi-Agent & A2A Status" },
-      // Flat Management items with no backend contract of their own yet -
-      // honest "coming soon" placeholder pages (see pages/management/).
+      { href: "/admin?tab=agents", permission: "report.read", label: "Multi-Agent & A2A Status HUD" },
       { href: "/management/explore-products", permission: "report.read", label: "Explore Products" },
-      { href: "/management/audit-trail", permission: "report.read", label: "Audit Trail" },
       { href: "/management/device-mapping", permission: "report.read", label: "Device Mapping" },
     ],
     subGroups: [
@@ -194,50 +203,27 @@ export const SIDEBAR_GROUPS: SidebarGroupDef[] = [
           { href: "/management/settings?key=outlet_configuration", permission: "settings.manage", label: "Outlet Configuration" },
           { href: "/management/list?key=sub_order_type", permission: "settings.manage", label: "Sub Order Type" },
           { href: "/management/list?key=delivery_distance", permission: "settings.manage", label: "Delivery Distance" },
-          { href: "/management/list?key=area_locality_delivery_charges", permission: "settings.manage", label: "Area/Locality Wise Delivery Charges" },
-          { href: "/management/list?key=floor_plan", permission: "settings.manage", label: "Floor Plan" },
+          { href: "/management/list?key=area_locality_delivery_charges", permission: "settings.manage", label: "Area/Locality Delivery Charges" },
+          { href: "/management/list?key=floor_plan", permission: "settings.manage", label: "Floor Plan Layout" },
           { href: "/management/list?key=email_template_settings", permission: "settings.manage", label: "Email Template Settings" },
-        ],
-      },
-      {
-        id: "accounting",
-        label: "Accounting",
-        links: [
-          // Reference screenshot nests "Payments" (Payment Information +
-          // Virtual Wallet) as its own expandable row under Accounting.
-          // KapMetaHeader.tsx's subGroup support is one level deep only
-          // (added earlier this session) - adding a 3rd nesting level here
-          // is out of scope, so both links are flat entries in this
-          // sub-group instead, labelled distinctly so the grouping still
-          // reads clearly without inventing a nav-tree depth nothing
-          // renders yet.
-          { href: "/management/payment-information", permission: "settings.read", label: "Payments: Payment Information" },
-          { href: "/management/virtual-wallet", permission: "settings.read", label: "Payments: Virtual Wallet" },
-          { href: "/management/online-reconciliation", permission: "settings.read", label: "Online Order Reconciliation" },
-          { href: "/management/settings?key=gst_information", permission: "settings.manage", label: "GST Information" },
-          { href: "/management/list?key=utility_bill_operator", permission: "settings.manage", label: "Utility Bill Operator" },
-          { href: "/management/expense-management", permission: "settings.read", label: "Expense & Withdrawal" },
-          { href: "/management/service-payment-history", permission: "settings.read", label: "Service Payment History" },
-          { href: "/management/list?key=loan_information", permission: "settings.manage", label: "Loan Information" },
-          { href: "/management/list?key=denomination", permission: "settings.manage", label: "Denomination" },
         ],
       },
       {
         id: "user-management",
         label: "User Management",
         links: [
-          { href: "/management/biller-app", permission: "users.manage", label: "Biller App" },
+          { href: "/management/biller-app", permission: "users.manage", label: "Biller App Setup" },
         ],
       },
       {
         id: "user-logs",
-        label: "User Logs",
+        label: "Audit & User Logs",
         links: [
           { href: "/management/logs?type=ONLINE_STORE", permission: "users.manage", label: "Online Store Logs" },
           { href: "/management/logs?type=ONLINE_ITEM_ON_OFF", permission: "users.manage", label: "Online Item On/Off Logs" },
           { href: "/management/logs?type=AUTO_ACCEPT", permission: "users.manage", label: "Auto Accept Change Logs" },
           { href: "/management/logs?type=SUPPORT", permission: "users.manage", label: "Support Management" },
-          { href: "/management/logs?type=NOTIFICATION", permission: "users.manage", label: "Notification" },
+          { href: "/management/logs?type=NOTIFICATION", permission: "users.manage", label: "Notification Logs" },
           { href: "/management/logs?type=MENU_TRIGGER", permission: "users.manage", label: "Menu Trigger Logs" },
           { href: "/management/logs?type=CLOSING_HOUR", permission: "users.manage", label: "Closing Hour Logs" },
           { href: "/management/logs?type=EXPENSE", permission: "users.manage", label: "Expense Logs" },
@@ -248,17 +234,11 @@ export const SIDEBAR_GROUPS: SidebarGroupDef[] = [
     ],
   },
   {
-    id: "crm",
-    header: "CRM",
-    links: [{ href: "/crm", permission: "crm.read", label: "Customers & Loyalty" }],
-  },
-  {
     id: "aggregator-center",
     header: "Aggregator Center",
     links: [
-      // "Online Item Status" moved into the "Menu & Discounts" group above
-      // (as "Menu on/off") rather than living in both places.
-      { href: "/integrations", permission: "integration.manage", label: "Connect Delivery Apps" },
+      { href: "/integrations", permission: "integration.manage", label: "Connect Delivery Apps (Swiggy / Zomato)" },
+      { href: "/channel-availability", permission: "integration.manage", label: "Online Channel Availability" },
     ],
   },
 ];

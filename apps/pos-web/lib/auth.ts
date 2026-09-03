@@ -58,7 +58,11 @@ export interface MeResponse {
 }
 
 function isBrowser(): boolean {
-  return typeof window !== "undefined";
+  return (
+    typeof window !== "undefined" &&
+    typeof window.localStorage !== "undefined" &&
+    typeof window.localStorage.getItem === "function"
+  );
 }
 
 // Decodes the (unsigned-here, already-trusted-because-we-just-received-it-over-TLS)

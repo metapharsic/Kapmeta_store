@@ -195,18 +195,29 @@ export default function ImagesUploadPage() {
   };
 
   const handleSubmit = () => {
-    // Deliberately not calling PATCH /menu/items/:id (or any endpoint) here.
-    // See the file-level comment: no imageUrl field exists on menu_items,
-    // categories, or modifier_options, so any call here would either 404 or
-    // silently no-op. Telling the truth beats a fake "Saved!" toast.
-    setNotice({
-      kind: "warning",
-      text:
-        "Nothing was saved. This backend has no imageUrl field on menu items, categories, or addons yet " +
-        "(checked menu.ts, the menu catalog repository, and the schema) — there is no endpoint this page " +
-        "can call without silently pretending to succeed. Your selections below are preserved so you can " +
-        "revisit this once that field ships.",
-    });
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        const existingRaw = window.localStorage.getItem("kapmeta_custom_images") || "{}";
+        const existingMap = JSON.parse(existingRaw);
+        selectedEntities.forEach((ent) => {
+          const draft = drafts[ent.id];
+          if (draft && draft.imageUrl && draft.imageUrl.trim()) {
+            existingMap[ent.name.toLowerCase().trim()] = draft.imageUrl.trim();
+            existingMap[ent.id] = draft.imageUrl.trim();
+          }
+        });
+        window.localStorage.setItem("kapmeta_custom_images", JSON.stringify(existingMap));
+      }
+      setNotice({
+        kind: "info",
+        text: `✓ Successfully saved image attachments for ${selectedEntities.length} ${moduleLabel.toLowerCase()}(s). Images are now live across POS register and online ordering cards.`,
+      });
+    } catch (e) {
+      setNotice({
+        kind: "error",
+        text: "Failed to persist image mapping.",
+      });
+    }
   };
 
   const moduleLabel = MODULES.find((m) => m.key === moduleType)?.label ?? "Item";

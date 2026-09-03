@@ -17,25 +17,45 @@ interface CaptainPinLoginModalProps {
   outletId?: string;
 }
 
-const STAFF_LIST: StaffProfile[] = [
-  { id: "waiter-1", name: "Ramesh (Captain 1)", role: "Captain", email: "waiter@hotelkapila.com", avatar: "👨‍🍳" },
-  { id: "waiter-2", name: "Suresh (Captain 2)", role: "Captain", email: "waiter@hotelkapila.com", avatar: "🧑‍🍳" },
-  { id: "cashier-1", name: "Kapila Cashier", role: "Cashier", email: "cashier@hotelkapila.com", avatar: "💳" },
-  { id: "admin-1", name: "Store Manager", role: "Manager", email: "admin@hotelkapila.com", avatar: "🛡️" },
-];
-
 export default function CaptainPinLoginModal({
   isOpen,
   onClose,
   onSuccess,
-  outletId = "11111111-1111-1111-1111-111111111111",
+  outletId,
 }: CaptainPinLoginModalProps) {
   const router = useRouter();
-  const [selectedStaff, setSelectedStaff] = useState<StaffProfile>(STAFF_LIST[0]);
+  const [staffList, setStaffList] = useState<StaffProfile[]>([]);
+  const [selectedStaff, setSelectedStaff] = useState<StaffProfile | null>(null);
+  const [loadingStaff, setLoadingStaff] = useState(false);
   const [pin, setPin] = useState("");
   const [openingFloat, setOpeningFloat] = useState("500.00");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setLoadingStaff(true);
+      const url = outletId
+        ? `${getApiBase()}/auth/staff-profiles?outletId=${encodeURIComponent(outletId)}`
+        : `${getApiBase()}/auth/staff-profiles`;
+      fetch(url)
+        .then((res) => res.json())
+        .then((data) => {
+          if (Array.isArray(data) && data.length > 0) {
+            setStaffList(data);
+            setSelectedStaff(data[0]);
+          } else {
+            setStaffList([]);
+            setSelectedStaff(null);
+          }
+        })
+        .catch((err) => {
+          console.error("Failed to load staff profiles:", err);
+          setError("Failed to load staff profiles from server.");
+        })
+        .finally(() => setLoadingStaff(false));
+    }
+  }, [isOpen, outletId]);
 
   if (!isOpen) return null;
 
@@ -66,13 +86,14 @@ export default function CaptainPinLoginModal({
     setLoading(true);
     setError(null);
     try {
+      const targetOutletId = outletId || localStorage.getItem("kapmeta_last_outlet_id") || "";
       const res = await fetch(`${getApiBase()}/auth/pin-login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           pin,
           email: selectedStaff.email,
-          outletId,
+          outletId: targetOutletId,
         }),
       });
 
@@ -86,6 +107,7 @@ export default function CaptainPinLoginModal({
         localStorage.setItem("kapmeta_access_token", data.accessToken);
         localStorage.setItem("kapmeta_refresh_token", data.refreshToken);
         localStorage.setItem("kapmeta_captain_opening_float", openingFloat);
+        if (targetOutletId) localStorage.setItem("kapmeta_last_outlet_id", targetOutletId);
       }
 
       onSuccess(data.user);
@@ -115,21 +137,31 @@ export default function CaptainPinLoginModal({
 
         {/* Staff Profile Selection Chips */}
         <div className="staff-selector-row">
-          {STAFF_LIST.map((st) => (
-            <button
-              key={st.id}
-              type="button"
-              className={`staff-chip ${selectedStaff?.id === st.id ? "active" : ""}`}
-              onClick={() => {
-                setSelectedStaff(st);
-                setPin("");
-                setError(null);
-              }}
-            >
-              <span className="staff-avatar">{st.avatar}</span>
-              <span className="staff-name">{st.name}</span>
-            </button>
-          ))}
+          {loadingStaff ? (
+            <div style={{ padding: "8px 12px", color: "#64748b", fontSize: "0.85rem" }}>
+              Loading staff profiles…
+            </div>
+          ) : staffList.length === 0 ? (
+            <div style={{ padding: "8px 12px", color: "#dc2626", fontSize: "0.85rem" }}>
+              No active staff configured for this outlet.
+            </div>
+          ) : (
+            staffList.map((st) => (
+              <button
+                key={st.id}
+                type="button"
+                className={`staff-chip ${selectedStaff?.id === st.id ? "active" : ""}`}
+                onClick={() => {
+                  setSelectedStaff(st);
+                  setPin("");
+                  setError(null);
+                }}
+              >
+                <span className="staff-avatar">{st.avatar}</span>
+                <span className="staff-name">{st.name}</span>
+              </button>
+            ))
+          )}
         </div>
 
         {/* Shift Opening Float Input */}

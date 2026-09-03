@@ -184,14 +184,55 @@ export default function VirtualOutletsPage() {
                         <thead>
                           <tr>
                             <th>Name</th>
+                            <th>Status</th>
                             <th>Created</th>
+                            <th style={{ textAlign: "right" }}>Actions</th>
                           </tr>
                         </thead>
                         <tbody>
                           {outlets.map((o) => (
                             <tr key={o.id}>
-                              <td className="name-cell">{o.name}</td>
+                              <td className="name-cell">
+                                <span style={{ marginRight: "6px" }}>🏬</span>
+                                {o.name}
+                              </td>
+                              <td>
+                                <span style={{
+                                  display: "inline-block",
+                                  padding: "2px 8px",
+                                  borderRadius: "999px",
+                                  fontSize: "11px",
+                                  fontWeight: 700,
+                                  background: "#ecfdf5",
+                                  color: "#065f46"
+                                }}>
+                                  Active
+                                </span>
+                              </td>
                               <td>{formatDate(o.createdAt)}</td>
+                              <td style={{ textAlign: "right" }}>
+                                <button
+                                  type="button"
+                                  style={{
+                                    background: "transparent",
+                                    border: "1px solid #fecaca",
+                                    color: "#dc2626",
+                                    borderRadius: "6px",
+                                    padding: "3px 8px",
+                                    fontSize: "11px",
+                                    fontWeight: 600,
+                                    cursor: "pointer",
+                                  }}
+                                  onClick={async () => {
+                                    if (confirm(`Remove virtual outlet "${o.name}"?`)) {
+                                      await authedFetch(`/outlets/virtual/${o.id}`, { method: "DELETE" });
+                                      loadOutlets();
+                                    }
+                                  }}
+                                >
+                                  Delete
+                                </button>
+                              </td>
                             </tr>
                           ))}
                         </tbody>

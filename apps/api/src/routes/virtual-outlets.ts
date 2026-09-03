@@ -98,4 +98,61 @@ router.post("/virtual", requireAuth, requirePermission("settings.manage"), async
   }
 });
 
+// PATCH /outlets/virtual/:id
+router.patch("/virtual/:id", requireAuth, requirePermission("settings.manage"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const { id } = req.params;
+    const { name, isActive } = req.body ?? {};
+
+    const existing = await (prisma as any).outlet.findFirst({
+      where: { id, parentOutletId: outletId },
+    });
+
+    if (!existing) {
+      res.status(404).json({ error: "Virtual outlet not found" });
+      return;
+    }
+
+    const updated = await (prisma as any).outlet.update({
+      where: { id },
+      data: {
+        ...(name ? { name: String(name).trim() } : {}),
+        ...(typeof isActive === "boolean" ? { isActive } : {}),
+        updatedBy: req.auth!.userId,
+      },
+    });
+
+    res.status(200).json(serialize(updated));
+  } catch (err) {
+    sendServerError(res, err, "PATCH /outlets/virtual/:id");
+  }
+});
+
+// DELETE /outlets/virtual/:id
+router.delete("/virtual/:id", requireAuth, requirePermission("settings.manage"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const { id } = req.params;
+
+    const existing = await (prisma as any).outlet.findFirst({
+      where: { id, parentOutletId: outletId },
+    });
+
+    if (!existing) {
+      res.status(404).json({ error: "Virtual outlet not found" });
+      return;
+    }
+
+    await (prisma as any).outlet.delete({
+      where: { id },
+    });
+
+    res.status(200).json({ ok: true, message: "Virtual outlet removed" });
+  } catch (err) {
+    sendServerError(res, err, "DELETE /outlets/virtual/:id");
+  }
+});
+
 export const virtualOutletsRouter = router;
+

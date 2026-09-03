@@ -521,6 +521,14 @@ router.patch("/items/:menuItemId/availability", requireAuth, requirePermission("
       },
     }).catch(() => {});
 
+    import("../websockets").then(({ broadcast }) => {
+      broadcast(outletId, "item.availability_changed", {
+        itemId: item.id,
+        isStocked: nextState !== "OFF",
+        version: newVersion,
+      });
+    }).catch(() => {});
+
     res.status(200).json({ newVersion, isStocked: nextState !== "OFF" });
   } catch (err: any) {
     console.error(err);
@@ -528,4 +536,213 @@ router.patch("/items/:menuItemId/availability", requireAuth, requirePermission("
   }
 });
 
+// POST /menu/sync — triggers full channel sync and updates lastMenuSyncAt
+router.post("/sync", requireAuth, requirePermission("menu.item.manage"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const now = new Date();
+
+    await prisma.outlet.update({
+      where: { id: outletId },
+      data: { lastMenuSyncAt: now },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        outletId,
+        actor_id: req.auth!.userId,
+        action: "CREATE",
+        entityType: "MENU_SYNC",
+        entityId: outletId,
+        beforeState: {},
+        afterState: { syncedAt: now.toISOString() },
+      },
+    }).catch(() => {});
+
+    import("../websockets").then(({ broadcast }) => {
+      broadcast(outletId, "menu.synced", {
+        outletId,
+        syncedAt: now.toISOString(),
+        syncedBy: req.auth!.userId,
+      });
+    }).catch(() => {});
+
+    res.status(200).json({
+      ok: true,
+      syncedAt: now.toISOString(),
+      message: "Menu catalog successfully synced across all POS terminals and online delivery channels.",
+    });
+  } catch (err: any) {
+    console.error("Error syncing menu:", err);
+    res.status(500).json({ error: err.message || "Failed to sync menu" });
+  }
+});
+
+// GET /menu/stats — operational overview metrics for Menu & Discounts Hub
+router.get("/stats", requireAuth, requirePermission("menu.read"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+
+    const [totalItems, activeCategories, outlet, virtualOutletsCount, schedulesCount, specialNotesCount] = await Promise.all([
+      prisma.menuItem.count({ where: { outletId } }),
+      prisma.menuCategory.count({ where: { outletId } }),
+      prisma.outlet.findUnique({ where: { id: outletId } }),
+      prisma.outlet.count({ where: { OR: [{ parentOutletId: outletId }, { isVirtual: true }] } }),
+      (prisma as any).availability_schedules?.count({ where: { outlet_id: outletId } }).catch(() => 0) || 0,
+      (prisma as any).special_notes?.count({ where: { outlet_id: outletId } }).catch(() => 0) || 0,
+    ]);
+
+    const outOfStockCount = await prisma.menuItem.count({
+      where: { outletId, isActive: false },
+    });
+
+    res.status(200).json({
+      totalItems,
+      activeCategories,
+      outOfStockCount,
+      virtualOutletsCount,
+      schedulesCount,
+      specialNotesCount,
+      lastMenuSyncAt: (outlet as any)?.lastMenuSyncAt ? new Date((outlet as any).lastMenuSyncAt).toISOString() : null,
+      outletName: outlet?.name || "Hotel Kapila",
+    });
+  } catch (err: any) {
+    console.error("Error fetching menu stats:", err);
+    res.status(500).json({ error: err.message || "Failed to fetch menu stats" });
+  }
+});
+
+// PUT /menu/items/:id — update existing item details
+router.put("/items/:id", requireAuth, requirePermission("menu.item.manage"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const { name, description, priceMinor, isVeg, taxRate, categoryId, isActive, imageUrl } = req.body;
+
+    const existing = await prisma.menuItem.findFirst({
+      where: { id: req.params.id, outletId },
+    });
+
+    if (!existing) {
+      res.status(404).json({ error: "Menu item not found" });
+      return;
+    }
+
+    const updated = await prisma.menuItem.update({
+      where: { id: req.params.id },
+      data: {
+        ...(name ? { name: String(name).trim() } : {}),
+        ...(description !== undefined ? { description: description ? String(description).trim() : null } : {}),
+        ...(priceMinor !== undefined ? { priceMinor: BigInt(priceMinor) } : {}),
+        ...(typeof isVeg === "boolean" ? { isVeg } : {}),
+        ...(taxRate !== undefined ? { taxRate: Number(taxRate) } : {}),
+        ...(categoryId ? { categoryId } : {}),
+        ...(typeof isActive === "boolean" ? { isActive } : {}),
+      },
+    });
+
+    import("../websockets").then(({ broadcast }) => {
+      broadcast(outletId, "menu.updated", { itemId: updated.id, action: "ITEM_UPDATED" });
+    }).catch(() => {});
+
+    res.status(200).json({ ...updated, priceMinor: String(updated.priceMinor) });
+  } catch (err: any) {
+    console.error("Error updating menu item:", err);
+    res.status(500).json({ error: err.message || "Failed to update item" });
+  }
+});
+
+// DELETE /menu/items/:id — delete item
+router.delete("/items/:id", requireAuth, requirePermission("menu.item.manage"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+
+    const existing = await prisma.menuItem.findFirst({
+      where: { id: req.params.id, outletId },
+    });
+
+    if (!existing) {
+      res.status(404).json({ error: "Menu item not found" });
+      return;
+    }
+
+    await prisma.menuItem.delete({
+      where: { id: req.params.id },
+    });
+
+    import("../websockets").then(({ broadcast }) => {
+      broadcast(outletId, "menu.updated", { itemId: req.params.id, action: "ITEM_DELETED" });
+    }).catch(() => {});
+
+    res.status(200).json({ ok: true, message: "Item deleted successfully" });
+  } catch (err: any) {
+    console.error("Error deleting menu item:", err);
+    res.status(500).json({ error: err.message || "Failed to delete item" });
+  }
+});
+
+// PUT /menu/categories/:id — update category
+router.put("/categories/:id", requireAuth, requirePermission("menu.category.manage"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const { name, description, sortOrder } = req.body;
+
+    const existing = await prisma.menuCategory.findFirst({
+      where: { id: req.params.id, outletId },
+    });
+
+    if (!existing) {
+      res.status(404).json({ error: "Category not found" });
+      return;
+    }
+
+    const updated = await prisma.menuCategory.update({
+      where: { id: req.params.id },
+      data: {
+        ...(name ? { name: String(name).trim() } : {}),
+        ...(description !== undefined ? { description: description ? String(description).trim() : null } : {}),
+        ...(sortOrder !== undefined ? { sortOrder: Number(sortOrder) } : {}),
+      },
+    });
+
+    import("../websockets").then(({ broadcast }) => {
+      broadcast(outletId, "menu.updated", { categoryId: updated.id, action: "CATEGORY_UPDATED" });
+    }).catch(() => {});
+
+    res.status(200).json(updated);
+  } catch (err: any) {
+    console.error("Error updating category:", err);
+    res.status(500).json({ error: err.message || "Failed to update category" });
+  }
+});
+
+// DELETE /menu/categories/:id — delete category
+router.delete("/categories/:id", requireAuth, requirePermission("menu.category.manage"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+
+    const existing = await prisma.menuCategory.findFirst({
+      where: { id: req.params.id, outletId },
+    });
+
+    if (!existing) {
+      res.status(404).json({ error: "Category not found" });
+      return;
+    }
+
+    await prisma.menuCategory.delete({
+      where: { id: req.params.id },
+    });
+
+    import("../websockets").then(({ broadcast }) => {
+      broadcast(outletId, "menu.updated", { categoryId: req.params.id, action: "CATEGORY_DELETED" });
+    }).catch(() => {});
+
+    res.status(200).json({ ok: true, message: "Category deleted successfully" });
+  } catch (err: any) {
+    console.error("Error deleting category:", err);
+    res.status(500).json({ error: err.message || "Failed to delete category" });
+  }
+});
+
 export const menuRouter = router;
+

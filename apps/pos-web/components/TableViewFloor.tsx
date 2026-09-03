@@ -392,7 +392,7 @@ export default function TableViewFloor({
             type="button"
             className="btn-toolbar-icon"
             onClick={fetchTablesData}
-            title="Refresh Table Floor"
+            title="Refresh Tables Status"
           >
             🔄
           </button>

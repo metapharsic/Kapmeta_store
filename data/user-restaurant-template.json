@@ -59,6 +59,14 @@
       "firstName": "Head",
       "lastName": "Chef",
       "role": "KITCHEN_USER"
+    },
+    {
+      "email": "waiter@hotelkapila.com",
+      "password": "password123",
+      "pin": "1234",
+      "firstName": "Ramesh",
+      "lastName": "Captain",
+      "role": "WAITER"
     }
   ],
   "categories": [

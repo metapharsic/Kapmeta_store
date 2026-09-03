@@ -1,8 +1,8 @@
 {
   "activePhase": "Phase 4 - Pilot & Production Readiness",
   "version": "1.3.0",
-  "lastUpdated": "2026-08-22T12:37:00.408Z",
-  "totalMilestones": 10,
+  "lastUpdated": "2026-09-04T01:05:00.000Z",
+  "totalMilestones": 13,
   "passedMilestones": [
     "CP-01",
     "CP-03",
@@ -12,12 +12,15 @@
     "CP-07",
     "CP-02",
     "CP-00",
-    "CP-08"
+    "CP-08",
+    "CP-25",
+    "CP-26",
+    "CP-27"
   ],
-  "inProgressMilestones": [],
-  "pendingMilestones": [
+  "inProgressMilestones": [
     "CP-09"
   ],
+  "pendingMilestones": [],
   "blockers": [],
   "verificationStatus": {
     "database": "CONNECTED",
@@ -91,9 +94,31 @@
     },
     "CP-09": {
       "name": "Production Go-Live",
-      "status": "NOT_STARTED",
+      "status": "IN_PROGRESS",
       "phase": 16,
-      "signOff": "Pending pilot certification"
+      "signOff": "Rollout and gate verification in progress",
+      "date": "2026-09-04"
+    },
+    "CP-25": {
+      "name": "Inventory & Stock Closing Suite",
+      "status": "PASSED",
+      "phase": 17,
+      "signOff": "Daily closing tracker, stock purchase, PO/GRN ingestion and COGS metrics",
+      "date": "2026-09-03"
+    },
+    "CP-26": {
+      "name": "Menu & Discounts Dynamic Suite",
+      "status": "PASSED",
+      "phase": 18,
+      "signOff": "Live DB sync, multi-channel pricing, virtual outlets, and image registry",
+      "date": "2026-09-04"
+    },
+    "CP-27": {
+      "name": "Navigation Architecture & Sidebar Taxonomy",
+      "status": "PASSED",
+      "phase": 19,
+      "signOff": "Separation of Sales & Reports, inventory reports wiring, A2A telemetry",
+      "date": "2026-09-04"
     }
   }
 }
