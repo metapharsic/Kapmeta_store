@@ -299,3 +299,12 @@ Frontend: 4 real pages under `pages/reports/`, all wired to the endpoints above 
 Personally verified before committing: read the migration, the report-notifications route file (confirmed `$queryRaw` tagged-template parameterization, not string-built SQL), the two new finance.ts endpoints against `GET /z-report`'s and `GET /orders/online`'s existing patterns, the schema.prisma model, the Nav.tsx diff, and the report-catalog's endpoint list against `reporting.ts`'s actual mounted routes (`/reporting/*` prefix confirmed in app.ts). tsc: pos-web 0 new errors, api 91 (unchanged baseline).
 
 User must run `npm run db:migrate` again (0052) and restart the API.
+
+## 2026-09-03 — CP-23: Management section built
+Reference: 14 screenshots of real app Management nav (Configuration/Accounting/User Management/User Logs).
+- db/migrations/0053: management_lists, management_settings, management_activity_logs (TEXT ids, outlet-scoped).
+- apps/api/routes/management.ts: generic CRUD lists/settings, log reader, biller-app real-user-by-role lookup. No fake role codes invented (repo has none — roles are free text).
+- Real log write wired: online item on/off toggle now logs to management_activity_logs. All other log types legitimately empty until more write points wired (TSK not blocking).
+- Nav.tsx/KapMetaHeader.tsx: two-level nested Management drawer (Configuration/Accounting/User Management/User Logs sub-groups), additive only, other groups untouched.
+- 14 real screens wired to generic list/settings/logs/biller-app pages via management-catalog.ts. Explore Products/Audit Trail/Device Mapping: honest coming-soon stubs (no backend spec yet, TSK-039).
+- Verified: tsc clean on all touched/new files (apps/api + pos-web), git diff reviewed, DB convention (TEXT ids) followed throughout. Not migrated live (db:migrate must run on user's machine). Committed ef016e1.

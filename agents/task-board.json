@@ -800,6 +800,22 @@
       "status": "PENDING",
       "priority": "P0",
       "relatedGate": "CP-22"
+    },
+    {
+      "taskId": "TSK-038",
+      "title": "Management section: nested nav + generic lists/settings/logs backend + Biller App",
+      "assignedTo": "multi-agent(backend+frontend)",
+      "status": "DONE",
+      "priority": "HIGH",
+      "relatedGate": "CP-23"
+    },
+    {
+      "taskId": "TSK-039",
+      "title": "Explore Products / Audit Trail / Device Mapping have no real backend yet, stub pages only",
+      "assignedTo": "unassigned",
+      "status": "PENDING",
+      "priority": "LOW",
+      "relatedGate": "CP-23"
     }
   ]
 }
