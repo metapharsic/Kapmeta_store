@@ -150,11 +150,16 @@ export const SIDEBAR_GROUPS: SidebarGroupDef[] = [
     id: "reports",
     header: "Reports",
     links: [
-      { href: "/admin?tab=analytics", permission: "report.read", label: "Sales Analytics" },
-      { href: "/finance", permission: "report.read", label: "Day-End Settlement / Z-Report" },
-      { href: "/kitchen-analytics", permission: "report.read", label: "Kitchen Prep Times" },
-      { href: "/waiter-monitor", permission: "report.read", label: "Waiter Floor Monitor" },
-      { href: "/admin?tab=audit", permission: "report.read", label: "Audit Log" },
+      // Sales Analytics, Day-End Settlement / Z-Report, Kitchen Prep Times,
+      // Waiter Floor Monitor and Audit Log used to be flat links here.
+      // They are not gone or orphaned — every one of them is still
+      // reachable, now as a card inside /reports/other-reports (see
+      // lib/report-catalog.ts), matching the reference design's 4-link
+      // Reports section below.
+      { href: "/reports/day-end-summary", permission: "report.read", label: "Day End Summary" },
+      { href: "/reports/other-reports", permission: "report.read", label: "Other Reports" },
+      { href: "/reports/report-notification", permission: "report.read", label: "Report Notification" },
+      { href: "/reports/delivery-management", permission: "report.read", label: "Delivery Management" },
     ],
   },
   {

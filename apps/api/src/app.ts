@@ -30,6 +30,7 @@ import { virtualOutletsRouter } from './routes/virtual-outlets';
 import { menuSchedulingRouter } from './routes/menu-scheduling';
 import { taxSettingsRouter } from './routes/tax-settings';
 import { adminRouter } from './routes/admin';
+import { reportNotificationsRouter } from './routes/report-notifications';
 import { mapDomainError } from './errors';
 
 // Global BigInt JSON serialization support for Express
@@ -79,6 +80,7 @@ export function createApp(): Express {
   app.use('/outlets', virtualOutletsRouter);
   app.use('/menu-scheduling', menuSchedulingRouter);
   app.use(taxSettingsRouter);
+  app.use(reportNotificationsRouter);
 
   app.get('/health', (_req, res) => res.json({ status: 'ok' }));
   app.get('/healthz', (_req, res) => res.json({ status: 'ok' }));

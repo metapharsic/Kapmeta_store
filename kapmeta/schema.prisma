@@ -1695,3 +1695,25 @@ model StockConsumptionItem {
   @@index([consumptionId], map: "idx_stock_consumption_items_consumption")
   @@map("stock_consumption_items")
 }
+
+/// New table (migration 0052) -- backs the Reports > "Report Notification"
+/// screen. TEXT id/outlet_id, gen_random_uuid()::text default: same
+/// convention as item_availability (comment added in migration 0045) since
+/// ground truth from scripts/inspect-db-v2.js shows this entire live
+/// database uses TEXT for id and every FK column, never uuid.
+///
+/// Subscription intent only -- no code anywhere in this repo actually sends
+/// a report on a schedule; is_active just means "someone asked to be
+/// subscribed". See migration 0052's header for the full reasoning.
+model report_notifications {
+  id         String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  outlet_id  String
+  report_key String
+  frequency  String
+  recipients String
+  is_active  Boolean  @default(true)
+  created_by String?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([outlet_id], map: "idx_report_notifications_outlet")
+}

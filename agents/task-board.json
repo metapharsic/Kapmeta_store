@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-09-03T13:08:27Z",
+  "lastUpdated": "2026-09-03T14:08:03Z",
   "activeTasks": [
     {
       "taskId": "TSK-001",
@@ -768,6 +768,38 @@
       "status": "COMPLETED",
       "priority": "P2",
       "relatedGate": "CP-21"
+    },
+    {
+      "taskId": "TSK-035",
+      "title": "DB+Backend: report_notifications table (0052) + CRUD routes (raw SQL, no Prisma client regen possible in sandbox), GET /finance/day-end-summary (real per-day z-reports over a range), GET /finance/delivery-management (real aggregator order counts by day/provider)",
+      "assignedTo": "database-agent",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "relatedGate": "CP-22"
+    },
+    {
+      "taskId": "TSK-036",
+      "title": "Frontend: 4 real Reports screens (day-end-summary, delivery-management, report-notification, other-reports) + generic report viewer (reports/view.tsx) + report-catalog.ts cataloguing all ~20 real report endpoints/pages into 7 categories, Nav.tsx Reports group replaced to match reference (old links preserved as catalog cards)",
+      "assignedTo": "frontend-agent",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "relatedGate": "CP-22"
+    },
+    {
+      "taskId": "TSK-037",
+      "title": "prisma generate cannot run in this cloud sandbox (403 fetching query-engine binary, no network path) - report_notifications table has no Prisma delegate, routes use  as a workaround; user should run prisma generate for real once, then it can be switched to a normal delegate (not blocking, current routes work either way)",
+      "assignedTo": "user",
+      "status": "PENDING",
+      "priority": "P3",
+      "relatedGate": "CP-22"
+    },
+    {
+      "taskId": "TSK-020-U3",
+      "title": "USER ACTION: npm run db:migrate again (picks up 0052), restart API, check Reports section (4 new screens)",
+      "assignedTo": "user",
+      "status": "PENDING",
+      "priority": "P0",
+      "relatedGate": "CP-22"
     }
   ]
 }

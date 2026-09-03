@@ -93,6 +93,160 @@ financeRouter.get("/z-report", requireAuth, requirePermission("report.read"), as
   }
 });
 
+// Day End Summary — one z-report-shaped entry per calendar day in
+// [startDate, endDate] that actually had at least one COMPLETED order.
+// Reuses the exact same generator as GET /z-report above (per-day, in
+// parallel) rather than a second aggregate implementation, so this can
+// never drift from what a single-day Z-report shows for the same day.
+// Days with zero orders are simply omitted from the array — never emitted
+// as a fabricated all-zero row (AGENTS.md Rule 1: no hardcoded/fabricated
+// business data, and that includes fake "nothing happened" rows for a
+// range nobody asked to see padded out).
+const DAY_END_SUMMARY_MAX_DAYS = 92; // ~90 days per the task spec, rounded up to a full quarter; bounds the per-day loop below.
+
+financeRouter.get("/day-end-summary", requireAuth, requirePermission("report.read"), async (req: AuthedRequest, res) => {
+  const startParam = req.query.startDate as string | undefined;
+  const endParam = req.query.endDate as string | undefined;
+
+  if (!startParam || !endParam) {
+    return res.status(400).json({ error: "startDate and endDate query params are required (YYYY-MM-DD)" });
+  }
+
+  const startDate = new Date(startParam);
+  const endDate = new Date(endParam);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+    return res.status(400).json({ error: "startDate/endDate must be valid dates" });
+  }
+  if (endDate < startDate) {
+    return res.status(400).json({ error: "endDate must not be before startDate" });
+  }
+
+  const dayCount = Math.floor((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+  if (dayCount > DAY_END_SUMMARY_MAX_DAYS) {
+    return res.status(400).json({ error: `date range too large — max ${DAY_END_SUMMARY_MAX_DAYS} days` });
+  }
+
+  try {
+    const outletId = req.auth!.outletId;
+
+    const days: Date[] = [];
+    for (let i = 0; i < dayCount; i++) {
+      const d = new Date(startDate);
+      d.setDate(d.getDate() + i);
+      days.push(d);
+    }
+
+    const reports = await Promise.all(days.map((d) => zReportGenerator.generateDailyReport(outletId, d)));
+
+    // "actually has at least one order" — invoiceCount is the count of
+    // COMPLETED orders the generator found for that business day (same
+    // definition GET /z-report already uses for a single day).
+    const nonEmpty = reports.filter((r) => r.invoiceCount > 0);
+
+    const serialized = nonEmpty.map((report) => {
+      const paymentModesStr: Record<string, string> = {};
+      for (const [k, v] of Object.entries(report.paymentModes)) {
+        paymentModesStr[k] = v.toString();
+      }
+      return {
+        ...report,
+        totalSales: report.totalSales.toString(),
+        totalTax: report.totalTax.toString(),
+        grandTotal: report.grandTotal.toString(),
+        totalTips: report.totalTips.toString(),
+        totalServiceCharge: report.totalServiceCharge.toString(),
+        handoverCashCounted: report.handoverCashCounted.toString(),
+        handoverTipPayout: report.handoverTipPayout.toString(),
+        handoverDigitalTips: report.handoverDigitalTips.toString(),
+        paymentModes: paymentModesStr,
+      };
+    });
+
+    res.status(200).json(serialized);
+  } catch (error: any) {
+    console.error("Error in GET /day-end-summary:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delivered = order reached HANDED_OVER or COMPLETED. Per the order state
+// machine (packages/shared-types/orders.ts ORDER_TRANSITIONS), a delivery/
+// aggregator order's only forward path from OUT_FOR_DELIVERY is
+// HANDED_OVER -> COMPLETED, so either status means the customer/rider has
+// it — same statuses orders.ts's RUNNING_ORDER_STATUSES treats as no
+// longer "running" once past HANDED_OVER. No separate "DELIVERED" status
+// exists anywhere in this schema, so this is not a new status, just the
+// existing two read as "delivered" for this screen.
+const DELIVERED_ORDER_STATUSES = ["HANDED_OVER", "COMPLETED"];
+
+// Delivery Management — real aggregator/delivery order data for the
+// outlet. byDay/byProvider power the two charts on the screen; there is no
+// credits/wallet table anywhere in this schema, so this endpoint does not
+// (and cannot honestly) return "Credit Remaining" / "Credit Purchase Till
+// Now" — the frontend renders those as an honest placeholder instead.
+financeRouter.get("/delivery-management", requireAuth, requirePermission("report.read"), async (req: AuthedRequest, res) => {
+  try {
+    const outletId = req.auth!.outletId;
+    const { startDate, endDate, provider } = req.query as { startDate?: string; endDate?: string; provider?: string };
+
+    // Default to the last 7 days, matching the "Last 7 Days ..." charts on
+    // this screen, when no explicit range is given.
+    const end = endDate ? new Date(endDate) : new Date();
+    const start = startDate ? new Date(startDate) : new Date(end.getTime() - 6 * 24 * 60 * 60 * 1000);
+
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return res.status(400).json({ error: "startDate/endDate must be valid dates" });
+    }
+
+    const providerUpper = String(provider || "ALL").trim().toUpperCase() || "ALL";
+
+    // Same channel-scoping convention as GET /orders/online (orders.ts):
+    // channel: { not: null } for "ALL", channel: <PROVIDER> for one.
+    const orders = await prisma.order.findMany({
+      where: {
+        outletId,
+        ...(providerUpper === "ALL" ? { channel: { not: null } } : { channel: providerUpper }),
+        createdAt: { gte: start, lte: end },
+      },
+      select: { id: true, channel: true, status: true, createdAt: true },
+    });
+
+    const byDayMap = new Map<string, number>();
+    const byProviderMap = new Map<string, number>();
+    let deliveredCount = 0;
+
+    for (const o of orders) {
+      const dayKey = o.createdAt.toISOString().slice(0, 10);
+      byDayMap.set(dayKey, (byDayMap.get(dayKey) ?? 0) + 1);
+
+      const prov = (o.channel || "UNKNOWN").toUpperCase();
+      byProviderMap.set(prov, (byProviderMap.get(prov) ?? 0) + 1);
+
+      if (DELIVERED_ORDER_STATUSES.includes(String(o.status || "").toUpperCase())) {
+        deliveredCount += 1;
+      }
+    }
+
+    const byDay = Array.from(byDayMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, orderCount]) => ({ date, orderCount }));
+
+    const byProvider = Array.from(byProviderMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([provider, orderCount]) => ({ provider, orderCount }));
+
+    res.status(200).json({
+      byDay,
+      byProvider,
+      deliveredCount,
+      totalCount: orders.length,
+    });
+  } catch (error: any) {
+    console.error("Error in GET /delivery-management:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Reprint an invoice — increments reprintCount for leakage tracking.
 financeRouter.post("/invoices/:id/reprint", requireAuth, requirePermission("bill.reprint"), async (req: AuthedRequest, res) => {
   const { id } = req.params;
