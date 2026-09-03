@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-09-02T18:58:36Z",
+  "lastUpdated": "2026-09-03T11:51:50Z",
   "activeTasks": [
     {
       "taskId": "TSK-001",
@@ -693,6 +693,72 @@
       "assignedTo": "database-agent",
       "status": "PENDING",
       "priority": "P1",
+      "relatedGate": "CP-20"
+    },
+    {
+      "taskId": "TSK-029",
+      "title": "DB: repair customers/modifier_groups/recipes/purchase_order_items (0046, edited-after-applied class)",
+      "assignedTo": "database-agent",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "relatedGate": "CP-20"
+    },
+    {
+      "taskId": "TSK-030",
+      "title": "DB: repair full seat & merge chain - dining_tables.version/covers, table_merge_groups/members, table_seats, orders.merge_group_id+covers+split_mode+merged_into_order_id, order_items seat/split cols, order_seat_bills, order_item_seat_shares, kot_items.outlet_id+seat_id, payments.seat_id+order_seat_bill_id (0047, UUID-vs-TEXT FK rollback class - fixed GET /orders/advance from CP-20 bug report)",
+      "assignedTo": "database-agent",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "relatedGate": "CP-20"
+    },
+    {
+      "taskId": "TSK-031",
+      "title": "DB: repair waiter_shift_handovers table (0048)",
+      "assignedTo": "database-agent",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "relatedGate": "CP-20"
+    },
+    {
+      "taskId": "TSK-032",
+      "title": "DB: repair order_refunds table (0049)",
+      "assignedTo": "database-agent",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "relatedGate": "CP-20"
+    },
+    {
+      "taskId": "TSK-025",
+      "title": "availability_schedules table also missing live - repaired via migration 0050",
+      "assignedTo": "database-agent",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "relatedGate": "CP-20",
+      "note": "supersedes pending TSK-025"
+    },
+    {
+      "taskId": "TSK-026",
+      "title": "user_quick_links.updated_at + notifications.updated_at missing live - repaired via migration 0051",
+      "assignedTo": "database-agent",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "relatedGate": "CP-20",
+      "note": "supersedes pending TSK-026"
+    },
+    {
+      "taskId": "TSK-033",
+      "title": "finance.ts GET /refunds returns hardcoded reasonCode/status literals (order_refunds has no such columns) - possible AGENTS.md Rule 1 issue, spotted not fixed, needs design decision",
+      "assignedTo": "backend-agent",
+      "status": "PENDING",
+      "priority": "P2",
+      "relatedGate": "CP-20"
+    },
+    {
+      "taskId": "TSK-020-U2",
+      "title": "USER ACTION: npm run db:migrate again (picks up 0046-0051), restart API, re-check Advance Order tab + wider app",
+      "assignedTo": "user",
+      "status": "PENDING",
+      "priority": "P0",
       "relatedGate": "CP-20"
     }
   ]

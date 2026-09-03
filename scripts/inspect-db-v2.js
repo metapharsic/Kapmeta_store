@@ -34,6 +34,16 @@ const TABLES = [
   'order_payments', 'orders', 'item_channel_prices', 'daily_stock_closings',
   'stock_purchases', 'stock_purchase_items', 'stock_consumptions', 'stock_consumption_items',
   'item_commissions', 'addon_commissions', 'physical_menu_files',
+  // Added for migration 0047-0051's repair series (CP-20+ session): none of
+  // these were directly confirmed TEXT/UUID by an earlier run of this
+  // script, so those migrations defaulted them to TEXT per the documented
+  // convention (every table checked so far is TEXT except integrations/
+  // channel_accounts.integration_id). Re-run this script and diff the
+  // output against that assumption.
+  'dining_tables', 'table_seats', 'table_merge_groups', 'table_merge_members',
+  'order_seat_bills', 'order_item_seat_shares', 'order_items', 'payments',
+  'kot_items', 'modifier_groups', 'roles', 'customers', 'notifications',
+  'user_quick_links', 'order_refunds', 'waiter_shift_handovers',
 ];
 
 async function run() {
@@ -55,7 +65,10 @@ async function run() {
     const res = await client.query(
       `SELECT column_name, data_type, udt_name, is_nullable
        FROM information_schema.columns
-       WHERE table_name = $1 AND column_name IN ('id', 'outlet_id', 'item_id', 'integration_id', 'channel_id')
+       WHERE table_name = $1 AND column_name IN ('id', 'outlet_id', 'item_id', 'integration_id',
+         'channel_id', 'order_id', 'order_item_id', 'dining_table_id', 'seat_id', 'po_id',
+         'vendor_id', 'recipe_id', 'menu_item_id', 'user_id', 'customer_id', 'category_id',
+         'merge_group_id', 'waiter_id', 'organization_id', 'primary_table_id')
        ORDER BY column_name`,
       [t]
     );
