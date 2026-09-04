@@ -4,6 +4,15 @@
 
 A checkpoint is a gate. Work does not pass it until every exit criterion is objectively verifiable and signed. "Mostly done" does not pass a checkpoint.
 
+
+> **Scope note (2026-09-04).** This file is the **formal gate ledger**: what each
+> planning-phase checkpoint (CP-01 …) means, its exit criteria, and its sign-off state.
+> It does **not** carry the running operational history. For the session-by-session
+> record of gates CP-20 through CP-30 — what broke, root cause, fix, commit hash — see
+> [CHECKPOINT_LOG.md](CHECKPOINT_LOG.md). For how a gate gets numbered and closed, see
+> [HOW_CHECKPOINTS_WORK.md](HOW_CHECKPOINTS_WORK.md). The three files are complementary,
+> not duplicates: definition, history, convention.
+
 > **Update (2026-08-09):** **CP-01 (Design System Approved)** passed 🟢. All R1 screens (Register, KDS, Stock Control, Analytics Reports) wireframed and specified with complete states under the unified Light SaaS Design System (Nonprofit CRM aesthetic reference), design tokens baselined, and touch/accessibility standards verified in `ui-ux-artifacts/`.
 
 ---

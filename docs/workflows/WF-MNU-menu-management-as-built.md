@@ -71,7 +71,7 @@ fetched the menu once on page mount — no periodic refresh. An admin's live
 reload. Fixed by:
 - Adding menu refresh to `waiter.tsx`'s existing 15-second poll loop — the
   same polling pattern `kitchen.tsx` already used for KOT tickets (see
-  `DINE_IN_ORDER_FLOW.md` §5).
+  `WF-ORD-dine-in-as-built.md` §5).
 - Adding a silent 15-second poll on the admin side (`menu.tsx`) as well, so
   two admins editing concurrently also converge.
 

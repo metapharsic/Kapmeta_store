@@ -60,7 +60,7 @@ Staff-facing: `PosBillingView.tsx` (2263 lines) has `DINE_IN` / `DELIVERY` /
 round's STATUS.md entry ("User: enable Dine In/Delivery/Pick Up and sync
 with the app. Found: POS terminal already fully wired for all 3
 orderTypes."). Orders placed here go through the same `POST /orders` route
-in `orders.ts` that the dine-in trace uses (see `DINE_IN_ORDER_FLOW.md`).
+in `orders.ts` that the dine-in trace uses (see `WF-ORD-dine-in-as-built.md`).
 
 ## The real, honest gap
 

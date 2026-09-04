@@ -4,7 +4,7 @@
 premise this decision was originally framed under — see Correction below)
 **Date:** 2026-09-04
 **Deciders:** Frontend/Backend agents (this session)
-**Related:** `docs/architecture/SYSTEM_OVERVIEW.md`,
+**Related:** `docs/03-architecture/system-overview-as-built.md`,
 `docs/brain/BUSINESS_RULES.md`
 
 ## Correction to the original framing

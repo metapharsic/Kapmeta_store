@@ -48,5 +48,5 @@ Each entry in `agents[]` carries exactly these fields:
   contention and concurrent edits to the same files during sessions. Registry territories
   do not protect against those — only sequencing and `git status` checks do.
 
-Related: `docs/agents/DISPATCH_PATTERN.md`, `docs/architecture/A2A_MULTI_AGENT.md`,
+Related: `docs/agents/DISPATCH_PATTERN.md`, `docs/03-architecture/a2a-multi-agent-as-built.md`,
 `docs/checkpoints/HOW_CHECKPOINTS_WORK.md`.

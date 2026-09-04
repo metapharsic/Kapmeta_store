@@ -35,7 +35,7 @@ This file is the current-state map after this session's work.
   and a `README.md`). `scripts/inspect-db-v2.js` is the live-DB ground-
   truth diagnostic tool written this session — see
   `docs/adr/0009-text-ids-not-uuid.md`. Full convention notes in
-  `docs/architecture/DATABASE.md`.
+  `docs/05-database/database-conventions-as-built.md`.
 - **Public customer-order surface** — `apps/api/src/routes/
   public-order.ts`: unauthenticated (no `requireAuth`) endpoints
   `GET /public/tables/:tableId/menu`, `GET /public/outlets/

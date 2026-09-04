@@ -60,7 +60,7 @@ bigger than the one screen:
 - `OrderStatusHistory.create` silently failed on every webhook call —
   `to_status` should have been `status`, and `outletId` was missing
   entirely — so no aggregator order ever got a status-history row (see also
-  `DINE_IN_ORDER_FLOW.md` §7, which cites this same fix as the closest real
+  `WF-ORD-dine-in-as-built.md` §7, which cites this same fix as the closest real
   bug touching order-status tracking this session).
 - `AuditLog.create` used a nonexistent `actor_id` field with **no
   `.catch()` guard** — so it 500'd back to the aggregator *after* the order

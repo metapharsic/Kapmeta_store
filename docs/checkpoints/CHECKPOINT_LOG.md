@@ -2,6 +2,14 @@
 
 A readable digest of this session's operational checkpoint history, pulled
 from `agents/STATUS.md` and cross-checked against `git log`. This is not a
+
+> **Scope note (2026-09-04).** This file is the **operational history** of gates CP-20
+> onward. The formal gate ledger with exit criteria and sign-off state for the
+> planning-phase checkpoints (CP-01 …) lives in [CHECKPOINTS.md](CHECKPOINTS.md); the
+> numbering and closure convention lives in
+> [HOW_CHECKPOINTS_WORK.md](HOW_CHECKPOINTS_WORK.md). Definition, history, convention —
+> three files, no overlap.
+
 copy of STATUS.md — it is organized one entry per gate, each with: what
 broke or was requested, what was found (root cause), what was fixed, and the
 real commit hash(es).
@@ -189,7 +197,7 @@ entry (Dine In / Delivery / Pickup cards, phone+address collection for the
 latter two); `[tableId].tsx` refactored onto a shared `PublicOrderMenu`
 component. No fake customer fields invented — phone/address folded into
 order-line notes since no dedicated server-side field exists, documented
-rather than silently dropped (see `DELIVERY_PICKUP_ORDER_FLOW.md`).
+rather than silently dropped (see `WF-ORD-delivery-pickup-as-built.md`).
 
 **Commit:** `f1a6460`. Note: a stale `.git/index.lock` from a timed-out
 heredoc hit mid-round was cleared after confirming no live git process; the

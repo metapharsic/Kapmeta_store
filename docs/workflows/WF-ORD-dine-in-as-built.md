@@ -67,7 +67,7 @@ tickets (`QUEUED`/`PREPARING`/`READY`) plus a short recall grace window
 `@kapmeta/kitchen`) so a chef can un-serve a just-completed ticket by
 mistake. `kitchen.tsx` polls this endpoint — the same 15-second poll
 convention CP-24 later reused for `waiter.tsx`'s menu refresh (see
-`MENU_MANAGEMENT_FLOW.md`). A separate history view exists at
+`WF-MNU-menu-management-as-built.md`). A separate history view exists at
 `GET /kitchen/kot/history` (line 217) for closed tickets, surfaced via
 `KotHistoryView.tsx` / `/kitchen?view=list` (added in CP-16).
 
