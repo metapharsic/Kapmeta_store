@@ -714,48 +714,37 @@ export class PrismaOrderRepository implements OrderRepository {
     outletId: string,
     orderId: string,
     tipMinor: bigint,
-    serviceChargeMinor: bigint
-  ): Promise<{ tipTotalMinor: bigint; serviceChargeTotalMinor: bigint; grandTotalMinor: bigint }> {
+    serviceChargeMinor: bigint,
+    discountMinor: bigint = 0n
+  ): Promise<{ tipTotalMinor: bigint; serviceChargeTotalMinor: bigint; discountTotalMinor: bigint; grandTotalMinor: bigint }> {
     return this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findFirstOrThrow({ where: { id: orderId, outletId } });
       const currentTip = order.tipTotal || 0n;
       const currentService = order.serviceChargeTotal || 0n;
+      const currentDiscount = order.discountTotal || 0n;
       const tipDelta = tipMinor - currentTip;
       const serviceDelta = serviceChargeMinor - currentService;
+      // Discount is applied post-tax on the tax-inclusive grand total (grandTotal =
+      // subtotal - discount + tip + serviceCharge — same convention used by the
+      // /split-by-seat allocation in orders.ts), so its delta is *subtracted*.
+      const discountDelta = discountMinor - currentDiscount;
 
       const updated = await tx.order.update({
         where: { id: orderId },
         data: {
           tipTotal: tipMinor,
           serviceChargeTotal: serviceChargeMinor,
-          grandTotal: { increment: tipDelta + serviceDelta },
+          discountTotal: discountMinor,
+          grandTotal: { increment: tipDelta + serviceDelta - discountDelta },
         },
       });
 
-      // #region agent log
-      fetch("http://127.0.0.1:7323/ingest/28c85a32-5ef1-4fe5-9437-78139f7a5bfb", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c675b" },
-        body: JSON.stringify({
-          sessionId: "9c675b",
-          runId: "waiter-charges",
-          hypothesisId: "J",
-          location: "prisma-order-repository.ts:setCharges",
-          message: "charges persisted on order",
-          data: {
-            orderId,
-            tipMinor: tipMinor.toString(),
-            serviceChargeMinor: serviceChargeMinor.toString(),
-            persistedTip: updated.tipTotal.toString(),
-            persistedService: updated.serviceChargeTotal.toString(),
-            grandTotal: updated.grandTotal.toString(),
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
-
-      return { tipTotalMinor: updated.tipTotal, serviceChargeTotalMinor: updated.serviceChargeTotal, grandTotalMinor: updated.grandTotal };
+      return {
+        tipTotalMinor: updated.tipTotal,
+        serviceChargeTotalMinor: updated.serviceChargeTotal,
+        discountTotalMinor: updated.discountTotal || 0n,
+        grandTotalMinor: updated.grandTotal,
+      };
     });
   }
 

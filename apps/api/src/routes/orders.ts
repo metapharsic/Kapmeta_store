@@ -897,18 +897,20 @@ ordersRouter.patch("/orders/:id/items/:itemId/void", requireAuth, requirePermiss
 const handleCharges = async (req: AuthedRequest, res: any) => {
   try {
     const outletId = req.auth!.outletId;
-    const { tipMinor, serviceChargeMinor } = req.body;
+    const { tipMinor, serviceChargeMinor, discountMinor } = req.body;
 
     const updated = await orderRepo.setCharges(
       outletId,
       req.params.id,
       BigInt(tipMinor || 0),
-      BigInt(serviceChargeMinor || 0)
+      BigInt(serviceChargeMinor || 0),
+      BigInt(discountMinor || 0)
     );
     res.status(200).json({
       ...updated,
       tipTotalMinor: updated.tipTotalMinor.toString(),
       serviceChargeTotalMinor: updated.serviceChargeTotalMinor.toString(),
+      discountTotalMinor: updated.discountTotalMinor.toString(),
       grandTotalMinor: updated.grandTotalMinor.toString(),
     });
   } catch (err: any) {
@@ -1322,7 +1324,12 @@ ordersRouter.post(
           const tax = taxBySeat.get(seatNumber)!;
           const serviceCharge = serviceChargeBySeat.get(seatNumber)!;
           const tip = tipBySeat.get(seatNumber)!;
-          const grandTotal = subtotal - discount + tax + serviceCharge + tip;
+          // NOTE: tax is GST-inclusive and already lives inside `subtotal`
+          // (see priceOrder in services/orders/src/order-service.ts) — tax_total
+          // here is purely the informational CGST+SGST breakdown for the seat's
+          // printed bill, it must NOT be added again on top of subtotal or the
+          // per-seat grand totals sum to MORE than order.grandTotal by taxTotal.
+          const grandTotal = subtotal - discount + serviceCharge + tip;
 
           const existing = await (tx as any).order_seat_bills.findFirst({
             where: { outlet_id: outletId, order_id: orderId, seat_number: seatNumber },

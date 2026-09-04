@@ -219,27 +219,27 @@ export default function CaptainNavDrawer({
           left: 0;
           width: 100vw;
           height: 100vh;
-          background: rgba(2, 6, 23, 0.7);
-          backdrop-filter: blur(4px);
+          background: rgba(24, 24, 27, 0.4);
+          backdrop-filter: blur(8px);
           z-index: 200;
           display: flex;
         }
 
         .captain-drawer-panel {
-          width: 300px;
+          width: 320px;
           height: 100%;
-          background: #0f172a;
-          border-right: 1px solid #1e293b;
-          box-shadow: 8px 0 30px rgba(0, 0, 0, 0.5);
+          background: #ffffff;
+          border-right: 1px solid #f4f4f5;
+          box-shadow: 10px 0 40px rgba(0, 0, 0, 0.06);
           display: flex;
           flex-direction: column;
           animation: slideDrawer 0.22s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
         .captain-drawer-header {
-          padding: 20px 18px 16px 18px;
-          background: #1e293b;
-          border-bottom: 1px solid #334155;
+          padding: 22px 20px 18px 20px;
+          background: #ffffff;
+          border-bottom: 1px solid #f4f4f5;
         }
 
         .brand-badge-box {
@@ -249,15 +249,15 @@ export default function CaptainNavDrawer({
           gap: 10px;
         }
         .brand-logo-icon {
-          width: 38px;
-          height: 38px;
-          background: #3b82f6;
-          border-radius: 10px;
+          width: 40px;
+          height: 40px;
+          background: #18181b;
+          border-radius: 12px;
           display: flex;
           align-items: center;
           justify-content: center;
           font-size: 1.25rem;
-          box-shadow: 0 4px 10px rgba(59, 130, 246, 0.4);
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
         }
         .brand-titles {
           display: flex;
@@ -265,62 +265,68 @@ export default function CaptainNavDrawer({
           flex: 1;
         }
         .brand-title {
-          font-size: 0.875rem;
+          font-size: 0.9375rem;
           font-weight: 900;
-          color: #60a5fa;
+          color: #18181b;
           letter-spacing: 0.5px;
         }
         .brand-subtitle {
           font-size: 0.6875rem;
           font-weight: 800;
-          color: #94a3b8;
-          letter-spacing: 1px;
+          color: #71717a;
+          letter-spacing: 0.5px;
         }
         .btn-close-drawer {
-          background: transparent;
+          background: #f4f4f6;
           border: none;
-          color: #94a3b8;
-          font-size: 1.125rem;
+          color: #71717a;
+          font-size: 1rem;
           cursor: pointer;
-          padding: 4px;
-          border-radius: 6px;
+          width: 32px;
+          height: 32px;
+          border-radius: 999px;
           display: flex;
           align-items: center;
           justify-content: center;
+          transition: all 0.15s;
         }
         .btn-close-drawer:hover {
-          color: #ffffff;
-          background: #334155;
+          color: #18181b;
+          background: #e4e4e7;
         }
 
         .captain-meta-info {
-          margin-top: 12px;
+          margin-top: 14px;
           display: flex;
           flex-direction: column;
-          gap: 4px;
+          gap: 6px;
         }
         .version-station-row {
           display: flex;
           align-items: center;
           justify-content: space-between;
           font-size: 0.6875rem;
-          color: #94a3b8;
+          color: #71717a;
+          font-weight: 600;
         }
         .station-badge {
-          color: #facc15;
-          font-weight: 700;
+          color: #18181b;
+          font-weight: 800;
+          background: #f4f4f6;
+          padding: 2px 8px;
+          border-radius: 999px;
         }
         .outlet-name-text {
-          font-size: 0.75rem;
-          font-weight: 700;
-          color: #e2e8f0;
+          font-size: 0.8125rem;
+          font-weight: 800;
+          color: #18181b;
           display: flex;
           align-items: center;
           gap: 6px;
         }
 
         .captain-menu-list {
-          padding: 12px 10px;
+          padding: 14px 12px;
           display: flex;
           flex-direction: column;
           gap: 4px;
@@ -332,13 +338,13 @@ export default function CaptainNavDrawer({
           display: flex;
           align-items: center;
           gap: 12px;
-          padding: 12px 14px;
+          padding: 12px 16px;
           background: transparent;
           border: none;
-          border-radius: 10px;
-          color: #cbd5e1;
+          border-radius: 999px;
+          color: #18181b;
           font-size: 0.875rem;
-          font-weight: 600;
+          font-weight: 700;
           cursor: pointer;
           text-align: left;
           width: 100%;
@@ -346,31 +352,31 @@ export default function CaptainNavDrawer({
           position: relative;
         }
         .menu-item-btn:hover {
-          background: #1e293b;
-          color: #ffffff;
+          background: #f4f4f6;
+          color: #18181b;
           transform: translateX(3px);
         }
 
         .menu-icon {
-          font-size: 1.1rem;
+          font-size: 1.15rem;
         }
         .menu-label {
           flex: 1;
         }
 
         .unsuccessful-badge {
-          background: #dc2626;
+          background: #f43f5e;
           color: #ffffff;
           font-size: 0.6875rem;
           font-weight: 800;
-          padding: 2px 7px;
+          padding: 2px 8px;
           border-radius: 999px;
         }
 
         .captain-drawer-footer {
-          padding: 14px;
-          border-top: 1px solid #1e293b;
-          background: #0b1120;
+          padding: 16px;
+          border-top: 1px solid #f4f4f5;
+          background: #fafafa;
           display: flex;
           flex-direction: column;
           gap: 10px;
@@ -380,10 +386,11 @@ export default function CaptainNavDrawer({
           display: flex;
           align-items: center;
           gap: 10px;
-          background: #1e293b;
-          padding: 8px 12px;
-          border-radius: 10px;
-          border: 1px solid #334155;
+          background: #ffffff;
+          padding: 10px 14px;
+          border-radius: 999px;
+          border: 1px solid #f4f4f5;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
         }
         .staff-avatar {
           font-size: 1.25rem;
@@ -394,36 +401,35 @@ export default function CaptainNavDrawer({
         }
         .staff-label {
           font-size: 0.625rem;
-          color: #94a3b8;
-          font-weight: 600;
+          color: #71717a;
+          font-weight: 700;
           text-transform: uppercase;
         }
         .staff-name {
           font-size: 0.8125rem;
-          color: #f8fafc;
+          color: #18181b;
           font-weight: 800;
         }
 
         .btn-logout-drawer {
-          background: #7f1d1d;
-          border: 1px solid #b91c1c;
-          color: #fecaca;
+          background: #fee2e2;
+          border: 1px solid #fecaca;
+          color: #b91c1c;
           font-size: 0.8125rem;
-          font-weight: 700;
-          padding: 10px 14px;
-          border-radius: 10px;
+          font-weight: 800;
+          padding: 12px 16px;
+          border-radius: 999px;
           cursor: pointer;
           display: flex;
           align-items: center;
           justify-content: center;
           gap: 8px;
           transition: all 0.15s;
-          box-shadow: 0 2px 6px rgba(185, 28, 28, 0.2);
         }
         .btn-logout-drawer:hover {
-          background: #991b1b;
-          color: #ffffff;
-          border-color: #ef4444;
+          background: #fca5a5;
+          color: #991b1b;
+          border-color: #f87171;
         }
         .logout-icon {
           font-size: 1rem;

@@ -912,6 +912,14 @@
       "status": "DONE",
       "priority": "HIGH",
       "relatedGate": "CP-29"
+    },
+    {
+      "taskId": "TSK-052",
+      "title": "Waiter Workspace Shakuro Design Transformation (Floor Map, Table Cards, Live Cart, Modals & Navigation Drawer)",
+      "assignedTo": "multi-agent(frontend+ux+a2a+qa)",
+      "status": "DONE",
+      "priority": "HIGH",
+      "relatedGate": "CP-30"
     }
   ]
 }

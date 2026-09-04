@@ -129,11 +129,12 @@ export default function KapMetaKotView({
 
   const handleFoodIsReady = (ticketId: string, kotNo: string | number) => {
     playKitchenReadyChime();
-    setTickets((prev) =>
-      prev.map((t) => (t.id === ticketId ? { ...t, status: "READY" } : t))
-    );
-
-    setToastMessage(`✓ KOT #${kotNo} marked as Food Ready!`);
+    // No local optimistic status write here: the real next status depends on
+    // the ticket's current status (QUEUED -> PREPARING -> READY -> SERVED,
+    // see KOT_TRANSITIONS), which the parent looks up and PATCHes, then
+    // re-fetches. Guessing "READY" here could mislabel a QUEUED ticket that
+    // actually just moved to PREPARING.
+    setToastMessage(`✓ KOT #${kotNo} updated!`);
     setTimeout(() => setToastMessage(null), 3000);
 
     if (onMarkFoodReady) {

@@ -61,8 +61,9 @@ export interface OrderRepository {
     outletId: string,
     orderId: string,
     tipMinor: bigint,
-    serviceChargeMinor: bigint
-  ): Promise<{ tipTotalMinor: bigint; serviceChargeTotalMinor: bigint; grandTotalMinor: bigint }>;
+    serviceChargeMinor: bigint,
+    discountMinor?: bigint
+  ): Promise<{ tipTotalMinor: bigint; serviceChargeTotalMinor: bigint; discountTotalMinor: bigint; grandTotalMinor: bigint }>;
   recordPayment(
     outletId: string,
     orderId: string,
@@ -437,9 +438,10 @@ export async function setOrderCharges(
   orderId: string,
   tipMinor: bigint,
   serviceChargeMinor: bigint,
-  orderRepo: OrderRepository
-): Promise<{ tipTotalMinor: bigint; serviceChargeTotalMinor: bigint; grandTotalMinor: bigint }> {
-  return orderRepo.setCharges(outletId, orderId, tipMinor, serviceChargeMinor);
+  orderRepo: OrderRepository,
+  discountMinor: bigint = 0n
+): Promise<{ tipTotalMinor: bigint; serviceChargeTotalMinor: bigint; discountTotalMinor: bigint; grandTotalMinor: bigint }> {
+  return orderRepo.setCharges(outletId, orderId, tipMinor, serviceChargeMinor, discountMinor);
 }
 
 export async function recordPayment(

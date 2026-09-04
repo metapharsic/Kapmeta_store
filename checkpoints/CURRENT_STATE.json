@@ -2,7 +2,7 @@
   "activePhase": "Phase 4 - Pilot & Production Readiness",
   "version": "1.3.0",
   "lastUpdated": "2026-09-04T01:05:00.000Z",
-  "totalMilestones": 15,
+  "totalMilestones": 16,
   "passedMilestones": [
     "CP-01",
     "CP-03",
@@ -17,7 +17,8 @@
     "CP-26",
     "CP-27",
     "CP-28",
-    "CP-29"
+    "CP-29",
+    "CP-30"
   ],
   "inProgressMilestones": [
     "CP-09"
@@ -127,6 +128,20 @@
       "status": "PASSED",
       "phase": 20,
       "signOff": "Executive hero cockpit, channel progress bars, staff leaderboard, A2A telemetry",
+      "date": "2026-09-04"
+    },
+    "CP-29": {
+      "name": "Global Shakuro Theme & Waiter Fast PIN Login",
+      "status": "PASSED",
+      "phase": 21,
+      "signOff": "Global design tokens, Captain PIN modal, crew pills, zero PetPooja footprint",
+      "date": "2026-09-04"
+    },
+    "CP-30": {
+      "name": "Waiter Workspace Shakuro Transformation",
+      "status": "PASSED",
+      "phase": 22,
+      "signOff": "Complete Shakuro design on waiter topbar, floor map, table cards, cart, and modals",
       "date": "2026-09-04"
     }
   }

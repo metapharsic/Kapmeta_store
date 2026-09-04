@@ -94,15 +94,36 @@ export default function KitchenMonitor() {
     };
   }, [authLoading, isHistoryView]);
 
+  // KOT_TRANSITIONS (packages/shared-types/kitchen.ts) only allows
+  // QUEUED -> PREPARING -> READY -> SERVED in sequence; jumping straight
+  // from QUEUED to READY is an illegal transition the API rejects with 409.
+  // Advance by exactly one step from the ticket's actual current status
+  // instead of hardcoding "READY", and surface a failure by re-syncing
+  // from the server instead of silently swallowing it.
+  const NEXT_KOT_STATUS: Record<string, string> = {
+    QUEUED: "PREPARING",
+    PREPARING: "READY",
+    READY: "SERVED",
+  };
+
   const handleUpdateStatus = async (ticketId: string, currentStatus: string) => {
+    const toStatus = NEXT_KOT_STATUS[currentStatus];
+    if (!toStatus) {
+      fetchTickets();
+      return;
+    }
     try {
-      await authedFetch(`/kitchen/kot/${ticketId}/status`, {
+      const res = await authedFetch(`/kitchen/kot/${ticketId}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ toStatus: "READY" }),
+        body: JSON.stringify({ toStatus }),
       });
-      fetchTickets();
-    } catch {}
+      if (!res.ok) throw new Error("HTTP error " + res.status);
+    } catch {
+      // Fall through to fetchTickets() below so the board re-syncs with the
+      // server's actual state instead of staying on the optimistic update.
+    }
+    fetchTickets();
   };
 
   const liveDbTickets: KotCardData[] = tickets.map((t, idx) => ({
@@ -160,7 +181,8 @@ export default function KitchenMonitor() {
         <KapMetaKotView
           initialTickets={mappedTickets}
           onMarkFoodReady={(id) => {
-            handleUpdateStatus(id, "PREPARING");
+            const ticket = tickets.find((t) => t.id === id);
+            handleUpdateStatus(id, ticket?.status || "QUEUED");
           }}
           onBackToPos={() => {
             window.location.href = "/";

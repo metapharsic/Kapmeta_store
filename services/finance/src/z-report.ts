@@ -56,6 +56,21 @@ export class ZReportGenerator {
       totalServiceCharge += ord.serviceChargeTotal || 0n;
     }
 
+    // Net out refunds issued within this business day window — otherwise a
+    // refunded order still counts its full original grandTotal as revenue
+    // here (order.grandTotal is never decremented on refund; see
+    // GET /finance/cash-drawer, which already nets order_refunds against
+    // cash sales for the same reason — this brings Z-report/day-end-summary
+    // in line with that convention instead of double-counting).
+    const refunds = await this.prisma.order_refunds.findMany({
+      where: { outlet_id: outletId, created_at: { gte: start, lt: end } },
+    });
+    let totalRefunds = 0n;
+    for (const r of refunds) {
+      totalRefunds += r.amount_minor;
+    }
+    totalSales -= totalRefunds;
+
     for (const p of payments) {
       if (!paymentModes[p.method]) {
         paymentModes[p.method] = 0n;
@@ -85,6 +100,7 @@ export class ZReportGenerator {
       businessDayEnd: end.toISOString(),
       totalSales,
       totalTax,
+      totalRefunds,
       grandTotal: totalSales,
       totalTips,
       totalServiceCharge,
