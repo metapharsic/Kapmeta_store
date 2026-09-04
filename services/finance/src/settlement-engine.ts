@@ -68,7 +68,7 @@ export class SettlementEngine {
       await tx.auditLog.create({
         data: {
           outletId,
-          actor_id: userId,
+          userId,
           action: "UPDATE",
           entityType: "ORDER",
           entityId: orderId,

@@ -73,7 +73,7 @@ The Product Owner should overrule this if there is a firm commercial commitment 
 **Rationale:** The cost of retrofitting outlet scoping later is estimated at 35-60 person-days of high-risk migrations. Building it from day 1 is cheap insurance against database-wide changes.
 **Approved by:** Product Owner & Solution Architect
 **Date:** 2026-08-08
-**ADR:** ADR-0001
+**ADR:** ADR-0007 (`../adr/0007-tenancy-and-outlet-scoping.md`)
 
 ## Consequences
 
@@ -87,7 +87,7 @@ The Product Owner should overrule this if there is a firm commercial commitment 
 
 ## Follow-Up
 
-- [ ] ADR raised (structural): ADR-0001 — tenancy and outlet scoping model
+- [x] ADR raised (structural): ADR-0007 — tenancy and outlet scoping model
 - [ ] `DECISION-LOG.md` updated
 - [ ] Downstream artifacts updated: all `REQ-*`, [`schema-reference.md`](../05-database/schema-reference.md), [`MAP-REQ`](../mappings/MAP-REQ-requirement-to-implementation.md)
 - [ ] Confirm organization→outlet depth (2 vs 3 levels) — sub-question, may need its own DEC

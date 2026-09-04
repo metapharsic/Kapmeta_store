@@ -1,6 +1,6 @@
 # Database (Current State)
 
-Cross-reference: `docs/decision/0001-text-ids-not-uuid.md` for the
+Cross-reference: `docs/adr/0009-text-ids-not-uuid.md` for the
 discovery narrative; this file is the reference summary of the resulting
 conventions and migration history.
 
@@ -23,8 +23,8 @@ has unaudited `@db.Uuid` declarations on `MenuItem`, `Station`,
 
 Every operational table carries `outlet_id`/`outletId` as a required
 column (see `docs/brain/BUSINESS_RULES.md` rule 1 for the full citation
-list). This was decided in ADR-0002
-(`docs/adr/0002-tenancy-and-outlet-scoping.md`) before this session and
+list). This was decided in ADR-0007
+(`docs/adr/0007-tenancy-and-outlet-scoping.md`) before this session and
 has been consistently honored in every table added/repaired this session
 — e.g. `management_lists`/`management_settings`/
 `management_activity_logs` (`kapmeta/schema.prisma:1737-1775`) and the

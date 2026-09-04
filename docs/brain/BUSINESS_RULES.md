@@ -10,8 +10,8 @@ Every operational model in `kapmeta/schema.prisma` carries `outletId`/
 (`:163`), `MenuItem` (`:369`), `Order` (`:411`), `OrderItem` (`:457`),
 `KOTTicket` (`:549`), `KOTItem` (`:576`), `Payment` (`:670`),
 `DiningTable` (`:196`), `table_seats`/`table_merge_groups`/
-`order_seat_bills` (`:275`-`:342`). This mirrors ADR-0002
-(`docs/adr/0002-tenancy-and-outlet-scoping.md`) which mandated outlet
+`order_seat_bills` (`:275`-`:342`). This mirrors ADR-0007
+(`docs/adr/0007-tenancy-and-outlet-scoping.md`) which mandated outlet
 scoping from migration 001 onward specifically to avoid a costly retrofit.
 `services/orders/src/order-service.ts` methods on `OrderRepository`
 consistently take `outletId` as the first parameter (e.g. `nextOrderNumber

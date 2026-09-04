@@ -99,7 +99,7 @@ Two requirements that should be approved alongside whichever option is chosen, b
 
 ## Follow-Up
 
-- [ ] ADR raised (structural): ADR-0007 — integration hub channel model
+- [ ] ADR raised (structural): ADR-NNNN — integration hub channel model
 - [ ] `DECISION-LOG.md` updated
 - [ ] **Certification applications submitted for all named partners — start immediately (RSK-11)**
 - [ ] Discount funding source captured per order line from channel one

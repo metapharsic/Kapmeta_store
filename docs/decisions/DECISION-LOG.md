@@ -116,14 +116,14 @@ When a decision closes, append here:
 **Rationale:** The cost of retrofitting outlet scoping later is estimated at 35-60 person-days of high-risk migrations. Building it from day 1 is cheap insurance against database-wide changes.
 **Approved by:** Product Owner & Solution Architect
 **Date:** 2026-08-08
-**ADR:** ADR-0001
+**ADR:** ADR-0007 (`../adr/0007-tenancy-and-outlet-scoping.md`)
 
 ### DEC-002 — Offline POS Capability
 **Decided:** Option D — Start online-only for R1, but enforce all enablers (client-generated UUIDv7s, Idempotency-Keys on all writes, decoupled order numbering per terminal). Re-route to C (full offline write) in R1.1.
 **Rationale:** Simplifies debugging the core domain in R1, while keeping the architecture reversible at minimal cost.
 **Approved by:** PO + IT & Solution Architect
 **Date:** 2026-08-08
-**ADR:** ADR-0002
+**ADR:** ADR-0008 (`../adr/0008-pos-client-architecture-and-offline-model.md`)
 
 ### DEC-006 — Printer / KOT Hardware
 **Decided:** Option D — Hybrid LAN print agent as the primary for R1, deferring KDS station-display routing to R2.

@@ -1,4 +1,4 @@
-# DECISION-0003: Live Sync Is WebSocket-Primary With a `setInterval` Polling Backup — Not Polling-Only
+# ADR-0011: Live Sync Is WebSocket-Primary With a `setInterval` Polling Backup — Not Polling-Only
 
 **Status:** Accepted (documents actual behavior; corrects an incorrect
 premise this decision was originally framed under — see Correction below)

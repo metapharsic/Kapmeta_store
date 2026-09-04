@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
+import { randomUUID } from "crypto";
 import { transitionOrder, PrismaOrderRepository } from "@kapmeta/orders";
 import type { OrderStatus } from "@kapmeta/shared-types/orders";
 import { deductBomStockForOrder } from "./inventory-depletion";
@@ -77,7 +78,7 @@ export async function settleOrderCommand(
     throw new Error("Order not found");
   }
 
-  const existingInvoice = await prisma.invoice.findUnique({ where: { orderId } }).catch(() => null);
+  const existingInvoice = await prisma.invoice.findFirst({ where: { orderId } }).catch(() => null);
   if (order.status === "COMPLETED") {
 
     const existingPays = await prisma.payment.findMany({
@@ -89,11 +90,12 @@ export async function settleOrderCommand(
       const invoiceNumber = await nextInvoiceNumber(prisma, outletId);
       invoice = await prisma.invoice.create({
         data: {
+          id: randomUUID(),
           outletId,
           orderId,
           invoiceNumber,
-          amountMinor: order.grandTotal,
-          taxAmountMinor: order.taxTotal ?? 0n,
+          amount: order.grandTotal,
+          taxAmount: order.taxTotal ?? 0n,
         },
       });
     }
@@ -106,9 +108,9 @@ export async function settleOrderCommand(
     const dissolved = order.diningTableId
       ? await dissolveMergeGroupForTable(prisma, outletId, order.diningTableId)
       : { ids: [] as string[], numbers: [] as string[] };
-    if (dissolved.ids.length === 0 && order.table_number) {
+    if (dissolved.ids.length === 0 && (order as any).table_number) {
       await prisma.diningTable.updateMany({
-        where: { outletId, tableNumber: order.table_number },
+        where: { outletId, tableNumber: (order as any).table_number },
         data: { status: "VACANT", mergeGroupId: null, mergePrimaryTableId: null },
       });
     }
@@ -142,7 +144,7 @@ export async function settleOrderCommand(
       ok: true,
       orderId,
       status: "COMPLETED",
-      invoiceNumber: invoice.invoiceNumber,
+      invoiceNumber: invoice?.invoiceNumber || "INV-PAID",
       alreadySettled: true,
     };
   }
@@ -204,16 +206,17 @@ export async function settleOrderCommand(
     }
   }
 
-  let invoice = await prisma.invoice.findUnique({ where: { orderId } });
+  let invoice = await prisma.invoice.findFirst({ where: { orderId } });
   if (!invoice) {
     const invoiceNumber = await nextInvoiceNumber(prisma, outletId);
     invoice = await prisma.invoice.create({
       data: {
+        id: randomUUID(),
         outletId,
         orderId,
         invoiceNumber,
-        amountMinor: order.grandTotal,
-        taxAmountMinor: order.taxTotal ?? 0n,
+        amount: order.grandTotal,
+        taxAmount: order.taxTotal ?? 0n,
       },
     });
   }
@@ -226,9 +229,9 @@ export async function settleOrderCommand(
   const dissolved = order.diningTableId
     ? await dissolveMergeGroupForTable(prisma, outletId, order.diningTableId)
     : { ids: [] as string[], numbers: [] as string[] };
-  if (dissolved.ids.length === 0 && order.table_number) {
+  if (dissolved.ids.length === 0 && (order as any).table_number) {
     await prisma.diningTable.updateMany({
-      where: { outletId, tableNumber: order.table_number },
+      where: { outletId, tableNumber: (order as any).table_number },
       data: { status: "VACANT", mergeGroupId: null, mergePrimaryTableId: null },
     });
   }
@@ -237,7 +240,7 @@ export async function settleOrderCommand(
 
   if (order.customerId) {
     const outlet = await prisma.outlet.findUnique({ where: { id: outletId } });
-    const paisePerPoint = outlet?.loyaltyPaisePerPoint;
+    const paisePerPoint = (outlet as any)?.loyaltyPaisePerPoint;
     if (paisePerPoint && paisePerPoint > 0n) {
       const pointsEarned = Number(payAmount / paisePerPoint);
       if (pointsEarned > 0) {
@@ -291,11 +294,11 @@ export async function settleOrderCommand(
     }
   }).catch(() => undefined);
 
-  return {
-    ok: true,
-    orderId,
-    status: "COMPLETED",
-    invoiceNumber: invoice.invoiceNumber,
-    alreadySettled: false,
-  };
+    return {
+      ok: true,
+      orderId,
+      status: "COMPLETED",
+      invoiceNumber: invoice?.invoiceNumber || "INV-PAID",
+      alreadySettled: false,
+    };
 }

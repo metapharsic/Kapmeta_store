@@ -246,15 +246,15 @@ export default function KapMetaKotView({
           {/* Historical KOT report table - /kitchen?view=list */}
           <button
             type="button"
-            className="view-tab-btn"
+            className="view-tab-btn history-tab-btn"
             onClick={() => {
               if (onOpenKotList) onOpenKotList();
               else router.push("/kitchen?view=list");
             }}
-            title="Open the KOT history report"
+            title="Open KOT history report and completed orders archive"
           >
-            <span className="tab-icon">📑</span>
-            <span className="tab-label">Kot List</span>
+            <span className="tab-icon">📜</span>
+            <span className="tab-label">KOT History & Completed</span>
           </button>
         </div>
 
@@ -605,6 +605,18 @@ export default function KapMetaKotView({
           color: #dc2626;
           background: #ffffff;
           box-shadow: 0 1px 3px rgba(220, 38, 38, 0.1);
+        }
+
+        .view-tab-btn.history-tab-btn {
+          background: #f1f5f9;
+          border-color: #cbd5e1;
+          color: #1e293b;
+        }
+
+        .view-tab-btn.history-tab-btn:hover {
+          background: #e2e8f0;
+          border-color: #94a3b8;
+          color: #0f172a;
         }
 
         .tab-icon {

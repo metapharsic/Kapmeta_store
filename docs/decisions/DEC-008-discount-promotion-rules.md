@@ -105,7 +105,7 @@ Finance and the Product Owner should overrule toward C for R1 if a marketing cal
 
 ## Follow-Up
 
-- [ ] ADR raised (structural): ADR-0008 — pricing engine order of operations and discount model
+- [ ] ADR raised (structural): ADR-NNNN — pricing engine order of operations and discount model
 - [ ] `DECISION-LOG.md` updated
 - [ ] **Tax base (pre- vs post-discount) confirmed by the tax practitioner** — decide with [DEC-004](DEC-004-tax-calculation-rules.md)
 - [ ] Discount rounding rule specified as integer arithmetic, line sums reconcile to bill total

@@ -97,7 +97,7 @@ Finance should overrule the provider-neutrality recommendation if commercial ter
 
 ## Follow-Up
 
-- [ ] ADR raised (structural): ADR-0005 — payment capture, refund and settlement model
+- [ ] ADR raised (structural): ADR-NNNN — payment capture, refund and settlement model
 - [ ] `DECISION-LOG.md` updated
 - [ ] Provider onboarding started (long lead — start regardless of option)
 - [ ] Security sign-off that no card data enters the application scope (link to DEC-011)

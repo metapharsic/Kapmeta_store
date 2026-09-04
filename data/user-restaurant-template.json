@@ -146,5 +146,50 @@
       "reorderLevel": 5.0,
       "unitCostPaise": 65000
     }
+  ],
+  "devices": [
+    {
+      "name": "Main Cashier Counter POS 1",
+      "deviceCode": "DEV-POS-01",
+      "deviceType": "POS_TERMINAL",
+      "ipAddress": "192.168.1.101",
+      "port": 9100,
+      "printerIp": "192.168.1.201",
+      "paperWidth": 80,
+      "areaName": "Indoor AC",
+      "status": "ONLINE"
+    },
+    {
+      "name": "Kitchen KDS Station (Grill)",
+      "deviceCode": "KDS-GRILL-01",
+      "deviceType": "KDS_DISPLAY",
+      "ipAddress": "192.168.1.102",
+      "port": 9100,
+      "stationName": "GRILL",
+      "printerIp": "192.168.1.202",
+      "paperWidth": 80,
+      "status": "ONLINE"
+    },
+    {
+      "name": "Waiter Ordering Handheld Tab 1",
+      "deviceCode": "TAB-WAITER-01",
+      "deviceType": "WAITER_TABLET",
+      "ipAddress": "192.168.1.103",
+      "port": 9100,
+      "areaName": "Terrace Lounge",
+      "status": "ONLINE"
+    },
+    {
+      "name": "Bar KOT Thermal Printer",
+      "deviceCode": "PRN-BAR-01",
+      "deviceType": "KOT_PRINTER",
+      "ipAddress": "192.168.1.104",
+      "port": 9100,
+      "stationName": "BAR",
+      "printerIp": "192.168.1.104",
+      "paperWidth": 80,
+      "status": "ONLINE"
+    }
   ]
 }
+

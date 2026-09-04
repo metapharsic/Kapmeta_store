@@ -811,10 +811,10 @@
     },
     {
       "taskId": "TSK-039",
-      "title": "Explore Products / Audit Trail / Device Mapping have no real backend yet, stub pages only",
-      "assignedTo": "unassigned",
-      "status": "PENDING",
-      "priority": "LOW",
+      "title": "Device Mapping wired with real backend & UI; Explore Products / Audit Trail stub pages remain",
+      "assignedTo": "multi-agent(backend+frontend)",
+      "status": "DONE",
+      "priority": "HIGH",
       "relatedGate": "CP-23"
     },
     {

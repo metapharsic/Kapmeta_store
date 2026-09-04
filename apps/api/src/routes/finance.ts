@@ -284,8 +284,8 @@ financeRouter.post("/invoices/:id/reprint", requireAuth, requirePermission("bill
 
     res.status(200).json({
       ...invoice,
-      amount: invoice.amountMinor.toString(),
-      taxAmount: invoice.taxAmountMinor.toString(),
+      amount: invoice.amount.toString(),
+      taxAmount: (invoice.taxAmount ?? 0n).toString(),
       waivedOffMinor: invoice.waivedOffMinor.toString(),
     });
   } catch (error: any) {
@@ -347,8 +347,8 @@ financeRouter.post("/invoices/:id/waive-off", requireAuth, requirePermission("bi
 
     res.status(200).json({
       ...invoice,
-      amount: invoice.amountMinor.toString(),
-      taxAmount: invoice.taxAmountMinor.toString(),
+      amount: invoice.amount.toString(),
+      taxAmount: (invoice.taxAmount ?? 0n).toString(),
       waivedOffMinor: invoice.waivedOffMinor.toString(),
     });
   } catch (error: any) {
@@ -491,7 +491,7 @@ financeRouter.get("/cash-drawer", requireAuth, requirePermission("report.read"),
       ledgerRows.map(async (row) => {
         let loggedBy = "Staff";
         const u = await prisma.user.findUnique({ where: { id: row.recorded_by } });
-        if (u) loggedBy = u.firstName ? `${u.firstName} ${u.lastName || ""}`.trim() : (u.email || u.full_name || "Staff");
+        if (u) loggedBy = u.firstName ? `${u.firstName} ${u.lastName || ""}`.trim() : (u.email || (u as any).full_name || "Staff");
         return {
           id: row.id,
           amountMinor: String(row.amount_minor),
@@ -585,7 +585,7 @@ financeRouter.post("/petty-cash", requireAuth, requirePermission("report.read"),
       category: row.category,
       description: row.description,
       paidTo: row.paid_to || "",
-      loggedBy: user?.full_name || user?.firstName || "Staff",
+      loggedBy: user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : ((user as any)?.full_name || user?.email || "Staff"),
       createdAt: row.created_at.toISOString(),
     });
   } catch (error: any) {

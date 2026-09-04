@@ -54,12 +54,16 @@ router.get("/public/tables/:tableId/menu", async (req, res) => {
   try {
     const table = await prisma.diningTable.findFirst({
       where: { id: req.params.tableId, isActive: true },
-      include: { outlet: { select: { name: true } } },
     });
     if (!table) {
       res.status(404).json({ error: "table not found" });
       return;
     }
+
+    const outlet = await prisma.outlet.findUnique({
+      where: { id: table.outletId },
+      select: { name: true },
+    });
 
     const catalogRepository = new PrismaMenuCatalogRepository(prisma);
     const [categories, items] = await Promise.all([
@@ -68,7 +72,7 @@ router.get("/public/tables/:tableId/menu", async (req, res) => {
     ]);
 
     res.status(200).json({
-      ...serializeMenu((table as any).outlet?.name ?? null, categories, items),
+      ...serializeMenu(outlet?.name ?? null, categories, items),
       table: { id: table.id, tableNumber: table.tableNumber, section: table.section },
     });
   } catch (err) {

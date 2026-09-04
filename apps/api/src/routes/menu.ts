@@ -195,7 +195,7 @@ router.post("/items/bulk-upload", requireAuth, requirePermission("menu.item.mana
             isVeg,
             taxRate,
             description: raw.description !== undefined ? raw.description : existingItem.description,
-            code: raw.code || existingItem.code,
+            shortCode: raw.code || (existingItem as any).shortCode || null,
             isActive: true,
           },
         });
@@ -210,7 +210,7 @@ router.post("/items/bulk-upload", requireAuth, requirePermission("menu.item.mana
             price: priceNum,
             taxRate,
             isVeg,
-            code: raw.code || null,
+            shortCode: raw.code || null,
             isActive: true,
           },
         });
@@ -512,7 +512,7 @@ router.patch("/items/:menuItemId/availability", requireAuth, requirePermission("
     await prisma.auditLog.create({
       data: {
         outletId,
-        actor_id: req.auth!.userId,
+        userId: req.auth!.userId,
         action: "UPDATE",
         entityType: "MENU_ITEM_86",
         entityId: item.id,
@@ -550,7 +550,7 @@ router.post("/sync", requireAuth, requirePermission("menu.item.manage"), async (
     await prisma.auditLog.create({
       data: {
         outletId,
-        actor_id: req.auth!.userId,
+        userId: req.auth!.userId,
         action: "CREATE",
         entityType: "MENU_SYNC",
         entityId: outletId,
@@ -644,7 +644,7 @@ router.put("/items/:id", requireAuth, requirePermission("menu.item.manage"), asy
       broadcast(outletId, "menu.updated", { itemId: updated.id, action: "ITEM_UPDATED" });
     }).catch(() => {});
 
-    res.status(200).json({ ...updated, priceMinor: String(updated.priceMinor) });
+    res.status(200).json({ ...updated, priceMinor: String(updated.price || 0) });
   } catch (err: any) {
     console.error("Error updating menu item:", err);
     res.status(500).json({ error: err.message || "Failed to update item" });

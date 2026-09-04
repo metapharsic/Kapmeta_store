@@ -38,7 +38,7 @@ never-completed second attempt.
 > TSK-044: "schema.prisma MenuItem/modifier_* still @db.Uuid, contradicts
 > TEXT convention - needs same audit as TSK-028" (`:854-856`, PENDING)
 
-See `docs/decision/0001-text-ids-not-uuid.md` and
+See `docs/adr/0009-text-ids-not-uuid.md` and
 `docs/brain/BUSINESS_RULES.md` rule 5 for the full discovery. This session
 fixed the id/FK types on `table_merge_groups`, `table_merge_members`,
 `table_seats`, `order_seat_bills`, `order_item_seat_shares`, `KOTItem`

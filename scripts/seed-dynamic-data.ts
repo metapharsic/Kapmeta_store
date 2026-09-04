@@ -20,6 +20,18 @@ interface DynamicRestaurantData {
   terminals?: Array<{ name: string; terminalNumber: string }>;
   diningTables?: Array<{ tableNumber: string; capacity?: number; section?: string }>;
   stations?: Array<{ name: string; printerIp?: string }>;
+  devices?: Array<{
+    name: string;
+    deviceCode?: string;
+    deviceType?: string;
+    ipAddress?: string;
+    port?: number;
+    stationName?: string;
+    areaName?: string;
+    printerIp?: string;
+    paperWidth?: number;
+    status?: string;
+  }>;
   users?: Array<{
     email: string;
     password?: string;
@@ -178,6 +190,50 @@ async function runDynamicSeed(filePath?: string) {
       }
       console.log(`  - Kitchen Station: ${st.name} (Printer IP: ${st.printerIp || "LAN default"})`);
     }
+  }
+
+  // 5b. Hardware Devices & Device Mapping
+  if (data.devices) {
+    for (const dev of data.devices) {
+      const code = dev.deviceCode || `DEV-${randomUUID().slice(0, 8).toUpperCase()}`;
+      const existing = await prisma.$queryRaw<any[]>`
+        SELECT id FROM management_lists
+        WHERE outlet_id = ${outlet.id} AND list_key = 'DEVICE_MAPPING' AND value = ${code}
+      `;
+      const extra = JSON.stringify({
+        deviceType: dev.deviceType || "POS_TERMINAL",
+        ipAddress: dev.ipAddress || null,
+        port: dev.port || 9100,
+        stationName: dev.stationName || null,
+        areaName: dev.areaName || null,
+        printerIp: dev.printerIp || null,
+        paperWidth: dev.paperWidth || 80,
+        status: dev.status || "ONLINE",
+        latencyMs: 12,
+        capabilities: {
+          autoPrintKot: true,
+          autoPrintBill: true,
+          soundAlerts: true,
+          allowCash: true,
+        },
+      });
+
+      if (existing.length > 0) {
+        await prisma.$executeRaw`
+          UPDATE management_lists
+          SET label = ${dev.name}, extra = ${extra}::jsonb, updated_at = now()
+          WHERE id = ${existing[0].id}
+        `;
+      } else {
+        const id = randomUUID();
+        await prisma.$executeRaw`
+          INSERT INTO management_lists (id, outlet_id, list_key, label, value, extra, is_active, sort_order)
+          VALUES (${id}, ${outlet.id}, 'DEVICE_MAPPING', ${dev.name}, ${code}, ${extra}::jsonb, true, 0)
+        `;
+      }
+      console.log(`  - Device Mapping: [${code}] ${dev.name} (${dev.deviceType || "POS_TERMINAL"})`);
+    }
+    console.log(`✓ Devices: ${data.devices.length} hardware terminals synchronized.`);
   }
 
   // 6. Users & Roles

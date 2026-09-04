@@ -165,7 +165,7 @@ export async function deductBomStockForOrder(
         await prisma.auditLog.create({
           data: {
             outletId,
-            actor_id: actorUserId || outletId,
+            userId: actorUserId || outletId,
             action: "UPDATE",
             entityType: "INVENTORY_BOM_DEDUCTION",
             entityId: ri.ingredient_id,

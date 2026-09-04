@@ -287,9 +287,9 @@ router.get("/staff-profiles", async (req, res) => {
 
       profiles.push({
         id: ur.user.id,
-        name: `${ur.user.firstName || ""} ${ur.user.lastName || ""}`.trim() || ur.user.email.split("@")[0],
+        name: `${ur.user.firstName || ""} ${ur.user.lastName || ""}`.trim() || (ur.user.email ? ur.user.email.split("@")[0] : "Staff Member"),
         role: roleName,
-        email: ur.user.email,
+        email: ur.user.email || "",
         avatar,
       });
     }
@@ -416,7 +416,7 @@ router.get("/me", requireAuth, async (req: AuthedRequest, res) => {
     res.status(200).json({
       userId: user.id,
       email: user.email,
-      name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || (user as any).full_name || user.email.split('@')[0],
+      name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || (user as any).full_name || (user.email ? user.email.split('@')[0] : "User"),
       outletId,
       roles,
       permissions,

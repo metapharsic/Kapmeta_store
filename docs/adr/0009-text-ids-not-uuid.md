@@ -1,9 +1,9 @@
-# DECISION-0001: Primary/Foreign Key IDs Are TEXT, Not UUID — Follow the Live Database, Not the Prisma Schema
+# ADR-0009: Primary/Foreign Key IDs Are TEXT, Not UUID — Follow the Live Database, Not the Prisma Schema
 
 **Status:** Accepted
 **Date:** 2026-09-03/04
 **Deciders:** Database Agent (this session), via `scripts/inspect-db-v2.js`
-**Related:** ADR-0002 (tenancy/outlet scoping), `docs/brain/BUSINESS_RULES.md`
+**Related:** ADR-0007 (tenancy/outlet scoping), `docs/brain/BUSINESS_RULES.md`
 rule 5, `docs/brain/KNOWN_GAPS.md` (TSK-028/TSK-044)
 
 ## Context

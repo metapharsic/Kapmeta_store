@@ -102,7 +102,7 @@ Shared TypeScript types are generated from (or hand-mirrored against, if generat
 - `contracts/postman/kapmeta.postman_collection.json`
 - `contracts/events/{outbox,inbox,webhook}.schema.json` (or equivalent per event family)
 - `packages/types/` (built package + README documenting generation/mirroring approach)
-- `docs/adr/ADR-001-modular-monolith.md` through `ADR-005-outlet-id-everywhere.md`
+- `docs/adr/0001-modular-monolith-over-microservices.md` through `docs/adr/0005-outlet-id-everywhere-multi-tenant-ready-schema.md`
 - `infra/docker-compose.yml`, `infra/terraform/` (stub), `infra/monitoring/` (stub)
 - `docs/nfr.md`
 - `tests/contract/` (initial suite, one directory per domain matching the OpenAPI files)

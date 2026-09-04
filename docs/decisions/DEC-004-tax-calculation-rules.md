@@ -108,7 +108,7 @@ If a practitioner cannot be engaged before the due date, the correct action is t
 
 ## Follow-Up
 
-- [ ] ADR raised (structural): ADR-0004 — tax rule resolution and invoice composition
+- [ ] ADR raised (structural): ADR-NNNN — tax rule resolution and invoice composition
 - [ ] `DECISION-LOG.md` updated
 - [ ] **Qualified tax practitioner's written confirmation obtained** — scheme, rate(s), ITC, non-GST items, invoice document type, rounding convention
 - [ ] Rounding rule specified as integer arithmetic and covered by boundary tests

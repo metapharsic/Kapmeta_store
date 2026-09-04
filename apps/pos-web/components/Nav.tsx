@@ -193,7 +193,7 @@ export const SIDEBAR_GROUPS: SidebarGroupDef[] = [
       { href: "/admin", permission: "report.read", label: "Admin Overview Hub" },
       { href: "/admin?tab=agents", permission: "report.read", label: "Multi-Agent & A2A Status HUD" },
       { href: "/management/explore-products", permission: "report.read", label: "Explore Products" },
-      { href: "/management/device-mapping", permission: "report.read", label: "Device Mapping" },
+      { href: "/management/device-mapping", permission: "report.read", label: "Device Mapping", alwaysVisible: true },
     ],
     subGroups: [
       {

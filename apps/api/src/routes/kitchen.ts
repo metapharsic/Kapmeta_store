@@ -115,12 +115,12 @@ router.get("/kot", requireAuth, requirePermission("kot.read", "kitchen.kds.view"
       whereClause.stationId = stationId;
     }
 
-    const tickets = await prisma.kOTTicket.findMany({
+    const tickets: any[] = await (prisma.kOTTicket as any).findMany({
       where: whereClause,
       include: {
         kotItems: { include: { menuItem: { select: { name: true } } } },
         station: { select: { name: true, slaWarningSeconds: true, slaBreachSeconds: true } },
-        order: { select: { orderType: true, table_number: true, diningTable: { select: { id: true, tableNumber: true, mergeGroupId: true, mergePrimaryTableId: true } } } },
+        order: { select: { orderType: true, diningTable: { select: { id: true, tableNumber: true, mergeGroupId: true, mergePrimaryTableId: true } } } },
       },
       orderBy: { createdAt: queryStr ? "desc" : "asc" },
     });
@@ -131,7 +131,7 @@ router.get("/kot", requireAuth, requirePermission("kot.read", "kitchen.kds.view"
     const labels = await mergeGroupLabelMap(prisma, req.auth!.outletId, groupIds);
 
     res.status(200).json(
-      tickets.map((t) => ({
+      tickets.map((t: any) => ({
         id: t.id,
         orderId: t.orderId,
         ticketNumber: t.ticketNumber,
@@ -142,19 +142,18 @@ router.get("/kot", requireAuth, requirePermission("kot.read", "kitchen.kds.view"
         status: t.status,
         createdAt: t.createdAt,
         servedAt: t.servedAt,
-        orderType: t.order!.orderType,
+        orderType: t.order?.orderType || "DINE_IN",
         tableNumber:
-          (t.order as any)?.table_number ||
-          labels.get((t.order as any)?.diningTable?.mergeGroupId) ||
-          t.order!.diningTable?.tableNumber ||
+          labels.get(t.order?.diningTable?.mergeGroupId) ||
+          t.order?.diningTable?.tableNumber ||
           null,
-        kotItems: t.kotItems.map((ki) => ({
+        kotItems: (t.kotItems || []).map((ki: any) => ({
           id: ki.id,
           quantity: ki.quantity,
           notes: ki.notes,
           course: ki.course,
           servedAt: ki.servedAt,
-          menuItem: { name: ki.menuItem!.name },
+          menuItem: { name: ki.menuItem?.name || "Kitchen Item" },
         })),
       }))
     );

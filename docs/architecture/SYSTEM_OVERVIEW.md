@@ -11,7 +11,7 @@ This file is the current-state map after this session's work.
   `public-order.ts`, `management.ts`, `admin.ts`, `commission.ts`,
   `virtual-outlets.ts`, `waiters.ts`). Also owns `apps/api/src/
   websockets.ts` (the real-time push channel, see
-  `docs/decision/0003-polling-not-websocket-for-live-sync.md`) and
+  `docs/adr/0011-polling-not-websocket-for-live-sync.md`) and
   `apps/api/src/index.ts` (process entrypoint, wires HTTP + WS upgrade).
 - **`apps/pos-web`** — the touch-first POS/KDS/waiter web app (port 4444
   per `agents/AGENT_REGISTRY.json:39`). Key pages: `pages/kitchen.tsx`
@@ -34,7 +34,7 @@ This file is the current-state map after this session's work.
   `db/migrations/` (55 numbered SQL migrations + `BLOCKED-MIGRATIONS.md`
   and a `README.md`). `scripts/inspect-db-v2.js` is the live-DB ground-
   truth diagnostic tool written this session — see
-  `docs/decision/0001-text-ids-not-uuid.md`. Full convention notes in
+  `docs/adr/0009-text-ids-not-uuid.md`. Full convention notes in
   `docs/architecture/DATABASE.md`.
 - **Public customer-order surface** — `apps/api/src/routes/
   public-order.ts`: unauthenticated (no `requireAuth`) endpoints
@@ -71,7 +71,7 @@ This file is the current-state map after this session's work.
    `kot.created`/`kot.status_updated` topics — `lib/
    useKapmetaSocket.ts:11-12`) and re-fetches via `fetchTickets()`; a
    30-second `setInterval` backstops any missed socket event
-   (`kitchen.tsx:88`, see `docs/decision/0003-...` for why both exist).
+   (`kitchen.tsx:88`, see `docs/adr/0011-polling-not-websocket-for-live-sync.md` for why both exist).
 6. When the ticket reaches `SERVED` and a bill is printed,
    `KOTTicket.billPrintedAt` is set (migration 0039) — the UI shows "Used
    In Bill" for `SERVED` + `billPrintedAt` non-null, not a distinct

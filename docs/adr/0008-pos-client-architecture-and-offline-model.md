@@ -1,9 +1,9 @@
-# ADR-0003: POS Client Architecture and Offline Model
+# ADR-0008: POS Client Architecture and Offline Model
 
 **Status:** Accepted
 **Date:** 2026-08-08
 **Deciders:** Product Owner, Solution Architect, IT Lead, Frontend Lead, QA Lead
-**Related:** DEC-002, DEC-005, DEC-006, ADR-0001, ADR-0002
+**Related:** DEC-002, DEC-005, DEC-006, ADR-0006 (record architecture decisions), ADR-0007 (tenancy and outlet scoping)
 
 ## Context
 

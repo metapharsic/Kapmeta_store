@@ -147,7 +147,6 @@ router.post(
       const role = await prisma.role.create({
         data: {
           name: name.trim(),
-          code: name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_"),
           description: description ?? null,
         },
       });
@@ -345,7 +344,7 @@ router.post(
       let userRole: any;
       if (existingUserRole) {
         userRole = await prisma.userRole.update({
-          where: { id: existingUserRole.id },
+          where: { userId_roleId: { userId, roleId } },
           data: { outletId: outletId ?? null },
           include: { role: true, outlet: true },
         });
@@ -355,7 +354,6 @@ router.post(
             userId,
             roleId,
             outletId: outletId ?? null,
-            granted_by: req.auth!.userId,
           },
           include: { role: true, outlet: true },
         });
@@ -384,7 +382,7 @@ router.delete(
       const { userId, userRoleId } = req.params;
 
       const existing = await prisma.userRole.findFirst({
-        where: { userId, OR: [{ id: userRoleId }, { roleId: userRoleId }] },
+        where: { userId, roleId: userRoleId },
       });
       if (!existing) {
         res.status(404).json({ error: "role assignment not found" });
@@ -392,7 +390,7 @@ router.delete(
       }
 
       await prisma.userRole.delete({
-        where: { id: existing.id },
+        where: { userId_roleId: { userId, roleId: userRoleId } },
       });
 
       res.status(204).send();
@@ -532,7 +530,6 @@ router.post(
               userId: user.id,
               roleId,
               outletId: outletId ?? null,
-              granted_by: req.auth!.userId,
             },
           });
         }

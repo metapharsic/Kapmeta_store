@@ -582,7 +582,7 @@ router.get("/invoices", requireAuth, requirePermission("report.read"), async (re
         orderNumber: o.orderNumber,
         orderType: o.orderType,
         status: o.status,
-        tableNumber: o.diningTable?.tableNumber || o.table_number || null,
+        tableNumber: o.diningTable?.tableNumber || (o as any).table_number || null,
         section: o.diningTable?.section || null,
         subtotalMinor: String(subtotalMinor),
         taxTotalMinor: String(taxTotalMinor),

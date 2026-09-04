@@ -132,10 +132,10 @@ export default function KitchenMonitor() {
     orderType: (t.orderType as any) || "PICK_UP",
     orderTypeDisplay:
       t.orderType === "DINE_IN"
-        ? "Dine In"
+        ? "🍽️ Dine In"
         : t.orderType === "DELIVERY"
-        ? "Delivery"
-        : "Pick Up",
+        ? "🛵 Delivery"
+        : "🛍️ Pick Up",
     orderTag: t.tableNumber ? `b${t.tableNumber}` : undefined,
     initialElapsedSeconds: Math.max(
       0,

@@ -58,7 +58,7 @@ model in the schema as of this session (55 migrations deep, `db/migrations/`).
 - All five of these seat/merge tables carry a comment block (added
   migration 0047, 2026-09-03) documenting that they were rebuilt with TEXT
   ids after being found live as TEXT despite the Prisma schema historically
-  declaring `@db.Uuid` — see `docs/decision/0001-text-ids-not-uuid.md`.
+  declaring `@db.Uuid` — see `docs/adr/0009-text-ids-not-uuid.md`.
 
 ## Order lifecycle: Order -> OrderItem -> KOTTicket -> KOTItem
 
@@ -132,4 +132,4 @@ model in the schema as of this session (55 migrations deep, `db/migrations/`).
 - `management_lists`, `management_settings`, `management_activity_logs`
   (`:1737`-`:1774`) are outlet-scoped generic key/value and activity-log
   stores used by several admin screens instead of bespoke tables — see
-  `docs/decision/0002-generic-management-catalog-pattern.md` for why.
+  `docs/adr/0010-generic-management-catalog-pattern.md` for why.

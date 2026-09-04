@@ -22,7 +22,7 @@ agents run **in parallel** without a handshake: both were handed the same contra
 
 ### 3. Constrain the prompt hard
 Every dispatch prompt carries, verbatim:
-- the TEXT-ids-not-UUID DB convention (see `docs/decision/0001-text-ids-not-uuid.md`),
+- the TEXT-ids-not-UUID DB convention (see `docs/adr/0009-text-ids-not-uuid.md`),
 - "prisma generate cannot run in this sandbox — use `$queryRaw`/`$executeRaw`",
 - a named existing file to copy the pattern from ("look at `report-notifications.ts`"),
 - explicit territory limits ("do NOT touch `apps/api/*`"),

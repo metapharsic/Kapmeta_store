@@ -38,3 +38,22 @@ v1 explicitly does **not** build multi-outlet management UI (outlet switcher, cr
 **Fully single-tenant schema, with outlet identity implicit or held only in a global config value (no `outlet_id` column on domain tables).** Rejected for the same cost-asymmetry reason driving the decision itself: this is cheaper today but converts into an expensive retrofit — a full data migration plus an audit of every query and report — the moment a second outlet is needed. Given that multi-outlet growth is a realistic and expected path for the product category (and the reference app itself is built this way, per ADR-0002's evidence), paying the small ongoing cost now is the better trade.
 
 **Build full multi-outlet management UI now, ahead of schema needs.** Rejected as scope creep: there is no current evidence of demand for multiple outlets in the pilot phase, and building outlet-switcher UI, cross-outlet role management, and cross-outlet dashboards now would be speculative work with no near-term user. The `outlet_id`-everywhere schema decision already captures the cheap insurance; building the UI on top of it before it's needed goes beyond that insurance into unjustified YAGNI-violating scope.
+
+---
+
+## Relationship to ADR-0007 (overlapping scope — read both)
+
+ADR-0007 (Tenancy and Outlet Scoping Scaffolding, 2026-08-08) records the
+same core decision as this ADR, written two weeks earlier and traced to
+DEC-001; this ADR was written independently during schema design, where it
+was tracked as DEC-023. Both are retained. ADR-0007 carries the
+enforcement mechanism (outlet resolved from session JWT, request-body
+`outlet_id` rejected at the boundary, CI query-guard lint) and the costed
+35-60 person-day retrofit estimate. This ADR carries the cost-asymmetry
+rationale, the tie to ADR-0004's per-outlet sequences, the explicit "no
+multi-outlet UI in v1" scope line, and the rejected alternatives.
+
+**Known discrepancy:** ADR-0007 states the rule as "every **operational**
+table" with no exception; this ADR states it as "every **tenant-scoped**
+table", carving out genuinely global config with no outlet dimension.
+Both claims stand on the record — see ADR-0007's matching note.

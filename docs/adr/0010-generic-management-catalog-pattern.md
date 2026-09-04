@@ -1,10 +1,10 @@
-# DECISION-0002: Generic `management_lists`/`management_settings`/`management_activity_logs` Instead of One Table Per Admin Screen
+# ADR-0010: Generic `management_lists`/`management_settings`/`management_activity_logs` Instead of One Table Per Admin Screen
 
 **Status:** Accepted
 **Date:** 2026-09-03 (migration `0053_create_management_tables.sql`)
 **Deciders:** Backend/Database agents (this session)
 **Related:** `docs/brain/DOMAIN_MODEL.md` (Generic management tables
-section), `docs/decision/0001-text-ids-not-uuid.md`
+section), `docs/adr/0009-text-ids-not-uuid.md`
 
 ## Context
 

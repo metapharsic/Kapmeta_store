@@ -1,9 +1,9 @@
-# ADR-0002: Tenancy and Outlet Scoping Scaffolding
+# ADR-0007: Tenancy and Outlet Scoping Scaffolding
 
 **Status:** Accepted
 **Date:** 2026-08-08
 **Deciders:** Product Owner, Solution Architect, DBA
-**Related:** DEC-001, ADR-0001, schema-reference.md
+**Related:** DEC-001, ADR-0006 (record architecture decisions), ADR-0005 (`outlet_id` everywhere — overlapping scope, see note below), schema-reference.md
 
 ## Context
 
@@ -27,3 +27,36 @@ We chose **Option A**. Every operational database table will carry an `outlet_id
 * **What becomes easier**: Scalability to franchises, chain restaurants, and multi-outlet entities is native and requires zero future schema migrations. Consolidated and per-outlet analytics reporting are built cleanly.
 * **What becomes harder**: Every queries and joins must specify the `outlet_id` predicate. Indexes must lead with `outlet_id` to maintain performance.
 * **Commitment**: Permanent presence of `outlet_id` on all operational models.
+
+---
+
+## Relationship to ADR-0005 (overlapping scope — read both)
+
+ADR-0005 (`outlet_id` on Every Tenant-Scoped Table) records **the same core
+decision** as this ADR, written independently two weeks later (2026-08-21)
+during schema design, where it was originally tracked as DEC-023. Both are
+retained: neither is redundant, because each carries material the other
+lacks, and neither has been rewritten to hide that they overlap.
+
+**Unique to this ADR (0007):** the enforcement mechanism — `outlet_id` is
+resolved from the session JWT claims at the API gateway; a request body
+that carries `outlet_id` is rejected at the boundary rather than merged
+with the session value (privilege-escalation guard); and automated
+linting/query-validation tests in CI fail any query against an operational
+table that omits the `outlet_id` predicate. It also carries the costed
+retrofit estimate (35-60 person-days) inherited from DEC-001.
+
+**Unique to ADR-0005:** the cost-asymmetry rationale in full, the
+interaction with per-outlet sequences (`bill_no` unique per
+`(outlet_id, bill_no)`, per ADR-0004), the explicit statement that v1
+ships **no** multi-outlet management UI, and the rejected alternatives.
+
+**Known discrepancy, deliberately not resolved here:** this ADR states the
+rule as "every **operational** database table" with no exception. ADR-0005
+states it as "every **tenant-scoped** table", explicitly carving out
+"genuinely global config, such as a system-wide feature flag table with no
+outlet dimension". These are not the same rule at the margin. ADR-0005 is
+the later and more specific formulation, but this ADR has never been
+superseded, so both claims stand on the record. A table that is arguably
+global config should be treated as an open question for review, not
+silently decided by whichever ADR the author happened to read.

@@ -97,7 +97,7 @@ Ops should overrule toward Option A only if site network management is genuinely
 
 ## Follow-Up
 
-- [ ] ADR raised (structural): ADR-0006 — KOT dispatch topology and failure semantics
+- [ ] ADR raised (structural): ADR-NNNN — KOT dispatch topology and failure semantics
 - [ ] `DECISION-LOG.md` updated
 - [ ] Print-failure notification requirement written into `REQ-KOT`
 - [ ] Ops to define the manual fallback procedure when dispatch fails

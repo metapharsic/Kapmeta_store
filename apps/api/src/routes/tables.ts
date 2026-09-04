@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { randomUUID } from "crypto";
 import { requireAuth, requirePermission, type AuthedRequest } from "../middleware/require-auth";
 import { prisma } from "../prisma";
 import { transitionOrder, PrismaOrderRepository } from "@kapmeta/orders";
@@ -672,6 +673,7 @@ tablesRouter.post("/tables", requireAuth, requirePermission("settings.manage"), 
 
     const table = await prisma.diningTable.create({
       data: {
+        id: randomUUID(),
         outletId,
         tableNumber: String(num).trim(),
         capacity: capacity ? Number(capacity) : 4,
@@ -706,10 +708,41 @@ tablesRouter.post("/tables", requireAuth, requirePermission("settings.manage"), 
 tablesRouter.get("/tables/sections", requireAuth, async (req: AuthedRequest, res) => {
   try {
     const outletId = req.auth!.outletId;
-    const areaRows = await prisma.areas.findMany({
+    let areaRows = await prisma.areas.findMany({
       where: { outlet_id: outletId, is_active: true },
       orderBy: [{ sort_order: "asc" }, { name: "asc" }],
     });
+
+    if (areaRows.length === 0) {
+      const defaultSections = [
+        { name: "Main Floor", sortOrder: 1 },
+        { name: "Indoor AC", sortOrder: 2 },
+        { name: "Terrace Lounge", sortOrder: 3 },
+        { name: "Family Section", sortOrder: 4 },
+        { name: "Rooftop", sortOrder: 5 },
+      ];
+      for (const s of defaultSections) {
+        await (prisma as any).$executeRawUnsafe(`
+          INSERT INTO areas (outlet_id, name, sort_order, is_active)
+          VALUES ($1::uuid, $2, $3, true)
+          ON CONFLICT (outlet_id, name) DO UPDATE SET is_active = true;
+        `, outletId, s.name, s.sortOrder);
+      }
+      areaRows = await prisma.areas.findMany({
+        where: { outlet_id: outletId, is_active: true },
+        orderBy: [{ sort_order: "asc" }, { name: "asc" }],
+      });
+    }
+
+    if (req.query.details === "true" || req.query.full === "true") {
+      return res.status(200).json(areaRows.map((a) => ({
+        id: a.id,
+        name: a.name,
+        sortOrder: a.sort_order,
+        isActive: a.is_active,
+      })));
+    }
+
     const sections = areaRows.map((a) => a.name);
     res.status(200).json(sections);
   } catch (err) {

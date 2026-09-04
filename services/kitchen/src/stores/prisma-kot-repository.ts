@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import { randomUUID } from "crypto";
 import type { KotRepository } from "../kot-service";
 import type { KotStatus, KotLineInput } from "@kapmeta/shared-types/kitchen";
 import { writeAuditLog } from "@kapmeta/shared-types/audit-log";
@@ -58,13 +59,23 @@ export class PrismaKotRepository implements KotRepository {
       const results: { id: string; status: KotStatus }[] = [];
 
       for (const group of groups) {
+        const ticketId = randomUUID();
         const ticket = await tx.kOTTicket.create({
-          data: { outletId, orderId, ticketNumber: group.ticketNumber, stationId: group.stationId, status: "QUEUED" },
+          data: {
+            id: ticketId,
+            outletId,
+            orderId,
+            ticketNumber: group.ticketNumber,
+            stationId: group.stationId,
+            status: "QUEUED",
+          },
         });
 
         if (group.lines.length > 0) {
           await tx.kOTItem.createMany({
             data: group.lines.map((line) => ({
+              id: randomUUID(),
+              outletId,
               kotTicketId: ticket.id,
               menuItemId: line.menuItemId,
               quantity: line.quantity,
@@ -76,7 +87,11 @@ export class PrismaKotRepository implements KotRepository {
         }
 
         await tx.kOTStatusHistory.create({
-          data: { kotTicketId: ticket.id, status: "QUEUED" },
+          data: {
+            id: randomUUID(),
+            kotTicketId: ticket.id,
+            status: "QUEUED",
+          },
         });
 
         results.push({ id: ticket.id, status: "QUEUED" as KotStatus });
@@ -116,7 +131,12 @@ export class PrismaKotRepository implements KotRepository {
         },
       });
       await tx.kOTStatusHistory.create({
-        data: { kotTicketId, status: newStatus, reasonCode: reasonCode ?? null },
+        data: {
+          id: randomUUID(),
+          kotTicketId,
+          status: newStatus,
+          reasonCode: reasonCode ?? null,
+        },
       });
 
       if (LEAKAGE_STATUSES.includes(newStatus)) {
@@ -159,7 +179,12 @@ export class PrismaKotRepository implements KotRepository {
         data: { status: "READY", servedAt: null, kotItems: { updateMany: { where: {}, data: { servedAt: null } } } },
       });
       await tx.kOTStatusHistory.create({
-        data: { kotTicketId, status: "READY", reasonCode: "RECALLED" },
+        data: {
+          id: randomUUID(),
+          kotTicketId,
+          status: "READY",
+          reasonCode: "RECALLED",
+        },
       });
       await writeAuditLog(tx, {
         outletId: ticket.outletId,

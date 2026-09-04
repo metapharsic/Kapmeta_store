@@ -86,7 +86,7 @@ On timing, the recommendation is consumption on **order completion**, not placem
 
 ## Follow-Up
 
-- [ ] ADR raised (structural): ADR-0003 — inventory consumption model and movement ledger
+- [ ] ADR raised (structural): ADR-NNNN — inventory consumption model and movement ledger
 - [ ] `DECISION-LOG.md` updated
 - [ ] Ops to confirm a named owner for recipe authoring and maintenance
 - [ ] Consumption timing confirmed (placement / KOT acceptance / completion) with cancellation-reversal policy

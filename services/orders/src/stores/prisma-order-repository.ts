@@ -517,7 +517,7 @@ export class PrismaOrderRepository implements OrderRepository {
       items: row.orderItems.map((item) => ({
         id: item.id,
         menuItemId: item.menuItemId,
-        menuItemName: item.item_name || item.menuItem?.name || "Menu Item",
+        menuItemName: (item as any).item_name || item.menuItem?.name || "Menu Item",
         quantity: Number(item.quantity),
         unitPriceMinor: item.unitPrice,
         subtotalMinor: item.subtotal,
@@ -620,7 +620,7 @@ export class PrismaOrderRepository implements OrderRepository {
 
       await tx.orderItem.update({
         where: { id: orderItemId },
-        data: { isVoided: true, updated_by: userId },
+        data: { isVoided: true, voidedBy: userId },
       });
 
       await tx.order.update({
@@ -759,9 +759,9 @@ export class PrismaOrderRepository implements OrderRepository {
     return this.prisma.$transaction(async (tx) => {
       const payment = await tx.payment.create({
         data: {
+          id: crypto.randomUUID(),
           outletId,
           orderId,
-          paymentId: crypto.randomUUID(),
           amount: amountMinor,
           method,
           status: "CAPTURED",

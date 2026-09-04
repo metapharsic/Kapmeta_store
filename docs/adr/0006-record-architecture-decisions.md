@@ -1,4 +1,4 @@
-# ADR-0001: Record Architecture Decisions
+# ADR-0006: Record Architecture Decisions
 
 **Status:** Accepted · **Date:** 2026-08-08
 

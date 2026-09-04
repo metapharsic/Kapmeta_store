@@ -99,7 +99,7 @@ The specific mechanism recommended, which matters as much as the option:
 
 ## Follow-Up
 
-- [ ] ADR raised (structural): ADR-0009 — reporting calculation layer and formula versioning
+- [ ] ADR raised (structural): ADR-NNNN — reporting calculation layer and formula versioning
 - [ ] `DECISION-LOG.md` updated
 - [ ] **Signed formula catalogue produced** — start with net sales; columns, inclusions, exclusions, business-day rule per KPI
 - [ ] Sequenced after [DEC-004](DEC-004-tax-calculation-rules.md) and [DEC-008](DEC-008-discount-promotion-rules.md)

@@ -85,7 +85,7 @@ Option B should not be chosen as an answer to this question. It is worth doing o
 **Rationale:** Simplifies debugging the core domain in R1 by not implementing sync logic and domain changes at the same time, while keeping the architecture reversible at minimal cost.
 **Approved by:** PO + IT & Solution Architect
 **Date:** 2026-08-08
-**ADR:** ADR-0002
+**ADR:** ADR-0008 (`../adr/0008-pos-client-architecture-and-offline-model.md`)
 
 ## Consequences
 
@@ -99,7 +99,7 @@ Option B should not be chosen as an answer to this question. It is worth doing o
 
 ## Follow-Up
 
-- [ ] ADR raised (structural): ADR-0002 — POS client architecture and offline model
+- [x] ADR raised (structural): ADR-0008 — POS client architecture and offline model
 - [ ] `DECISION-LOG.md` updated
 - [ ] Ops to supply connectivity measurements from pilot sites before the review
 - [ ] Order-number allocation strategy confirmed (needed under every option)

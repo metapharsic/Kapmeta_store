@@ -111,7 +111,7 @@ Option D is acceptable for the archival half only, and only if the erasure quest
 
 ## Follow-Up
 
-- [ ] ADR raised (structural): ADR-0010 — retention, partition archival and erasure model
+- [ ] ADR raised (structural): ADR-NNNN — retention, partition archival and erasure model
 - [ ] `DECISION-LOG.md` updated
 - [ ] **Reviewed jointly with DEC-020** (right-to-erasure vs statutory invoice retention) — same session, same Legal owner
 - [ ] Legal to supply: statutory minimums, lawful basis and period for personal data, erasure mechanism, audit-log erasability

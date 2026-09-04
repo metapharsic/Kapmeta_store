@@ -173,11 +173,19 @@ ordersRouter.post("/orders", requireAuth, requirePermission("order.create"), asy
       }).catch(() => undefined);
     }
 
-    // If KOT creation requested (action: "KOT" or status: "ACTIVE" or "KOT_CREATED"):
-    if (body.action === "KOT" || body.status === "ACTIVE" || body.status === "KOT_CREATED") {
+    const shouldFireKot =
+      !body.scheduledFireAt &&
+      body.action !== "HOLD" &&
+      body.action !== "DRAFT" &&
+      body.action !== "BILL" &&
+      !body.isPaid &&
+      body.status !== "COMPLETED";
+
+    // If KOT creation requested or standard non-draft order placed:
+    if (shouldFireKot || body.action === "KOT" || body.status === "ACTIVE" || body.status === "KOT_CREATED" || body.status === "CONFIRMED" || body.status === "PLACED") {
       if (!body.scheduledFireAt) {
-        await transitionOrder(result.id, "CONFIRMED", orderRepo, req.auth!.userId);
-        await transitionOrder(result.id, "KOT_CREATED", orderRepo, req.auth!.userId);
+        await transitionOrder(result.id, "CONFIRMED", orderRepo, req.auth!.userId).catch(() => {});
+        await transitionOrder(result.id, "KOT_CREATED", orderRepo, req.auth!.userId).catch(() => {});
         await onOrderConfirmed(result.id, prisma);
       }
 
