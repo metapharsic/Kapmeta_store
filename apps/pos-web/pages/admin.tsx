@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { authedFetch, useAuthGuard } from "../lib/auth";
 import Nav from "../components/Nav";
-import KapMetaHeader from "../components/KapMetaHeader";
 import QuickLinks from "../components/QuickLinks";
 import NotificationBell from "../components/NotificationBell";
 import OutletSwitcher from "../components/OutletSwitcher";
@@ -1005,8 +1004,6 @@ export default function AdminDashboard() {
           content="Executive Admin Hub, Multi-Agent A2A telemetry, and store operations."
         />
       </Head>
-
-      <KapMetaHeader />
 
       <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
       <Nav variant="sidebar" />
