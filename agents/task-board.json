@@ -920,6 +920,30 @@
       "status": "DONE",
       "priority": "HIGH",
       "relatedGate": "CP-30"
+    },
+    {
+      "taskId": "TSK-053",
+      "title": "BI reports workbench: /bi catalog+query+drilldown over 16 real datasets",
+      "assignedTo": "multi-agent(backend+frontend)",
+      "status": "DONE",
+      "priority": "HIGH",
+      "relatedGate": "CP-31"
+    },
+    {
+      "taskId": "TSK-054",
+      "title": "8 BI datasets omitted - no backing table or table has no writer (order_item_modifiers, stock_consumptions, wallet_transactions join, per-rate tax ledger, discount reason/actor)",
+      "assignedTo": "unassigned",
+      "status": "PENDING",
+      "priority": "MEDIUM",
+      "relatedGate": "CP-31"
+    },
+    {
+      "taskId": "TSK-055",
+      "title": "Nav.tsx: agents-tab link deleted in teammate's in-flight rename, HUD currently unreachable from nav - confirm intent",
+      "assignedTo": "Metapharsic Admin",
+      "status": "PENDING",
+      "priority": "LOW",
+      "relatedGate": "CP-31"
     }
   ]
 }

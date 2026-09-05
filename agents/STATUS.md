@@ -442,3 +442,22 @@ fully wired for all 3 orderTypes. The gap was the customer-facing public QR orde
   - Removed static `STAFF_LIST` from `CaptainPinLoginModal.tsx`; staff now load dynamically from the PostgreSQL database with fallback and loading indicators.
   - Verified `apps/pos-web` with `npx tsc --noEmit` (0 errors).
 
+
+## 2026-09-05 — CP-31: BI reports workbench
+Request: granular reports on everything in the app, in a BI tab.
+Approach: one generic dimensional query engine, not N bespoke endpoints. Two agents in
+parallel on disjoint territory (apps/api vs apps/pos-web), contract designed up front.
+- apps/api/src/routes/bi.ts: GET /bi/catalog (16 datasets derived from real schema columns),
+  GET /bi/query (group-by/measures/grain/filters/sort, whole-set totals), GET /bi/drilldown
+  (raw records behind an aggregate row, cap 500). All whitelisted against the catalog,
+  ordinal GROUP BY, every value a bound param, outlet scope always bound.
+- No duplicated money math: discount/void logic lifted into @kapmeta/reporting, /reporting
+  and /bi now call one function. Tax delegates to computeTaxBreakdown().
+- 8 candidate datasets omitted with recorded reasons (no backing table, or real table with
+  no writer in the repo) rather than faked - TSK-054.
+- Frontend pages/reports/bi.tsx + BarChart/MultiSeriesLineChart/chart-palette (dependency-free
+  SVG, existing theme tokens). Every control rendered from the live catalog, drill-through,
+  real CSV export, honest empty/error/note states.
+- Verified: tsc pos-web 0 errors, tsc api 17 = unchanged baseline. Committed 3c3cb41.
+- Nav.tsx staged as my hunk only: a teammate's in-flight rename deletes the agents-tab link,
+  left unstaged in the tree for them - TSK-055.
