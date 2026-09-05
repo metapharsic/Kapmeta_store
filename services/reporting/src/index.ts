@@ -21,6 +21,8 @@ export {
   getStaffPerformance,
   computeTableUtilization,
   getTableUtilization,
+  computeDiscountVoidAnalysis,
+  DISCOUNT_VOID_NOTE,
 } from "./reporting-service";
 export type {
   ReportingRepository,
@@ -40,6 +42,13 @@ export type {
   WaiterHandoverRow,
   TableInfoRow,
   TableUtilizationOrderRow,
+  VoidedOrderItemRow,
+  DiscountOrderRow,
+  VoidReasonRow,
+  VoidStaffRow,
+  VoidDayRow,
+  DiscountDayRow,
+  DiscountVoidAnalysis,
 } from "./reporting-service";
 export type {
   LeakageReport,

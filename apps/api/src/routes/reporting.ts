@@ -12,6 +12,7 @@ import {
   getInventoryVarianceReport,
   getStaffPerformance,
   getTableUtilization,
+  computeDiscountVoidAnalysis,
   PrismaReportingRepository,
 } from "@kapmeta/reporting";
 import { getRevenueTrend, PrismaOrderRepository } from "@kapmeta/orders";
@@ -373,44 +374,24 @@ router.get("/discount-void-analysis", requireAuth, requirePermission("report.fin
     const range = parseRange(req);
     const outletId = req.auth!.outletId;
 
+    // Row fetching only -- every sum/grouping below the fetch lives in
+    // computeDiscountVoidAnalysis (@kapmeta/reporting), which
+    // GET /bi/query?dataset=discounts_voids also calls, so the two endpoints
+    // cannot drift apart on the same money figures.
     const voidedItems = await prisma.orderItem.findMany({
       where: {
         outletId,
         isVoided: true,
         order: { createdAt: { gte: range.fromDate, lte: range.toDate } },
       },
-      select: { subtotal: true, voidReason: true, voidedBy: true },
+      select: {
+        subtotal: true,
+        quantity: true,
+        voidReason: true,
+        voidedBy: true,
+        order: { select: { createdAt: true } },
+      },
     });
-
-    const voidCount = voidedItems.length;
-    const voidTotalValueMinor = voidedItems.reduce((sum, i) => sum + i.subtotal, 0n);
-
-    const byReasonMap = new Map<string, { count: number; valueMinor: bigint }>();
-    const byStaffMap = new Map<string, { count: number; valueMinor: bigint }>();
-    for (const item of voidedItems) {
-      const reasonKey = item.voidReason ?? "Unspecified";
-      const reasonAgg = byReasonMap.get(reasonKey) ?? { count: 0, valueMinor: 0n };
-      reasonAgg.count += 1;
-      reasonAgg.valueMinor += item.subtotal;
-      byReasonMap.set(reasonKey, reasonAgg);
-
-      const staffKey = item.voidedBy ?? "Unspecified";
-      const staffAgg = byStaffMap.get(staffKey) ?? { count: 0, valueMinor: 0n };
-      staffAgg.count += 1;
-      staffAgg.valueMinor += item.subtotal;
-      byStaffMap.set(staffKey, staffAgg);
-    }
-
-    const byReason = Array.from(byReasonMap.entries()).map(([reason, agg]) => ({
-      reason,
-      count: agg.count,
-      valueMinor: String(agg.valueMinor),
-    }));
-    const byStaff = Array.from(byStaffMap.entries()).map(([voidedBy, agg]) => ({
-      voidedBy,
-      count: agg.count,
-      valueMinor: String(agg.valueMinor),
-    }));
 
     const discountOrders = await prisma.order.findMany({
       where: {
@@ -422,37 +403,56 @@ router.get("/discount-void-analysis", requireAuth, requirePermission("report.fin
       select: { discountTotal: true, createdAt: true },
     });
 
-    const totalDiscountMinor = discountOrders.reduce((sum, o) => sum + (o.discountTotal ?? 0n), 0n);
-    const orderCountWithDiscount = discountOrders.length;
-
-    const byDayMap = new Map<string, { count: number; totalMinor: bigint }>();
-    for (const o of discountOrders) {
-      const dayKey = o.createdAt.toISOString().slice(0, 10);
-      const agg = byDayMap.get(dayKey) ?? { count: 0, totalMinor: 0n };
-      agg.count += 1;
-      agg.totalMinor += o.discountTotal ?? 0n;
-      byDayMap.set(dayKey, agg);
-    }
-    const byDay = Array.from(byDayMap.entries())
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([date, agg]) => ({ date, count: agg.count, totalMinor: String(agg.totalMinor) }));
+    const analysis = computeDiscountVoidAnalysis(
+      outletId,
+      range,
+      voidedItems.map((i) => ({
+        subtotalMinor: i.subtotal,
+        quantity: Number(i.quantity),
+        voidReason: i.voidReason,
+        voidedBy: i.voidedBy,
+        orderCreatedAt: i.order.createdAt,
+      })),
+      discountOrders.map((o) => ({
+        discountTotalMinor: o.discountTotal ?? 0n,
+        createdAt: o.createdAt,
+      }))
+    );
 
     res.status(200).json({
-      outletId,
-      fromDate: range.fromDate,
-      toDate: range.toDate,
+      outletId: analysis.outletId,
+      fromDate: analysis.fromDate,
+      toDate: analysis.toDate,
       voids: {
-        count: voidCount,
-        totalValueMinor: String(voidTotalValueMinor),
-        byReason,
-        byStaff,
+        count: analysis.voids.count,
+        totalValueMinor: String(analysis.voids.totalValueMinor),
+        byReason: analysis.voids.byReason.map((r) => ({
+          reason: r.reason,
+          count: r.count,
+          valueMinor: String(r.valueMinor),
+        })),
+        byStaff: analysis.voids.byStaff.map((r) => ({
+          voidedBy: r.voidedBy,
+          count: r.count,
+          valueMinor: String(r.valueMinor),
+        })),
+        byDay: analysis.voids.byDay.map((r) => ({
+          date: r.date,
+          count: r.count,
+          quantity: r.quantity,
+          valueMinor: String(r.valueMinor),
+        })),
       },
       discounts: {
-        totalDiscountMinor: String(totalDiscountMinor),
-        orderCountWithDiscount,
-        byDay,
+        totalDiscountMinor: String(analysis.discounts.totalDiscountMinor),
+        orderCountWithDiscount: analysis.discounts.orderCountWithDiscount,
+        byDay: analysis.discounts.byDay.map((d) => ({
+          date: d.date,
+          count: d.count,
+          totalMinor: String(d.totalMinor),
+        })),
       },
-      note: "Discount reason-level breakdown is not available in this report: the schema has no Discount entity and no discountReason field — Order only stores a raw discountTotal per order. Totals and daily trend are accurate; a per-reason breakdown of discounts cannot be produced without a schema change.",
+      note: analysis.note,
     });
   } catch (err) {
     console.error(err);

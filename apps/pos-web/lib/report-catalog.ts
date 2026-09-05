@@ -58,6 +58,15 @@ export const REPORT_CATEGORIES: { id: ReportCategoryId; label: string }[] = [
 export const REPORT_CATALOG: ReportCatalogEntry[] = [
   // ---- All Restaurant Report -------------------------------------------
   {
+    key: "bi-reports",
+    title: "BI Reports (Workbench)",
+    description:
+      "Self-serve BI across every dataset the outlet exposes (GET /bi/catalog) — slice by that dataset's own dimensions, chart any measure, and drill through an aggregate row to the raw underlying records.",
+    category: "ALL_RESTAURANT",
+    permission: "report.read",
+    href: "/reports/bi",
+  },
+  {
     key: "day-end-summary",
     title: "Day End Summary",
     description: "Per-day Z-report totals — sales, tax, tips and payment mix across a date range.",

@@ -18,6 +18,7 @@ import { notificationsRouter } from './routes/notifications';
 import { publicOrderRouter } from './routes/public-order';
 import { purchaseRouter } from './routes/purchase';
 import { reportingRouter } from './routes/reporting';
+import { biRouter } from './routes/bi';
 import { userManagementRouter } from './routes/user-management';
 import { waitersRouter } from './routes/waiters';
 import { tablesRouter } from './routes/tables';
@@ -61,6 +62,7 @@ export function createApp(): Express {
   app.use('/inventory', inventoryRouter);
   app.use('/marketing', marketingRouter);
   app.use('/reporting', reportingRouter);
+  app.use('/bi', biRouter);
 
   // These routers already define fully-qualified paths internally
   // (e.g. /integrations/..., /notifications, /public/..., /purchase-orders,

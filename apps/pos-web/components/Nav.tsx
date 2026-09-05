@@ -156,6 +156,7 @@ export const SIDEBAR_GROUPS: SidebarGroupDef[] = [
     header: "Reports & Business Intelligence",
     links: [
       { href: "/admin?tab=analytics", permission: "report.read", label: "Sales Analytics & Trends" },
+      { href: "/reports/bi", permission: "report.read", label: "BI Reports" },
       { href: "/reports/day-end-summary", permission: "report.read", label: "Day End Summary & Z-Report" },
       { href: "/reports/other-reports", permission: "report.read", label: "All Other Reports Center" },
       { href: "/reports/report-notification", permission: "report.read", label: "Scheduled Report Notifications" },

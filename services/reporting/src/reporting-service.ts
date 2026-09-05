@@ -847,3 +847,170 @@ export async function getTableUtilization(
   ]);
   return computeTableUtilization(outletId, range, tables, orders);
 }
+
+// ---------------------------------------------------------------------------
+// Discount & Void analysis
+//
+// Single source of truth for the discount/void money figures. Previously this
+// lived inline in apps/api/src/routes/reporting.ts's /discount-void-analysis
+// handler; it was lifted here so the BI query engine
+// (apps/api/src/routes/bi.ts, dataset `discounts_voids`) reports the exact
+// same numbers instead of growing a second, drifting copy of the same sums.
+//
+// Row shapes are the raw facts the callers fetch; all aggregation and every
+// money sum happens here, in BigInt minor units.
+// ---------------------------------------------------------------------------
+
+/// One voided OrderItem line in range. orderCreatedAt is the PARENT ORDER's
+/// createdAt (order_items has no timestamp of its own), which is also what the
+/// range filter is applied against.
+export interface VoidedOrderItemRow {
+  subtotalMinor: bigint;
+  quantity: number;
+  voidReason: string | null;
+  voidedBy: string | null;
+  orderCreatedAt: Date;
+}
+
+/// One COMPLETED order in range carrying a non-zero discountTotal.
+export interface DiscountOrderRow {
+  discountTotalMinor: bigint;
+  createdAt: Date;
+}
+
+export interface VoidReasonRow {
+  reason: string;
+  count: number;
+  valueMinor: bigint;
+}
+
+export interface VoidStaffRow {
+  voidedBy: string;
+  count: number;
+  valueMinor: bigint;
+}
+
+export interface VoidDayRow {
+  date: string; // YYYY-MM-DD (UTC), same key convention as DiscountDayRow
+  count: number;
+  quantity: number;
+  valueMinor: bigint;
+}
+
+export interface DiscountDayRow {
+  date: string; // YYYY-MM-DD (UTC)
+  count: number;
+  totalMinor: bigint;
+}
+
+/// Verbatim schema limitation note surfaced by every consumer of this report.
+/// Kept as an exported constant so the API response text cannot drift between
+/// /reporting/discount-void-analysis and /bi/query?dataset=discounts_voids.
+export const DISCOUNT_VOID_NOTE =
+  "Discount reason-level breakdown is not available in this report: the schema has no Discount entity and no discountReason field — Order only stores a raw discountTotal per order. Totals and daily trend are accurate; a per-reason breakdown of discounts cannot be produced without a schema change.";
+
+export interface DiscountVoidAnalysis {
+  outletId: string;
+  fromDate: Date;
+  toDate: Date;
+  voids: {
+    count: number;
+    totalValueMinor: bigint;
+    byReason: VoidReasonRow[];
+    byStaff: VoidStaffRow[];
+    byDay: VoidDayRow[];
+  };
+  discounts: {
+    totalDiscountMinor: bigint;
+    orderCountWithDiscount: number;
+    byDay: DiscountDayRow[];
+  };
+  note: string;
+}
+
+function utcDayKey(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+export function computeDiscountVoidAnalysis(
+  outletId: string,
+  range: DateRange,
+  voidedItems: VoidedOrderItemRow[],
+  discountOrders: DiscountOrderRow[]
+): DiscountVoidAnalysis {
+  const voidCount = voidedItems.length;
+  const voidTotalValueMinor = voidedItems.reduce((sum, i) => sum + i.subtotalMinor, 0n);
+
+  const byReasonMap = new Map<string, { count: number; valueMinor: bigint }>();
+  const byStaffMap = new Map<string, { count: number; valueMinor: bigint }>();
+  const voidByDayMap = new Map<string, { count: number; quantity: number; valueMinor: bigint }>();
+
+  for (const item of voidedItems) {
+    const reasonKey = item.voidReason ?? "Unspecified";
+    const reasonAgg = byReasonMap.get(reasonKey) ?? { count: 0, valueMinor: 0n };
+    reasonAgg.count += 1;
+    reasonAgg.valueMinor += item.subtotalMinor;
+    byReasonMap.set(reasonKey, reasonAgg);
+
+    const staffKey = item.voidedBy ?? "Unspecified";
+    const staffAgg = byStaffMap.get(staffKey) ?? { count: 0, valueMinor: 0n };
+    staffAgg.count += 1;
+    staffAgg.valueMinor += item.subtotalMinor;
+    byStaffMap.set(staffKey, staffAgg);
+
+    const dayKey = utcDayKey(item.orderCreatedAt);
+    const dayAgg = voidByDayMap.get(dayKey) ?? { count: 0, quantity: 0, valueMinor: 0n };
+    dayAgg.count += 1;
+    dayAgg.quantity += item.quantity;
+    dayAgg.valueMinor += item.subtotalMinor;
+    voidByDayMap.set(dayKey, dayAgg);
+  }
+
+  const byReason: VoidReasonRow[] = Array.from(byReasonMap.entries()).map(([reason, agg]) => ({
+    reason,
+    count: agg.count,
+    valueMinor: agg.valueMinor,
+  }));
+  const byStaff: VoidStaffRow[] = Array.from(byStaffMap.entries()).map(([voidedBy, agg]) => ({
+    voidedBy,
+    count: agg.count,
+    valueMinor: agg.valueMinor,
+  }));
+  const voidByDay: VoidDayRow[] = Array.from(voidByDayMap.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([date, agg]) => ({ date, count: agg.count, quantity: agg.quantity, valueMinor: agg.valueMinor }));
+
+  const totalDiscountMinor = discountOrders.reduce((sum, o) => sum + o.discountTotalMinor, 0n);
+  const orderCountWithDiscount = discountOrders.length;
+
+  const discountByDayMap = new Map<string, { count: number; totalMinor: bigint }>();
+  for (const o of discountOrders) {
+    const dayKey = utcDayKey(o.createdAt);
+    const agg = discountByDayMap.get(dayKey) ?? { count: 0, totalMinor: 0n };
+    agg.count += 1;
+    agg.totalMinor += o.discountTotalMinor;
+    discountByDayMap.set(dayKey, agg);
+  }
+  const discountByDay: DiscountDayRow[] = Array.from(discountByDayMap.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([date, agg]) => ({ date, count: agg.count, totalMinor: agg.totalMinor }));
+
+  return {
+    outletId,
+    fromDate: range.fromDate,
+    toDate: range.toDate,
+    voids: {
+      count: voidCount,
+      totalValueMinor: voidTotalValueMinor,
+      byReason,
+      byStaff,
+      byDay: voidByDay,
+    },
+    discounts: {
+      totalDiscountMinor,
+      orderCountWithDiscount,
+      byDay: discountByDay,
+    },
+    note: DISCOUNT_VOID_NOTE,
+  };
+}
